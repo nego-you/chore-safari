@@ -1,0 +1,32 @@
+# Chore Safari - Next.js 開発用イメージ
+# 用途：docker-compose の web サービスから利用し、ホットリロードで動かす。
+# 本番ビルドは別途 Dockerfile.prod を作る想定。
+
+FROM node:22-alpine
+
+WORKDIR /app
+
+# Prisma が alpine 上で必要とするバイナリ。
+RUN apk add --no-cache libc6-compat openssl
+
+# 依存解決のキャッシュを効かせるため、まず package と prisma だけコピー。
+COPY package.json package-lock.json ./
+COPY prisma ./prisma
+
+# postinstall の prisma generate もここで走る。
+RUN npm ci
+
+# ソース全体（実運用ではこの中身は compose のバインドマウントで上書きされる）。
+COPY . .
+
+# Next.js のテレメトリ無効化と、Docker バインドマウント上で
+# ファイル変更イベントが届きにくい環境向けにポーリングを有効化。
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV WATCHPACK_POLLING=true
+ENV CHOKIDAR_USEPOLLING=true
+
+EXPOSE 3000
+
+# 起動時に prisma generate を再実行してから dev サーバを起動。
+# -H 0.0.0.0 はコンテナ外（host や他コンテナ）からアクセスできるようにするため。
+CMD ["sh", "-c", "npx prisma generate && npx next dev -H 0.0.0.0 -p 3000"]

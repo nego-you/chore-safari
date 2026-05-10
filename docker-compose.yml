@@ -1,5 +1,5 @@
 services:
-  postgres:
+  db:
     image: postgres:16-alpine
     container_name: chore-safari-db
     restart: unless-stopped
@@ -9,6 +9,7 @@ services:
       POSTGRES_DB: chore_safari
       TZ: Asia/Tokyo
     ports:
+      # ホストからの prisma migrate / psql 用に 5433 で公開（本番では閉じる想定）。
       - "5433:5432"
     volumes:
       - ./pg-data:/var/lib/postgresql/data
@@ -18,18 +19,43 @@ services:
       timeout: 5s
       retries: 10
 
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: chore-safari-web
+    restart: unless-stopped
+    # ソースをバインドマウントしてホットリロード。
+    # node_modules と .next は匿名 volume にして、ホスト側の中身で
+    # コンテナ内の生成物（prisma client など）を上書きしないようにする。
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      NODE_ENV: development
+      # コンテナ間通信用の DATABASE_URL。ホスト側 .env の値（localhost:5433）より優先される。
+      DATABASE_URL: postgresql://chore:chore@db:5432/chore_safari?schema=public
+      # ホットリロード用ポーリング（compose 側でも明示）。
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+    ports:
+      # 開発中はホストブラウザから直接叩けるようにも公開しておく。
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: chore-safari-tunnel
     restart: unless-stopped
     # トークンは .env の CLOUDFLARE_TUNNEL_TOKEN から読み込む。
-    # docker compose は同階層の .env を自動的に変数展開に利用する。
-    # ${...:?...} 形式で未設定時は起動を拒否し、誤ってトークン無しで上げないようにする。
+    # ${...:?...} で未設定時は起動を拒否し、誤ってトークン無しで上げないようにする。
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN must be set in .env}
-    # cloudflared コンテナからホスト側で動く Next.js (localhost:3000) に到達するための解決名。
-    # Docker Desktop (Windows/Mac) では自動で解決されるが、Linux でも動くよう明示する。
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    # 同じ compose ネットワーク上の web コンテナへ web:3000 で到達できる。
+    # Cloudflare ダッシュボード側の Public Hostname → Service URL を
+    # http://web:3000 に変更すること。
     depends_on:
-      postgres:
-        condition: service_healthy
+      web:
+        condition: service_started
