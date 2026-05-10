@@ -1,0 +1,54 @@
+// Chore Safari - Prisma schema
+// PostgreSQL backend. Children のコイン残高と取引履歴を管理。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CHILD
+  PARENT
+
+  @@map("user_role")
+}
+
+enum CoinTxKind {
+  CHORE
+  PENALTY
+  BONUS
+  ADJUSTMENT
+
+  @@map("coin_tx_kind")
+}
+
+model User {
+  id           String            @id @default(cuid())
+  name         String
+  // 年齢は保存せず、表示時にこの birth_date から動的に算出する
+  birthDate    DateTime          @map("birth_date") @db.Date
+  role         UserRole          @default(CHILD)
+  coinBalance  Int               @default(0) @map("coin_balance")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+  transactions CoinTransaction[]
+
+  @@map("users")
+}
+
+model CoinTransaction {
+  id        String     @id @default(cuid())
+  userId    String     @map("user_id")
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount    Int
+  kind      CoinTxKind
+  reason    String?
+  createdAt DateTime   @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("coin_transactions")
+}

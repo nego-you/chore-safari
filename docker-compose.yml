@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: chore-safari-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: chore
+      POSTGRES_PASSWORD: chore
+      POSTGRES_DB: chore_safari
+      TZ: Asia/Tokyo
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chore -d chore_safari"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: chore-safari-tunnel
+    restart: unless-stopped
+    # トークンは .env の CLOUDFLARE_TUNNEL_TOKEN から読み込む。
+    # docker compose は同階層の .env を自動的に変数展開に利用する。
+    # ${...:?...} 形式で未設定時は起動を拒否し、誤ってトークン無しで上げないようにする。
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN must be set in .env}
+    # cloudflared コンテナからホスト側で動く Next.js (localhost:3000) に到達するための解決名。
+    # Docker Desktop (Windows/Mac) では自動で解決されるが、Linux でも動くよう明示する。
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
