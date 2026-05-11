@@ -6,7 +6,11 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { playGacha } from "./actions";
+import {
+  getUnreadBonusNotifications,
+  markBonusRead,
+  playGacha,
+} from "./actions";
 import { GACHA_COST } from "./config";
 
 type ChildLite = {
@@ -23,9 +27,18 @@ type InventoryItem = {
   itemType: "FOOD" | "TRAP_PART";
 };
 
+type BonusNotification = {
+  id: string;
+  userId: string;
+  reason: string;
+  coinAmount: number;
+  createdAt: string; // ISO
+};
+
 type Props = {
   children: ChildLite[];
   inventory: InventoryItem[];
+  initialNotifications?: BonusNotification[];
 };
 
 // 子の名前にふりがなを振る用の辞書（暫定推定。実際の読みは親が後で訂正できる）。
@@ -96,7 +109,11 @@ type GachaPopup = {
   itemType: "FOOD" | "TRAP_PART";
 };
 
-export function KidsPortal({ children, inventory }: Props) {
+export function KidsPortal({
+  children,
+  inventory,
+  initialNotifications = [],
+}: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [childList, setChildList] = useState<ChildLite[]>(children);
   const [inventoryList, setInventoryList] =
@@ -105,9 +122,71 @@ export function KidsPortal({ children, inventory }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  // 未読の特大達成ボーナス通知。CHILD ごとに 0 個以上。
+  const [notifications, setNotifications] =
+    useState<BonusNotification[]>(initialNotifications);
+  // 現在画面に出ている祝賀通知（FIFO で 1 件ずつ消化）。
+  const [activeBonus, setActiveBonus] = useState<BonusNotification | null>(
+    null,
+  );
+
   // props が更新されたら（revalidate 後の再描画など）state を同期し直す。
   useEffect(() => setChildList(children), [children]);
   useEffect(() => setInventoryList(inventory), [inventory]);
+  useEffect(() => setNotifications(initialNotifications), [initialNotifications]);
+
+  // 選択中の子に未読通知があれば 1 件取り出して祝賀演出を出す。
+  useEffect(() => {
+    if (activeBonus || !selectedId) return;
+    const next = notifications.find((n) => n.userId === selectedId);
+    if (next) setActiveBonus(next);
+  }, [selectedId, notifications, activeBonus]);
+
+  // 選択中は 15 秒ごとに未読通知を再フェッチ（親が後から送るシナリオに対応）。
+  useEffect(() => {
+    if (!selectedId) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const fresh = await getUnreadBonusNotifications(selectedId);
+        if (!cancelled) {
+          setNotifications((prev) => {
+            const known = new Set(prev.map((n) => n.id));
+            const merged = [...prev];
+            for (const n of fresh) if (!known.has(n.id)) merged.push(n);
+            return merged;
+          });
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    const handle = setInterval(tick, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(handle);
+    };
+  }, [selectedId]);
+
+  const handleAckBonus = async () => {
+    const current = activeBonus;
+    if (!current) return;
+    setActiveBonus(null);
+    // 楽観的にキューから外す → サーバで既読化
+    setNotifications((prev) => prev.filter((n) => n.id !== current.id));
+    setChildList((prev) =>
+      prev.map((c) =>
+        c.id === current.userId
+          ? { ...c, coinBalance: c.coinBalance + 0 } // 既に+されている前提
+          : c,
+      ),
+    );
+    try {
+      await markBonusRead(current.id);
+    } catch {
+      /* 既読化に失敗しても UI は閉じる。次の load で再表示される。 */
+    }
+  };
 
   // ポップアップは 3.5 秒で自動的に閉じる。
   useEffect(() => {
@@ -440,6 +519,9 @@ export function KidsPortal({ children, inventory }: Props) {
       </div>
 
       {popup && <GachaPopup popup={popup} onClose={() => setPopup(null)} />}
+      {activeBonus && (
+        <BonusCelebrationModal bonus={activeBonus} onAck={handleAckBonus} />
+      )}
     </main>
   );
 }
@@ -523,6 +605,179 @@ function GachaPopup({
             className="mt-6 rounded-full bg-fuchsia-500 px-6 py-2 text-sm font-extrabold text-white shadow transition hover:brightness-110"
           >
             やったー！
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ───────────── 特大達成ボーナス祝賀モーダル ─────────────
+// canvas-confetti は SSR で document を触る可能性があるため動的 import。
+function BonusCelebrationModal({
+  bonus,
+  onAck,
+}: {
+  bonus: BonusNotification;
+  onAck: () => void;
+}) {
+  useEffect(() => {
+    let cancelled = false;
+    let timers: ReturnType<typeof setTimeout>[] = [];
+    (async () => {
+      const mod = await import("canvas-confetti");
+      const confetti = mod.default;
+      if (cancelled) return;
+
+      // パステル調のカラーパレット。
+      const palette = [
+        "#fda4af", // rose-300
+        "#fcd34d", // amber-300
+        "#fde68a", // amber-200
+        "#a7f3d0", // emerald-200
+        "#bae6fd", // sky-200
+        "#ddd6fe", // violet-200
+        "#fbcfe8", // pink-200
+        "#fef08a", // yellow-200
+      ];
+
+      // メインの大噴射
+      confetti({
+        particleCount: 220,
+        spread: 110,
+        startVelocity: 55,
+        origin: { x: 0.5, y: 0.5 },
+        colors: palette,
+        scalar: 1.2,
+        zIndex: 9999,
+      });
+
+      // 左右からのサイドキャノン
+      timers.push(
+        setTimeout(() => {
+          confetti({
+            particleCount: 120,
+            angle: 60,
+            spread: 70,
+            origin: { x: 0, y: 0.7 },
+            colors: palette,
+            zIndex: 9999,
+          });
+        }, 180),
+      );
+      timers.push(
+        setTimeout(() => {
+          confetti({
+            particleCount: 120,
+            angle: 120,
+            spread: 70,
+            origin: { x: 1, y: 0.7 },
+            colors: palette,
+            zIndex: 9999,
+          });
+        }, 360),
+      );
+
+      // 余韻バースト（2秒間ぱらぱら）
+      const end = Date.now() + 2000;
+      const rain = () => {
+        if (cancelled) return;
+        confetti({
+          particleCount: 14,
+          startVelocity: 25,
+          spread: 360,
+          ticks: 90,
+          origin: {
+            x: Math.random(),
+            y: Math.random() * 0.4,
+          },
+          colors: palette,
+          scalar: 0.9,
+          zIndex: 9999,
+        });
+        if (Date.now() < end) {
+          timers.push(setTimeout(rain, 220));
+        }
+      };
+      rain();
+    })();
+
+    return () => {
+      cancelled = true;
+      timers.forEach((t) => clearTimeout(t));
+    };
+  }, [bonus.id]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-live="assertive"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-gradient-to-br from-pink-300/40 via-amber-200/40 to-sky-300/40 backdrop-blur-md"
+    >
+      {/* 背景のぐるぐる装飾 */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -top-10 -left-10 select-none text-[14rem] opacity-30 blur-[1px] animate-pulse"
+      >
+        ✨
+      </span>
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -bottom-12 -right-12 select-none text-[14rem] opacity-30 blur-[1px] animate-pulse"
+      >
+        🌟
+      </span>
+
+      <div className="relative mx-4 w-full max-w-lg rounded-[2.25rem] bg-gradient-to-br from-yellow-200 via-pink-200 to-sky-200 p-1 shadow-[0_30px_80px_rgba(244,114,182,0.45)]">
+        <div className="rounded-[2rem] bg-white/95 px-6 py-10 text-center">
+          <p className="text-sm font-extrabold tracking-[0.4em] text-fuchsia-500 animate-pulse">
+            ✨ おしらせ ✨
+          </p>
+
+          <div className="relative mt-5 flex items-center justify-center">
+            <span
+              aria-hidden
+              className="absolute text-[10rem] opacity-20 blur-md"
+            >
+              🌟
+            </span>
+            <span
+              aria-hidden
+              className="relative text-9xl drop-shadow-[0_8px_20px_rgba(251,191,36,0.5)] animate-bounce"
+            >
+              🌟
+            </span>
+          </div>
+
+          <h1 className="mt-4 bg-gradient-to-r from-fuchsia-600 via-rose-500 to-amber-500 bg-clip-text text-3xl font-black leading-tight text-transparent sm:text-4xl">
+            {bonus.reason}
+          </h1>
+          <p className="mt-2 text-2xl font-extrabold text-rose-500">
+            たっせい おめでとう！！
+          </p>
+
+          <div className="mt-6 inline-flex items-baseline gap-2 rounded-3xl bg-gradient-to-br from-amber-200 to-yellow-300 px-6 py-3 shadow-inner ring-2 ring-amber-300">
+            <span className="font-mono text-5xl font-black tracking-tight text-amber-900 sm:text-6xl">
+              {bonus.coinAmount.toLocaleString()}
+            </span>
+            <span className="text-xl font-extrabold text-amber-800">
+              コイン
+            </span>
+            <span className="text-3xl" aria-hidden>
+              🪙
+            </span>
+          </div>
+          <p className="mt-3 text-base font-extrabold text-fuchsia-500">
+            ゲット！
+          </p>
+
+          <button
+            type="button"
+            onClick={onAck}
+            className="mt-8 w-full rounded-full bg-gradient-to-r from-fuchsia-500 via-rose-500 to-amber-500 px-8 py-4 text-xl font-black text-white shadow-lg transition hover:brightness-110 active:scale-95"
+          >
+            ありがとう！
           </button>
         </div>
       </div>

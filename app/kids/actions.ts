@@ -415,3 +415,53 @@ export async function craftItem(recipeId: string): Promise<CraftResult> {
     };
   }
 }
+
+// ─────────────────────────────────────────────
+// 特大達成ボーナス通知（祝賀演出用）の読み出し / 既読化。
+// ─────────────────────────────────────────────
+
+export type BonusNotificationDTO = {
+  id: string;
+  userId: string;
+  reason: string;
+  coinAmount: number;
+  createdAt: string; // ISO
+};
+
+export async function getUnreadBonusNotifications(
+  userId?: string,
+): Promise<BonusNotificationDTO[]> {
+  const rows = await prisma.specialBonusNotification.findMany({
+    where: {
+      isRead: false,
+      ...(userId ? { userId } : {}),
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    userId: r.userId,
+    reason: r.reason,
+    coinAmount: r.coinAmount,
+    createdAt: r.createdAt.toISOString(),
+  }));
+}
+
+export async function markBonusRead(
+  notificationId: string,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    // updateMany + where { isRead: false } で「既読じゃないものだけ既読化」。
+    // 既に既読化済みなら count=0 で OK 扱い。
+    await prisma.specialBonusNotification.updateMany({
+      where: { id: notificationId, isRead: false },
+      data: { isRead: true },
+    });
+    revalidatePath("/kids");
+    revalidatePath("/bank");
+    return { success: true };
+  } catch (err) {
+    console.error("markBonusRead failed:", err);
+    return { success: false, error: "既読化に しっぱい" };
+  }
+}

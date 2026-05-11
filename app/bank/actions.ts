@@ -60,10 +60,12 @@ export async function applyPenalty(userId: string, reason?: string) {
   revalidatePath("/bank");
 }
 
-export async function giveBonus(
+// 特大達成ボーナス：コイン加算 + CoinTransaction 履歴 + 未読の SpecialBonusNotification を
+// 1トランザクションで作成する。/kids 側はこの通知を見つけたら祝賀演出を出す。
+export async function sendSpecialBonus(
   userId: string,
-  amount: number,
   reason: string,
+  amount: number,
 ) {
   await ensureChild(userId);
   if (!Number.isInteger(amount) || amount < BONUS_MIN || amount > BONUS_MAX) {
@@ -71,7 +73,8 @@ export async function giveBonus(
       `ボーナス額は ${BONUS_MIN}〜${BONUS_MAX} コインの範囲で指定してください`,
     );
   }
-  if (!reason || reason.trim().length === 0) {
+  const trimmed = reason?.trim();
+  if (!trimmed) {
     throw new Error("達成内容（reason）は必須です");
   }
   await prisma.$transaction([
@@ -80,8 +83,18 @@ export async function giveBonus(
       data: { coinBalance: { increment: amount } },
     }),
     prisma.coinTransaction.create({
-      data: { userId, amount, kind: "BONUS", reason: reason.trim() },
+      data: { userId, amount, kind: "BONUS", reason: trimmed },
+    }),
+    prisma.specialBonusNotification.create({
+      data: {
+        userId,
+        reason: trimmed,
+        coinAmount: amount,
+        isRead: false,
+      },
     }),
   ]);
   revalidatePath("/bank");
+  revalidatePath("/kids");
 }
+

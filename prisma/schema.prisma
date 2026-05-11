@@ -52,9 +52,10 @@ model User {
   coinBalance       Int                @default(0) @map("coin_balance")
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")
-  transactions      CoinTransaction[]
-  gachaTransactions GachaTransaction[]
-  caughtAnimals     CaughtAnimal[]
+  transactions       CoinTransaction[]
+  gachaTransactions  GachaTransaction[]
+  caughtAnimals      CaughtAnimal[]
+  bonusNotifications SpecialBonusNotification[]
 
   @@map("users")
 }
@@ -137,4 +138,20 @@ model CaughtAnimal {
   @@index([caughtByUserId])
   @@index([caughtAt])
   @@map("caught_animals")
+}
+
+// 特大達成ボーナス通知：親が送ったタイミングで未読(false)で作成され、
+// 子供が /kids 画面で受け取って祝賀演出を出したら is_read=true に更新する。
+model SpecialBonusNotification {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reason     String
+  coinAmount Int      @map("coin_amount")
+  isRead     Boolean  @default(false) @map("is_read")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+  @@map("special_bonus_notifications")
 }

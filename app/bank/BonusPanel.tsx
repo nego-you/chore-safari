@@ -1,11 +1,11 @@
 "use client";
 
 // 🌟 特大達成ボーナスを送るパネル。
-// 達成内容（テキスト）と 500〜5000 コインのスライダを入力できる UI 枠。
-// サーバ側 (giveBonus) はすでに動くが、まずは UI 枠としてここに用意してある。
+// 達成内容（テキスト）と 500〜5000 コインのスライダを入力できる UI。
+// 送信時に sendSpecialBonus を呼び、コイン加算 + 通知作成までを一括で行う。
 
 import { useState, useTransition } from "react";
-import { giveBonus } from "./actions";
+import { sendSpecialBonus } from "./actions";
 
 const MIN = 500;
 const MAX = 5000;
@@ -46,8 +46,10 @@ export function BonusPanel({ children }: Props) {
     startTransition(async () => {
       try {
         const name = children.find((c) => c.id === targetId)?.name ?? "";
-        await giveBonus(targetId, amount, reason.trim());
-        setSuccess(`🌟 ${name} に ${amount} コインのボーナスを贈りました！`);
+        await sendSpecialBonus(targetId, reason.trim(), amount);
+        setSuccess(
+          `🌟 ${name} に ${amount} コインのボーナスを贈りました！（子供ポータルで通知が出ます）`,
+        );
         setReason("");
       } catch (e) {
         setError(e instanceof Error ? e.message : "ボーナス付与に失敗しました");
