@@ -6,6 +6,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { findRecipe } from "@/lib/recipes";
 import { GACHA_COST } from "./config";
 
 
@@ -303,6 +304,114 @@ export async function exploreSafari(
     return {
       success: false,
       error: "たんけんに しっぱい。もう いちど ためしてね",
+    };
+  }
+}
+
+// ─────────────────────────────────────────────
+// クラフト：BOM レシピに従い素材を消費して完成品を産む。
+// すべて prisma.$transaction で完全アトミック。
+// ─────────────────────────────────────────────
+
+export type CraftResult =
+  | {
+      success: true;
+      product: {
+        itemId: string;
+        itemName: string;
+        itemType: "FOOD" | "TRAP_PART";
+        // クラフト後のこの完成品の倉庫内総数（楽観的更新で利用）
+        totalQuantity: number;
+      };
+      // 消費後の素材の最新数量
+      updatedInventory: Array<{ itemId: string; quantity: number }>;
+    }
+  | { success: false; error: string };
+
+export async function craftItem(recipeId: string): Promise<CraftResult> {
+  const recipe = findRecipe(recipeId);
+  if (!recipe) {
+    return { success: false, error: "レシピが みつかりません" };
+  }
+
+  // 事前チェック：在庫が足りるか（早期 return でユーザに親切な文言を返す）。
+  const itemIds = recipe.materials.map((m) => m.itemId);
+  const currentMaterials = await prisma.sharedInventoryItem.findMany({
+    where: { itemId: { in: itemIds } },
+  });
+  const haveMap = new Map(currentMaterials.map((m) => [m.itemId, m.quantity]));
+  for (const need of recipe.materials) {
+    const have = haveMap.get(need.itemId) ?? 0;
+    if (have < need.quantity) {
+      return {
+        success: false,
+        error: `${need.itemName}が たりません（ひつよう: ${need.quantity} / いま: ${have}）`,
+      };
+    }
+  }
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      // 全素材を条件付き updateMany で減らす。1つでも条件不一致なら throw して全 rollback。
+      for (const need of recipe.materials) {
+        const upd = await tx.sharedInventoryItem.updateMany({
+          where: {
+            itemId: need.itemId,
+            quantity: { gte: need.quantity },
+          },
+          data: { quantity: { decrement: need.quantity } },
+        });
+        if (upd.count !== 1) {
+          throw new Error(`OUT_OF_${need.itemId}`);
+        }
+      }
+
+      // 完成品を upsert（既にあれば increment、なければ create）。
+      const product = await tx.sharedInventoryItem.upsert({
+        where: { itemId: recipe.resultItemId },
+        update: { quantity: { increment: recipe.resultQuantity } },
+        create: {
+          itemId: recipe.resultItemId,
+          itemName: recipe.resultItemName,
+          itemType: recipe.resultItemType,
+          quantity: recipe.resultQuantity,
+        },
+      });
+
+      return product;
+    });
+
+    revalidatePath("/kids");
+    revalidatePath("/kids/craft");
+
+    return {
+      success: true,
+      product: {
+        itemId: result.itemId,
+        itemName: result.itemName,
+        itemType: result.itemType as "FOOD" | "TRAP_PART",
+        totalQuantity: result.quantity,
+      },
+      updatedInventory: recipe.materials.map((m) => {
+        const before = haveMap.get(m.itemId) ?? 0;
+        return { itemId: m.itemId, quantity: before - m.quantity };
+      }),
+    };
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith("OUT_OF_")) {
+      const missingId = err.message.replace("OUT_OF_", "");
+      const need = recipe.materials.find((m) => m.itemId === missingId);
+      return {
+        success: false,
+        error: need
+          ? `${need.itemName}が たりません`
+          : "そざいが たりません",
+      };
+    }
+    console.error("craftItem failed:", err);
+    return {
+      success: false,
+      error: "クラフトに しっぱい。もういちど ためしてね",
     };
   }
 }

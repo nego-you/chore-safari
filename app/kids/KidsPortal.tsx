@@ -72,6 +72,11 @@ const ITEM_EMOJI: Record<string, string> = {
   rope: "🪢",
   wood: "🪵",
   net: "🕸️",
+  // クラフト完成品
+  sturdy_trap: "🪤",
+  premium_food: "🍱",
+  hunter_net: "🥅",
+  mixed_food: "🍲",
 };
 
 function NameRuby({ name }: { name: string }) {
@@ -300,6 +305,25 @@ export function KidsPortal({ children, inventory }: Props) {
               </p>
             </div>
             <span className="text-2xl text-rose-600" aria-hidden>→</span>
+          </div>
+        </Link>
+
+        {/* アイテムを つくる */}
+        <Link
+          href="/kids/craft"
+          className="block rounded-3xl bg-gradient-to-br from-violet-300 via-pink-200 to-amber-200 p-1 shadow-xl transition hover:brightness-110 active:scale-[0.99]"
+        >
+          <div className="flex items-center gap-4 rounded-[1.4rem] bg-white/90 px-5 py-4 backdrop-blur">
+            <span className="text-5xl" aria-hidden>🛠️✨🧰</span>
+            <div className="flex-1">
+              <p className="text-xl font-black text-violet-700">
+                アイテムを つくる！
+              </p>
+              <p className="text-xs text-violet-600/80">
+                そざいを くみあわせて あたらしい どうぐを クラフト
+              </p>
+            </div>
+            <span className="text-2xl text-violet-600" aria-hidden>→</span>
           </div>
         </Link>
 
