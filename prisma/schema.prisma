@@ -1,5 +1,5 @@
 // Chore Safari - Prisma schema
-// PostgreSQL backend. Children のコイン残高と取引履歴を管理。
+// PostgreSQL backend. コイン残高・取引履歴・共有インベントリ・ガチャ履歴・どうぶつ図鑑を管理。
 
 generator client {
   provider = "prisma-client-js"
@@ -21,21 +21,40 @@ enum CoinTxKind {
   CHORE
   PENALTY
   BONUS
+  GACHA
   ADJUSTMENT
 
   @@map("coin_tx_kind")
 }
 
+enum ItemType {
+  FOOD       // エサ
+  TRAP_PART  // 罠パーツ
+
+  @@map("item_type")
+}
+
+enum Rarity {
+  COMMON
+  RARE
+  EPIC
+  LEGENDARY
+
+  @@map("rarity")
+}
+
 model User {
-  id           String            @id @default(cuid())
-  name         String
+  id                String             @id @default(cuid())
+  name              String
   // 年齢は保存せず、表示時にこの birth_date から動的に算出する
-  birthDate    DateTime          @map("birth_date") @db.Date
-  role         UserRole          @default(CHILD)
-  coinBalance  Int               @default(0) @map("coin_balance")
-  createdAt    DateTime          @default(now()) @map("created_at")
-  updatedAt    DateTime          @updatedAt @map("updated_at")
-  transactions CoinTransaction[]
+  birthDate         DateTime           @map("birth_date") @db.Date
+  role              UserRole           @default(CHILD)
+  coinBalance       Int                @default(0) @map("coin_balance")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  transactions      CoinTransaction[]
+  gachaTransactions GachaTransaction[]
+  caughtAnimals     CaughtAnimal[]
 
   @@map("users")
 }
@@ -51,4 +70,71 @@ model CoinTransaction {
 
   @@index([userId])
   @@map("coin_transactions")
+}
+
+// 家族共有のインベントリ（倉庫）。アイテムごとに1行を持ち、quantity で個数を管理する。
+model SharedInventoryItem {
+  id        String   @id @default(cuid())
+  itemId    String   @unique @map("item_id")
+  itemName  String   @map("item_name")
+  quantity  Int      @default(0)
+  itemType  ItemType @map("item_type")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([itemType])
+  @@map("shared_inventory")
+}
+
+// ガチャ履歴：誰がいつ何を引いたかを残す。
+model GachaTransaction {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  costAmount Int      @map("cost_amount")
+  itemId     String   @map("item_id")
+  itemName   String   @map("item_name")
+  itemType   ItemType @map("item_type")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("gacha_transactions")
+}
+
+// 図鑑マスタ：捕獲可能などうぶつの定義。
+model Animal {
+  id          String         @id @default(cuid())
+  // ロジック上の識別子（'lion', 'rabbit', 'trex' など）。重複不可。
+  animalId    String         @unique @map("animal_id")
+  name        String
+  rarity      Rarity
+  description String
+  imageUrl    String?        @map("image_url")
+  // 画像が無いときの表示用フォールバック絵文字。
+  emoji       String         @default("🐾")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  catches     CaughtAnimal[]
+
+  @@index([rarity])
+  @@map("animals")
+}
+
+// 捕獲履歴：かぞくでひとつの図鑑を共有する。
+model CaughtAnimal {
+  id             String   @id @default(cuid())
+  animalId       String   @map("animal_id")
+  animal         Animal   @relation(fields: [animalId], references: [id], onDelete: Cascade)
+  caughtByUserId String   @map("caught_by_user_id")
+  caughtBy       User     @relation(fields: [caughtByUserId], references: [id], onDelete: Cascade)
+  // どの罠とエサで捕まえたかの記録（後で組み合わせ確率を分析できるように残しておく）。
+  trapItemId     String?  @map("trap_item_id")
+  foodItemId     String?  @map("food_item_id")
+  caughtAt       DateTime @default(now()) @map("caught_at")
+
+  @@index([animalId])
+  @@index([caughtByUserId])
+  @@index([caughtAt])
+  @@map("caught_animals")
 }

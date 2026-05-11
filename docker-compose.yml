@@ -36,6 +36,11 @@ services:
       NODE_ENV: development
       # コンテナ間通信用の DATABASE_URL。ホスト側 .env の値（localhost:5433）より優先される。
       DATABASE_URL: postgresql://chore:chore@db:5432/chore_safari?schema=public
+      # Gemini（Google Generative AI）の API キー。ホスト側 .env から渡す。
+      # 未設定時はレース実況 API がエラーを返す。
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # 使用する Gemini モデル名。未設定なら route.ts の既定値（gemini-2.5-flash）。
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       # ホットリロード用ポーリング（compose 側でも明示）。
       WATCHPACK_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"

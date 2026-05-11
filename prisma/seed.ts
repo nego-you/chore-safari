@@ -1,5 +1,4 @@
-// 子供3人の初期データを投入するシードスクリプト。
-// 名前と生年月日（仮）、コイン残高は 0 で開始。
+// 子供 + 共有インベントリ + どうぶつ図鑑マスタの初期データ投入。
 
 import { PrismaClient } from "@prisma/client";
 
@@ -17,8 +16,58 @@ const CHILDREN: ChildSeed[] = [
   { name: "叶泰", birthDate: "2023-12-19" },
 ];
 
+type InventorySeed = {
+  itemId: string;
+  itemName: string;
+  itemType: "FOOD" | "TRAP_PART";
+  quantity: number;
+};
+
+// 共有倉庫の初期アイテム。
+const INVENTORY: InventorySeed[] = [
+  // エサ
+  { itemId: "meat", itemName: "おにく", itemType: "FOOD", quantity: 1 },
+  { itemId: "fish", itemName: "おさかな", itemType: "FOOD", quantity: 0 },
+  { itemId: "berry", itemName: "きのみ", itemType: "FOOD", quantity: 0 },
+  // 罠パーツ
+  { itemId: "rope", itemName: "ロープ", itemType: "TRAP_PART", quantity: 3 },
+  { itemId: "wood", itemName: "きのいた", itemType: "TRAP_PART", quantity: 0 },
+  { itemId: "net", itemName: "あみ", itemType: "TRAP_PART", quantity: 0 },
+];
+
+type AnimalSeed = {
+  animalId: string;
+  name: string;
+  emoji: string;
+  rarity: "COMMON" | "RARE" | "EPIC" | "LEGENDARY";
+  description: string;
+};
+
+// 図鑑マスタ。rarity ごとに出やすさを exploreSafari 側で weight 設定する。
+const ANIMALS: AnimalSeed[] = [
+  // COMMON（よく でる）
+  { animalId: "rabbit", name: "うさぎ", emoji: "🐰", rarity: "COMMON", description: "もりで いちばん おおく いる ふわふわさん" },
+  { animalId: "squirrel", name: "りす", emoji: "🐿️", rarity: "COMMON", description: "きのみを ほっぺに ためる めいじん" },
+  { animalId: "deer", name: "しか", emoji: "🦌", rarity: "COMMON", description: "おおきな つのが りっぱな もりの しんし" },
+  { animalId: "boar", name: "いのしし", emoji: "🐗", rarity: "COMMON", description: "まっしぐらに はしる ちからもち" },
+  // RARE（ときどき でる）
+  { animalId: "fox", name: "きつね", emoji: "🦊", rarity: "RARE", description: "あしが はやくて つかまえにくい いたずらっこ" },
+  { animalId: "wolf", name: "おおかみ", emoji: "🐺", rarity: "RARE", description: "ぐんれで くらす しんけんな ハンター" },
+  { animalId: "bear", name: "くま", emoji: "🐻", rarity: "RARE", description: "ハチミツが だいすき。とっても パワフル" },
+  // EPIC（たまに でる）
+  { animalId: "lion", name: "ライオン", emoji: "🦁", rarity: "EPIC", description: "ひゃくじゅうの おう。たてがみが かっこいい" },
+  { animalId: "elephant", name: "ぞう", emoji: "🐘", rarity: "EPIC", description: "おおきな はなが じざいに うごく ちょうろう" },
+  { animalId: "tiger", name: "とら", emoji: "🐅", rarity: "EPIC", description: "しまもようの ハンター。およぐのも じょうず" },
+  // LEGENDARY（めったに でない！）
+  { animalId: "trex", name: "ティラノサウルス", emoji: "🦖", rarity: "LEGENDARY", description: "でんせつの だいきょうりゅう！" },
+  { animalId: "dragon", name: "ドラゴン", emoji: "🐉", rarity: "LEGENDARY", description: "そらを とぶ でんせつの いきもの" },
+  { animalId: "unicorn", name: "ユニコーン", emoji: "🦄", rarity: "LEGENDARY", description: "つのが きらきら かがやく ましんびじゅう" },
+];
+
 async function main() {
-  // 既存ユーザーをクリアしてからシード（開発用途）。
+  // 既存ユーザー・履歴・捕獲記録をクリアしてからシード（開発用途）。
+  await prisma.caughtAnimal.deleteMany();
+  await prisma.gachaTransaction.deleteMany();
   await prisma.coinTransaction.deleteMany();
   await prisma.user.deleteMany();
 
@@ -32,6 +81,48 @@ async function main() {
       },
     });
     console.log(`Seeded child: ${created.name} (${created.id})`);
+  }
+
+  for (const item of INVENTORY) {
+    const upserted = await prisma.sharedInventoryItem.upsert({
+      where: { itemId: item.itemId },
+      update: {
+        itemName: item.itemName,
+        itemType: item.itemType,
+        quantity: item.quantity,
+      },
+      create: {
+        itemId: item.itemId,
+        itemName: item.itemName,
+        itemType: item.itemType,
+        quantity: item.quantity,
+      },
+    });
+    console.log(
+      `Seeded item: ${upserted.itemName} x${upserted.quantity} (${upserted.itemType})`,
+    );
+  }
+
+  for (const animal of ANIMALS) {
+    const upserted = await prisma.animal.upsert({
+      where: { animalId: animal.animalId },
+      update: {
+        name: animal.name,
+        emoji: animal.emoji,
+        rarity: animal.rarity,
+        description: animal.description,
+      },
+      create: {
+        animalId: animal.animalId,
+        name: animal.name,
+        emoji: animal.emoji,
+        rarity: animal.rarity,
+        description: animal.description,
+      },
+    });
+    console.log(
+      `Seeded animal: ${upserted.emoji} ${upserted.name} (${upserted.rarity})`,
+    );
   }
 }
 

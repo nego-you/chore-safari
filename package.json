@@ -19,7 +19,9 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@ai-sdk/google": "^1.2.22",
     "@prisma/client": "^6.2.1",
+    "ai": "^4.3.19",
     "next": "16.2.6",
     "react": "19.2.4",
     "react-dom": "19.2.4"
