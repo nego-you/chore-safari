@@ -43,6 +43,23 @@ type AnimalSeed = {
   description: string;
 };
 
+type QuestSeed = {
+  title: string;
+  description?: string;
+  rewardCoins: number;
+  emoji: string;
+};
+
+// 親が承認するクエスト一覧。子供3人共通で使えるイメージ。
+const QUESTS: QuestSeed[] = [
+  { title: "おふろそうじ", description: "おふろを ピカピカに してね", rewardCoins: 50, emoji: "🛁" },
+  { title: "ほんを1さつよむ", description: "さいごまで よめたら しんこく", rewardCoins: 30, emoji: "📖" },
+  { title: "あさ4時半におきる", description: "アラームを じぶんで とめて おきよう", rewardCoins: 100, emoji: "⏰" },
+  { title: "おもちゃをかたづける", description: "リビングの おもちゃを ぜんぶ もとに もどす", rewardCoins: 20, emoji: "🧸" },
+  { title: "おはなみずやり", description: "ベランダの おはなに みずを あげる", rewardCoins: 15, emoji: "🌱" },
+  { title: "テストでまんてん", description: "がっこうの テスト 100てん", rewardCoins: 300, emoji: "💯" },
+];
+
 // 図鑑マスタ。rarity ごとに出やすさを exploreSafari 側で weight 設定する。
 const ANIMALS: AnimalSeed[] = [
   // COMMON（よく でる）
@@ -66,6 +83,8 @@ const ANIMALS: AnimalSeed[] = [
 
 async function main() {
   // 既存ユーザー・履歴・捕獲記録をクリアしてからシード（開発用途）。
+  await prisma.questSubmission.deleteMany();
+  await prisma.specialBonusNotification.deleteMany();
   await prisma.caughtAnimal.deleteMany();
   await prisma.gachaTransaction.deleteMany();
   await prisma.coinTransaction.deleteMany();
@@ -122,6 +141,33 @@ async function main() {
     });
     console.log(
       `Seeded animal: ${upserted.emoji} ${upserted.name} (${upserted.rarity})`,
+    );
+  }
+
+  // クエスト：title をキーに upsert（同じ title が既にあれば報酬と説明を更新）。
+  for (const quest of QUESTS) {
+    // title に unique 制約は無いが、開発シード用途では title 一致で識別する。
+    const existing = await prisma.quest.findFirst({ where: { title: quest.title } });
+    const upserted = existing
+      ? await prisma.quest.update({
+          where: { id: existing.id },
+          data: {
+            description: quest.description ?? null,
+            rewardCoins: quest.rewardCoins,
+            emoji: quest.emoji,
+            isActive: true,
+          },
+        })
+      : await prisma.quest.create({
+          data: {
+            title: quest.title,
+            description: quest.description ?? null,
+            rewardCoins: quest.rewardCoins,
+            emoji: quest.emoji,
+          },
+        });
+    console.log(
+      `Seeded quest: ${upserted.emoji} ${upserted.title} (+${upserted.rewardCoins})`,
     );
   }
 }

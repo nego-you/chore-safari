@@ -43,6 +43,14 @@ enum Rarity {
   @@map("rarity")
 }
 
+enum QuestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@map("quest_status")
+}
+
 model User {
   id                String             @id @default(cuid())
   name              String
@@ -56,6 +64,7 @@ model User {
   gachaTransactions  GachaTransaction[]
   caughtAnimals      CaughtAnimal[]
   bonusNotifications SpecialBonusNotification[]
+  questSubmissions   QuestSubmission[]
 
   @@map("users")
 }
@@ -154,4 +163,40 @@ model SpecialBonusNotification {
   @@index([userId, isRead])
   @@index([createdAt])
   @@map("special_bonus_notifications")
+}
+
+// クエストマスター：親があらかじめ定義する「やってほしいこと」。
+model Quest {
+  id          String            @id @default(cuid())
+  title       String
+  description String?
+  rewardCoins Int               @map("reward_coins")
+  emoji       String            @default("⭐")
+  // 一覧から非表示にしたい時に使う（廃止クエスト）。
+  isActive    Boolean           @default(true) @map("is_active")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+  submissions QuestSubmission[]
+
+  @@map("quests")
+}
+
+// クエスト申請：子供が「やったよ！」と申告すると PENDING で作られる。
+// 親が承認すると APPROVED + コイン付与、差し戻すと REJECTED。
+// 同じ (user, quest) でも複数回作れる（日課クエスト対応）。
+model QuestSubmission {
+  id          String      @id @default(cuid())
+  questId     String      @map("quest_id")
+  quest       Quest       @relation(fields: [questId], references: [id], onDelete: Cascade)
+  userId      String      @map("user_id")
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status      QuestStatus @default(PENDING)
+  submittedAt DateTime    @default(now()) @map("submitted_at")
+  reviewedAt  DateTime?   @map("reviewed_at")
+
+  @@index([status])
+  @@index([userId, status])
+  @@index([questId])
+  @@index([submittedAt])
+  @@map("quest_submissions")
 }

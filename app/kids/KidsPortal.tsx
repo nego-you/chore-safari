@@ -713,7 +713,10 @@ function BonusCelebrationModal({
       role="dialog"
       aria-modal="true"
       aria-live="assertive"
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-gradient-to-br from-pink-300/40 via-amber-200/40 to-sky-300/40 backdrop-blur-md"
+      // 背景タップでも閉じられるように、バックドロップに onAck を載せておく。
+      // （内側のカードへの伝播は stopPropagation で止める）
+      onClick={onAck}
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-gradient-to-br from-pink-300/40 via-amber-200/40 to-sky-300/40 backdrop-blur-md touch-manipulation"
     >
       {/* 背景のぐるぐる装飾 */}
       <span
@@ -729,7 +732,10 @@ function BonusCelebrationModal({
         🌟
       </span>
 
-      <div className="relative mx-4 w-full max-w-lg rounded-[2.25rem] bg-gradient-to-br from-yellow-200 via-pink-200 to-sky-200 p-1 shadow-[0_30px_80px_rgba(244,114,182,0.45)]">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative mx-4 w-full max-w-lg rounded-[2.25rem] bg-gradient-to-br from-yellow-200 via-pink-200 to-sky-200 p-1 shadow-[0_30px_80px_rgba(244,114,182,0.45)]"
+      >
         <div className="rounded-[2rem] bg-white/95 px-6 py-10 text-center">
           <p className="text-sm font-extrabold tracking-[0.4em] text-fuchsia-500 animate-pulse">
             ✨ おしらせ ✨
