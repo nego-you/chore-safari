@@ -14,7 +14,8 @@ COPY package.json package-lock.json ./
 COPY prisma ./prisma
 
 # postinstall の prisma generate もここで走る。
-RUN npm ci
+# 開発用なので lock が古くてもインストールできるよう install にフォールバック。
+RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 
 # ソース全体（実運用ではこの中身は compose のバインドマウントで上書きされる）。
 COPY . .
@@ -27,6 +28,6 @@ ENV CHOKIDAR_USEPOLLING=true
 
 EXPOSE 3000
 
-# 起動時に prisma generate を再実行してから dev サーバを起動。
+# 起動時に prisma generate を再実行 + PWA アイコンが無ければ生成 → dev サーバを起動。
 # -H 0.0.0.0 はコンテナ外（host や他コンテナ）からアクセスできるようにするため。
-CMD ["sh", "-c", "npx prisma generate && npx next dev -H 0.0.0.0 -p 3000"]
+CMD ["sh", "-c", "npx prisma generate && (test -f public/icon-192x192.png || node scripts/generate-icons.mjs) && npx next dev -H 0.0.0.0 -p 3000"]

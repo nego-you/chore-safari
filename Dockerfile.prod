@@ -1,0 +1,48 @@
+# Chore Safari - Next.js 本番イメージ
+# Cloudflare Tunnel 経由で家族に提供する側はこちらを使う。
+# - HMR / WebSocket 不要（dev 用 web コンテナとは別物）
+# - 起動時に prisma migrate deploy で未適用マイグレーションを自動適用
+# - next build 済みなので軽くて速い
+
+# ───── deps stage：依存解決のみ（ビルドキャッシュ効率化用） ─────
+FROM node:22-alpine AS deps
+WORKDIR /app
+RUN apk add --no-cache libc6-compat openssl
+COPY package.json package-lock.json ./
+COPY prisma ./prisma
+# 開発中はロックファイルが追従していないことが多いので、まず ci を試し、
+# 失敗した場合は install にフォールバックして lock を再生成する。
+# postinstall で prisma generate が走る。
+RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+# ───── builder stage：本番バンドルをビルド ─────
+FROM node:22-alpine AS builder
+WORKDIR /app
+RUN apk add --no-cache libc6-compat openssl
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+ENV NEXT_TELEMETRY_DISABLED=1
+# Page はすべて force-dynamic 指定なのでビルド時に DB アクセスは不要。
+# PWA アイコン PNG は public/icon.svg からビルド時に生成する。
+RUN node scripts/generate-icons.mjs && npx prisma generate && npx next build
+
+# ───── runner stage：実行用の薄いイメージ ─────
+FROM node:22-alpine AS runner
+WORKDIR /app
+RUN apk add --no-cache libc6-compat openssl
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
+
+COPY --from=builder /app/package.json /app/package-lock.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/prisma ./prisma
+
+EXPOSE 3000
+
+# 未適用マイグレーションを当ててから next start。
+CMD ["sh", "-c", "npx prisma migrate deploy && npx next start -H 0.0.0.0 -p 3000"]

@@ -19,34 +19,46 @@ services:
       timeout: 5s
       retries: 10
 
+  # ローカル開発用（HMR・ホットリロード）。手元での編集はこちら。
   web:
     build:
       context: .
       dockerfile: Dockerfile.dev
     container_name: chore-safari-web
     restart: unless-stopped
-    # ソースをバインドマウントしてホットリロード。
-    # node_modules と .next は匿名 volume にして、ホスト側の中身で
-    # コンテナ内の生成物（prisma client など）を上書きしないようにする。
     volumes:
       - .:/app
       - /app/node_modules
       - /app/.next
     environment:
       NODE_ENV: development
-      # コンテナ間通信用の DATABASE_URL。ホスト側 .env の値（localhost:5433）より優先される。
       DATABASE_URL: postgresql://chore:chore@db:5432/chore_safari?schema=public
-      # Gemini（Google Generative AI）の API キー。ホスト側 .env から渡す。
-      # 未設定時はレース実況 API がエラーを返す。
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      # 使用する Gemini モデル名。未設定なら route.ts の既定値（gemini-2.5-flash）。
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
-      # ホットリロード用ポーリング（compose 側でも明示）。
       WATCHPACK_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
     ports:
-      # 開発中はホストブラウザから直接叩けるようにも公開しておく。
       - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # 本番ビルド（next build 済み）。Cloudflare Tunnel からはこちらに繋ぐ。
+  # HMR の WebSocket が不要なので Cloudflare 経由でも安定して動く。
+  web-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: chore-safari-web-prod
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://chore:chore@db:5432/chore_safari?schema=public
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+    ports:
+      # ホストからの動作確認用（Cloudflare 越しではなく直接見たい時に使う）。
+      - "3001:3000"
     depends_on:
       db:
         condition: service_healthy
@@ -55,12 +67,10 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: chore-safari-tunnel
     restart: unless-stopped
-    # トークンは .env の CLOUDFLARE_TUNNEL_TOKEN から読み込む。
-    # ${...:?...} で未設定時は起動を拒否し、誤ってトークン無しで上げないようにする。
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN must be set in .env}
-    # 同じ compose ネットワーク上の web コンテナへ web:3000 で到達できる。
-    # Cloudflare ダッシュボード側の Public Hostname → Service URL を
-    # http://web:3000 に変更すること。
+    # 同一 compose ネットワーク上の web-prod:3000 にトンネル接続させる。
+    # Cloudflare Zero Trust ダッシュボードの Public Hostname → Service URL を
+    # http://web-prod:3000 に変更すること。
     depends_on:
-      web:
+      web-prod:
         condition: service_started

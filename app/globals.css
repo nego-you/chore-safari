@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fdf6e3;
+  --foreground: #2a2a2a;
 }
 
 @theme inline {
@@ -14,13 +14,40 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #1f1d18;
+    --foreground: #f5efe3;
   }
 }
 
+html,
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  /* PWA / iPad で「Web ページ感」を消すための仕上げ。 */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  /* スクロールバウンスやプルダウン更新を抑えてアプリらしく。 */
+  overscroll-behavior: none;
+  /* iOS Safari でホーム画面起動した時にノッチ周りを背景色で埋める。 */
+  background-color: var(--background);
+}
+
+/* 入力系は文字選択できないと不便なので例外的に許可。 */
+input,
+textarea,
+select,
+[contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/* iOS でフォーカス時に勝手にズームインしないよう、入力フォントは 16px 以上を確保。 */
+input,
+textarea,
+select {
+  font-size: 16px;
 }
