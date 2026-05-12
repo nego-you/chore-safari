@@ -98,3 +98,130 @@ export async function sendSpecialBonus(
   revalidatePath("/kids");
 }
 
+
+// ─────────────────────────────────────────────
+// クエスト検品（親の承認 / 差し戻し）
+// approveQuest: PENDING の申請を APPROVED に更新 + 報酬コイン加算 + 履歴記録
+// rejectQuest : PENDING の申請を REJECTED に更新（コインは動かない）
+// いずれも $transaction で、すでに APPROVED/REJECTED 済みの申請は二重処理しない。
+// ─────────────────────────────────────────────
+
+export type QuestReviewResult =
+  | {
+      success: true;
+      status: "APPROVED" | "REJECTED";
+      submissionId: string;
+      userId: string;
+      questTitle: string;
+      rewardCoins: number;
+      newCoinBalance?: number;
+    }
+  | { success: false; error: string };
+
+export async function approveQuest(
+  submissionId: string,
+): Promise<QuestReviewResult> {
+  // 事前読み込み：UI へ返す情報のために quest と user も取る。
+  const submission = await prisma.questSubmission.findUnique({
+    where: { id: submissionId },
+    include: { quest: true, user: true },
+  });
+  if (!submission) {
+    return { success: false, error: "申請が見つかりません" };
+  }
+  if (submission.status !== "PENDING") {
+    return { success: false, error: "すでに処理済みの申請です" };
+  }
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      // PENDING のものだけを APPROVED に。二重承認は count=0 で弾く。
+      const upd = await tx.questSubmission.updateMany({
+        where: { id: submissionId, status: "PENDING" },
+        data: { status: "APPROVED", reviewedAt: new Date() },
+      });
+      if (upd.count !== 1) {
+        throw new Error("ALREADY_PROCESSED");
+      }
+
+      // 報酬コイン加算
+      const updatedUser = await tx.user.update({
+        where: { id: submission.userId },
+        data: { coinBalance: { increment: submission.quest.rewardCoins } },
+      });
+
+      // コイン履歴に「クエスト完了報酬」として記録
+      await tx.coinTransaction.create({
+        data: {
+          userId: submission.userId,
+          amount: submission.quest.rewardCoins,
+          kind: "CHORE",
+          reason: `クエスト完了：${submission.quest.title}`,
+        },
+      });
+
+      return { newBalance: updatedUser.coinBalance };
+    });
+
+    revalidatePath("/bank");
+    revalidatePath("/kids");
+    revalidatePath("/kids/quests");
+
+    return {
+      success: true,
+      status: "APPROVED",
+      submissionId,
+      userId: submission.userId,
+      questTitle: submission.quest.title,
+      rewardCoins: submission.quest.rewardCoins,
+      newCoinBalance: result.newBalance,
+    };
+  } catch (err) {
+    if (err instanceof Error && err.message === "ALREADY_PROCESSED") {
+      return { success: false, error: "すでに処理済みの申請です" };
+    }
+    console.error("approveQuest failed:", err);
+    return { success: false, error: "承認に失敗しました" };
+  }
+}
+
+export async function rejectQuest(
+  submissionId: string,
+): Promise<QuestReviewResult> {
+  const submission = await prisma.questSubmission.findUnique({
+    where: { id: submissionId },
+    include: { quest: true },
+  });
+  if (!submission) {
+    return { success: false, error: "申請が見つかりません" };
+  }
+  if (submission.status !== "PENDING") {
+    return { success: false, error: "すでに処理済みの申請です" };
+  }
+
+  try {
+    const upd = await prisma.questSubmission.updateMany({
+      where: { id: submissionId, status: "PENDING" },
+      data: { status: "REJECTED", reviewedAt: new Date() },
+    });
+    if (upd.count !== 1) {
+      return { success: false, error: "すでに処理済みの申請です" };
+    }
+  } catch (err) {
+    console.error("rejectQuest failed:", err);
+    return { success: false, error: "差し戻しに失敗しました" };
+  }
+
+  revalidatePath("/bank");
+  revalidatePath("/kids");
+  revalidatePath("/kids/quests");
+
+  return {
+    success: true,
+    status: "REJECTED",
+    submissionId,
+    userId: submission.userId,
+    questTitle: submission.quest.title,
+    rewardCoins: submission.quest.rewardCoins,
+  };
+}

@@ -368,6 +368,25 @@ export function KidsPortal({
           </div>
         </Link>
 
+        {/* クエストに ちょうせん */}
+        <Link
+          href={`/kids/quests?kid=${selected.id}`}
+          className="block rounded-3xl bg-gradient-to-br from-lime-300 via-amber-200 to-pink-200 p-1 shadow-xl transition active:scale-[0.99]"
+        >
+          <div className="flex items-center gap-4 rounded-[1.4rem] bg-white/90 px-5 py-4 backdrop-blur">
+            <span className="text-5xl" aria-hidden>⭐🗺️⭐</span>
+            <div className="flex-1">
+              <p className="text-xl font-black text-emerald-700">
+                クエストに ちょうせん！
+              </p>
+              <p className="text-xs text-emerald-600/80">
+                おてつだいや がくしゅうで コインを ゲット
+              </p>
+            </div>
+            <span className="text-2xl text-emerald-600" aria-hidden>→</span>
+          </div>
+        </Link>
+
         {/* レース きじょうへ */}
         <Link
           href="/kids/race"

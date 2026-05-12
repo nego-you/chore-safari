@@ -6,17 +6,39 @@ import { calculateAge, formatBirthDate } from "@/lib/age";
 import { ChoreButton } from "./ChoreButton";
 import { PenaltyPanel } from "./PenaltyPanel";
 import { BonusPanel } from "./BonusPanel";
+import { QuestReviewPanel } from "./QuestReviewPanel";
 
 export const dynamic = "force-dynamic";
 
 export default async function BankPage() {
-  const children = await prisma.user.findMany({
-    where: { role: "CHILD" },
-    orderBy: { birthDate: "asc" },
-  });
+  const [children, pendingSubmissions] = await Promise.all([
+    prisma.user.findMany({
+      where: { role: "CHILD" },
+      orderBy: { birthDate: "asc" },
+    }),
+    prisma.questSubmission.findMany({
+      where: { status: "PENDING" },
+      orderBy: { submittedAt: "asc" },
+      include: {
+        quest: true,
+        user: { select: { id: true, name: true } },
+      },
+    }),
+  ]);
 
   const childOptions = children.map((c) => ({ id: c.id, name: c.name }));
   const totalBalance = children.reduce((sum, c) => sum + c.coinBalance, 0);
+
+  const reviewItems = pendingSubmissions.map((s) => ({
+    id: s.id,
+    questId: s.questId,
+    questTitle: s.quest.title,
+    questEmoji: s.quest.emoji,
+    rewardCoins: s.quest.rewardCoins,
+    userId: s.userId,
+    userName: s.user.name,
+    submittedAt: s.submittedAt.toISOString(),
+  }));
 
   return (
     <main className="mx-auto max-w-5xl space-y-10 px-4 py-10 text-slate-100">
@@ -123,6 +145,31 @@ export default async function BankPage() {
           </div>
         </div>
         <BonusPanel children={childOptions} />
+      </section>
+
+      {/* クエスト検品（承認待ち一覧） */}
+      <section
+        aria-labelledby="quest-review-heading"
+        className="rounded-2xl border border-sky-400/40 bg-gradient-to-br from-sky-950/60 to-slate-900/30 p-6 shadow-lg shadow-sky-900/20"
+      >
+        <div className="mb-4 flex items-center gap-3">
+          <span aria-hidden className="text-3xl">📥</span>
+          <div className="flex-1">
+            <h2
+              id="quest-review-heading"
+              className="text-2xl font-extrabold text-sky-100"
+            >
+              クエスト検品（承認待ち）
+            </h2>
+            <p className="text-sm text-sky-200/70">
+              子供から届いた「やったよ！」を確認して、承認 / 差し戻しを決めてください。
+            </p>
+          </div>
+          <span className="rounded-full border border-sky-300/40 px-2 py-0.5 text-xs font-bold text-sky-200">
+            {reviewItems.length} 件
+          </span>
+        </div>
+        <QuestReviewPanel submissions={reviewItems} />
       </section>
     </main>
   );
