@@ -244,15 +244,15 @@ export function QuestMasterClient({ initialRows }: Props) {
               報酬コイン <span className="text-rose-400">*</span>
               <input
                 type="number"
-                min={1}
+                min={10}
                 max={10000}
-                step={5}
+                step={10}
                 value={form.rewardCoins}
                 onChange={(e) =>
                   setForm({
                     ...form,
                     rewardCoins: Math.max(
-                      1,
+                      10,
                       Math.min(10000, Number(e.target.value) || 0),
                     ),
                   })
