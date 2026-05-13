@@ -1,6 +1,7 @@
 // 親用の管理画面 (/bank)
 // Server Component で DB から子供一覧を取得し、各操作 UI を組み立てる。
 
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { calculateAge, formatBirthDate } from "@/lib/age";
 import { ChoreButton } from "./ChoreButton";
@@ -54,6 +55,16 @@ export default async function BankPage() {
           </span>{" "}
           コイン
         </p>
+
+        {/* マスタ画面へのナビ */}
+        <nav className="mt-3 flex flex-wrap gap-2">
+          <Link
+            href="/bank/quests"
+            className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-200 transition hover:bg-emerald-500/20"
+          >
+            📋 クエスト管理マスタ
+          </Link>
+        </nav>
       </header>
 
       {/* 子供カード一覧 */}
