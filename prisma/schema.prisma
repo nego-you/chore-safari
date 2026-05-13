@@ -51,6 +51,20 @@ enum QuestStatus {
   @@map("quest_status")
 }
 
+// サファリで仕掛けた罠のライフサイクル。
+//   PLACED   : 仕掛けたばかり。appears_at まで待機中。
+//   APPEARED : appears_at を過ぎて動物が出現済み（タイミングゲーム可能）。
+//   CAUGHT   : タイミングゲーム成功で捕獲済み。
+//   ESCAPED  : 失敗で逃げられた。アイテムは戻ってこない。
+enum TrapStatus {
+  PLACED
+  APPEARED
+  CAUGHT
+  ESCAPED
+
+  @@map("trap_status")
+}
+
 model User {
   id                String             @id @default(cuid())
   name              String
@@ -65,6 +79,7 @@ model User {
   caughtAnimals      CaughtAnimal[]
   bonusNotifications SpecialBonusNotification[]
   questSubmissions   QuestSubmission[]
+  activeTraps        ActiveTrap[]
 
   @@map("users")
 }
@@ -126,6 +141,7 @@ model Animal {
   createdAt   DateTime       @default(now()) @map("created_at")
   updatedAt   DateTime       @updatedAt @map("updated_at")
   catches     CaughtAnimal[]
+  activeTraps ActiveTrap[]
 
   @@index([rarity])
   @@map("animals")
@@ -199,4 +215,26 @@ model QuestSubmission {
   @@index([questId])
   @@index([submittedAt])
   @@map("quest_submissions")
+}
+
+// 仕掛け中の罠。setTrap で生成、appears_at までは PLACED、過ぎたら APPEARED、
+// タイミングゲームの結果で CAUGHT / ESCAPED に決まる。
+// target_animal_id は仕掛けた時に事前抽選した「もし成功したら捕まる」動物。
+model ActiveTrap {
+  id              String     @id @default(cuid())
+  userId          String     @map("user_id")
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trapItemId      String     @map("trap_item_id")
+  baitItemId      String     @map("bait_item_id")
+  status          TrapStatus @default(PLACED)
+  placedAt        DateTime   @default(now()) @map("placed_at")
+  appearsAt       DateTime   @map("appears_at")
+  targetAnimalId  String     @map("target_animal_id")
+  targetAnimal    Animal     @relation(fields: [targetAnimalId], references: [id], onDelete: Cascade)
+  resolvedAt      DateTime?  @map("resolved_at")
+
+  @@index([userId, status])
+  @@index([appearsAt])
+  @@index([targetAnimalId])
+  @@map("active_traps")
 }
