@@ -3,3 +3,6 @@
 // 定数はここに分離してサーバ/クライアント双方から import できるようにしておく。
 
 export const GACHA_COST = 100;
+
+// クレーンゲームの料金。ガチャより高め＝高級アイテムが出る仕組み。
+export const CRANE_COST = 200;

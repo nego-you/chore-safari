@@ -425,6 +425,25 @@ export function KidsPortal({
           </div>
         </Link>
 
+        {/* クレーンゲームへ */}
+        <Link
+          href={`/kids/crane?kid=${selected.id}`}
+          className="block rounded-3xl bg-gradient-to-br from-pink-300 via-fuchsia-300 to-violet-300 p-1 shadow-xl transition active:scale-[0.99]"
+        >
+          <div className="flex items-center gap-4 rounded-[1.4rem] bg-white/90 px-5 py-4 backdrop-blur">
+            <span className="text-5xl" aria-hidden>🕹️🎯🕹️</span>
+            <div className="flex-1">
+              <p className="text-xl font-black text-fuchsia-700">
+                クレーンゲーム！
+              </p>
+              <p className="text-xs text-fuchsia-600/80">
+                まえうしろ ひだりみぎに うごかして キャッチ
+              </p>
+            </div>
+            <span className="text-2xl text-fuchsia-600" aria-hidden>→</span>
+          </div>
+        </Link>
+
         {/* ガチャボタン */}
         <section
           aria-labelledby="gacha-heading"

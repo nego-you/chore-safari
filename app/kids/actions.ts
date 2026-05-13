@@ -7,7 +7,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { findRecipe } from "@/lib/recipes";
-import { GACHA_COST } from "./config";
+import { CRANE_COST, GACHA_COST } from "./config";
 
 
 // ガチャの排出テーブル。weight が大きいほど出やすい。
@@ -526,3 +526,122 @@ export async function submitQuest(
     },
   };
 }
+
+// ─────────────────────────────────────────────
+// クレーンゲーム：コイン消費 → 抽選 → 在庫増 → 履歴記録。
+// ガチャより当たりが豪華（クラフト完成品も直接ドロップする）。
+// ─────────────────────────────────────────────
+
+
+const CRANE_POOL: PoolEntry[] = [
+  // 基本素材：ガチャより少なめの重み
+  { itemId: "meat", itemName: "おにく", itemType: "FOOD", weight: 8 },
+  { itemId: "fish", itemName: "おさかな", itemType: "FOOD", weight: 12 },
+  { itemId: "berry", itemName: "きのみ", itemType: "FOOD", weight: 12 },
+  { itemId: "rope", itemName: "ロープ", itemType: "TRAP_PART", weight: 12 },
+  { itemId: "wood", itemName: "きのいた", itemType: "TRAP_PART", weight: 12 },
+  { itemId: "net", itemName: "あみ", itemType: "TRAP_PART", weight: 12 },
+  // 上位ドロップ：クラフトしないと手に入らないはずの完成品が直接出る！
+  { itemId: "sturdy_trap", itemName: "じょうぶなワナ", itemType: "TRAP_PART", weight: 12 },
+  { itemId: "premium_food", itemName: "とっきゅうのエサ", itemType: "FOOD", weight: 12 },
+  { itemId: "hunter_net", itemName: "ハンターネット", itemType: "TRAP_PART", weight: 4 },
+  { itemId: "mixed_food", itemName: "ミックスごはん", itemType: "FOOD", weight: 4 },
+];
+
+function drawCranePrize(): PoolEntry {
+  const total = CRANE_POOL.reduce((s, e) => s + e.weight, 0);
+  let r = Math.random() * total;
+  for (const e of CRANE_POOL) {
+    r -= e.weight;
+    if (r <= 0) return e;
+  }
+  return CRANE_POOL[CRANE_POOL.length - 1];
+}
+
+export async function playCraneGame(userId: string): Promise<GachaResult> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, role: true, coinBalance: true },
+  });
+
+  if (!user || user.role !== "CHILD") {
+    return { success: false, error: "ユーザーが見つかりません" };
+  }
+  if (user.coinBalance < CRANE_COST) {
+    return {
+      success: false,
+      error: `コインが足りません（${CRANE_COST} ひつよう / いま ${user.coinBalance}）`,
+    };
+  }
+
+  const prize = drawCranePrize();
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const updated = await tx.user.updateMany({
+        where: { id: userId, coinBalance: { gte: CRANE_COST } },
+        data: { coinBalance: { decrement: CRANE_COST } },
+      });
+      if (updated.count !== 1) throw new Error("INSUFFICIENT_FUNDS");
+
+      const fresh = await tx.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { coinBalance: true },
+      });
+
+      await tx.coinTransaction.create({
+        data: {
+          userId,
+          amount: -CRANE_COST,
+          kind: "GACHA",
+          reason: `クレーン: ${prize.itemName}`,
+        },
+      });
+
+      const row = await tx.sharedInventoryItem.upsert({
+        where: { itemId: prize.itemId },
+        update: { quantity: { increment: 1 } },
+        create: {
+          itemId: prize.itemId,
+          itemName: prize.itemName,
+          itemType: prize.itemType,
+          quantity: 1,
+        },
+      });
+
+      await tx.gachaTransaction.create({
+        data: {
+          userId,
+          costAmount: CRANE_COST,
+          itemId: prize.itemId,
+          itemName: prize.itemName,
+          itemType: prize.itemType,
+        },
+      });
+
+      return {
+        newCoinBalance: fresh.coinBalance,
+        totalQuantity: row.quantity,
+      };
+    });
+
+    revalidatePath("/kids");
+    revalidatePath("/kids/crane");
+    revalidatePath("/bank");
+
+    return {
+      success: true,
+      item: {
+        itemId: prize.itemId,
+        itemName: prize.itemName,
+        itemType: prize.itemType,
+        totalQuantity: result.totalQuantity,
+      },
+      newCoinBalance: result.newCoinBalance,
+    };
+  } catch (err) {
+    if (err instanceof Error && err.message === "INSUFFICIENT_FUNDS") {
+      return { success: false, error: "コインが足りません" };
+    }
+    console.error("playCraneGame failed:", err);
+    return { success: false, error: "クレーンゲームに失敗しました。もう一度試して�

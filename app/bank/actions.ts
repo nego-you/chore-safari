@@ -225,3 +225,158 @@ export async function rejectQuest(
     rewardCoins: submission.quest.rewardCoins,
   };
 }
+
+// ─────────────────────────────────────────────
+// クエストマスタ管理（親が自由にクエストを追加・編集・削除）
+// ─────────────────────────────────────────────
+
+const QUEST_TITLE_MAX = 80;
+const QUEST_DESC_MAX = 400;
+const QUEST_REWARD_MIN = 1;
+const QUEST_REWARD_MAX = 10000;
+
+export type QuestMasterInput = {
+  title: string;
+  description?: string;
+  rewardCoins: number;
+  emoji?: string;
+};
+
+export type QuestMasterResult =
+  | {
+      success: true;
+      quest: {
+        id: string;
+        title: string;
+        description: string | null;
+        rewardCoins: number;
+        emoji: string;
+        isActive: boolean;
+      };
+    }
+  | { success: false; error: string };
+
+function validateQuestInput(data: QuestMasterInput): string | null {
+  const title = data.title?.trim();
+  if (!title) return "タイトルは必須です";
+  if (title.length > QUEST_TITLE_MAX) {
+    return `タイトルは ${QUEST_TITLE_MAX} 文字以内にしてください`;
+  }
+  if (data.description && data.description.length > QUEST_DESC_MAX) {
+    return `説明は ${QUEST_DESC_MAX} 文字以内にしてください`;
+  }
+  if (
+    !Number.isInteger(data.rewardCoins) ||
+    data.rewardCoins < QUEST_REWARD_MIN ||
+    data.rewardCoins > QUEST_REWARD_MAX
+  ) {
+    return `報酬コインは ${QUEST_REWARD_MIN}〜${QUEST_REWARD_MAX} の整数で指定してください`;
+  }
+  return null;
+}
+
+export async function createQuest(
+  data: QuestMasterInput,
+): Promise<QuestMasterResult> {
+  const err = validateQuestInput(data);
+  if (err) return { success: false, error: err };
+
+  try {
+    const quest = await prisma.quest.create({
+      data: {
+        title: data.title.trim(),
+        description: data.description?.trim() || null,
+        rewardCoins: data.rewardCoins,
+        emoji: data.emoji?.trim() || "⭐",
+      },
+    });
+
+    revalidatePath("/bank");
+    revalidatePath("/bank/quests");
+    revalidatePath("/kids/quests");
+
+    return {
+      success: true,
+      quest: {
+        id: quest.id,
+        title: quest.title,
+        description: quest.description,
+        rewardCoins: quest.rewardCoins,
+        emoji: quest.emoji,
+        isActive: quest.isActive,
+      },
+    };
+  } catch (e) {
+    console.error("createQuest failed:", e);
+    return { success: false, error: "クエストの作成に失敗しました" };
+  }
+}
+
+export async function updateQuest(
+  id: string,
+  data: QuestMasterInput,
+): Promise<QuestMasterResult> {
+  const err = validateQuestInput(data);
+  if (err) return { success: false, error: err };
+
+  try {
+    const exists = await prisma.quest.findUnique({ where: { id } });
+    if (!exists) {
+      return { success: false, error: "クエストが見つかりません" };
+    }
+
+    const quest = await prisma.quest.update({
+      where: { id },
+      data: {
+        title: data.title.trim(),
+        description: data.description?.trim() || null,
+        rewardCoins: data.rewardCoins,
+        emoji: data.emoji?.trim() || exists.emoji || "⭐",
+      },
+    });
+
+    revalidatePath("/bank");
+    revalidatePath("/bank/quests");
+    revalidatePath("/kids/quests");
+
+    return {
+      success: true,
+      quest: {
+        id: quest.id,
+        title: quest.title,
+        description: quest.description,
+        rewardCoins: quest.rewardCoins,
+        emoji: quest.emoji,
+        isActive: quest.isActive,
+      },
+    };
+  } catch (e) {
+    console.error("updateQuest failed:", e);
+    return { success: false, error: "クエストの更新に失敗しました" };
+  }
+}
+
+export async function deleteQuest(
+  id: string,
+): Promise<{ success: boolean; error?: string; deletedSubmissions?: number }> {
+  try {
+    // schema 側で onDelete: Cascade が効いているが、件数を返したいので
+    // トランザクション内で先に明示 deleteMany → quest.delete とする。
+    const result = await prisma.$transaction(async (tx) => {
+      const subs = await tx.questSubmission.deleteMany({
+        where: { questId: id },
+      });
+      await tx.quest.delete({ where: { id } });
+      return subs.count;
+    });
+
+    revalidatePath("/bank");
+    revalidatePath("/bank/quests");
+    revalidatePath("/kids/quests");
+
+    return { success: true, deletedSubmissions: result };
+  } catch (e) {
+    console.error("deleteQuest failed:", e);
+    return { success: false, error: "クエストの削除に失敗しました" };
+  }
+}
