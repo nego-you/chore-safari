@@ -307,6 +307,7 @@ export async function createQuest(
         rewardCoins: quest.rewardCoins,
         emoji: quest.emoji,
         isActive: quest.isActive,
+        targetUserId: quest.targetUserId,
       },
     };
   } catch (e) {

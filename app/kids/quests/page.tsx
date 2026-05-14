@@ -22,13 +22,16 @@ export default async function QuestsPage({
       orderBy: { birthDate: "asc" },
       select: { id: true, name: true, coinBalance: true },
     }),
+    // kid 未指定のときは「全員用」のみを返す。
+    // kid 指定時は「全員用 OR 自分専用」を返す。
+    // Prisma は { field: undefined } を「フィルタ無視」扱いにするため、
+    // 明示的に kidParam の有無で OR を組み立てる。
     prisma.quest.findMany({
       where: {
         isActive: true,
-        OR: [
-          { targetUserId: null }, // 全員用
-          { targetUserId: kidParam }, // 自分専用
-        ],
+        OR: kidParam
+          ? [{ targetUserId: null }, { targetUserId: kidParam }]
+          : [{ targetUserId: null }],
       },
       orderBy: [{ rewardCoins: "asc" }, { createdAt: "asc" }],
       select: {
@@ -69,6 +72,8 @@ export default async function QuestsPage({
         description: q.description,
         rewardCoins: q.rewardCoins,
         emoji: q.emoji,
+        // 専用クエスト判定（クライアント側で「○○ちゃん専用」バッジ表示に使う）
+        targetUserId: q.targetUserId,
       }))}
       submissions={submissions.map((s) => ({
         id: s.id,

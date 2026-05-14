@@ -118,6 +118,11 @@ export function QuestMasterClient({ initialRows, kids }: Props) {
       }
 
       const q = result.quest;
+      // 対象ユーザー名はサーバから返ってこないので、kids ローカルから引く。
+      const targetName = q.targetUserId
+        ? kids.find((k) => k.id === q.targetUserId)?.name ?? null
+        : null;
+
       if (form.mode === "create") {
         setRows((prev) => [
           ...prev,
@@ -131,6 +136,8 @@ export function QuestMasterClient({ initialRows, kids }: Props) {
             submissionCount: 0,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
+            targetUserId: q.targetUserId,
+            targetUserName: targetName,
           },
         ]);
         setToast(`✅ 「${q.title}」を登録しました`);
@@ -146,6 +153,8 @@ export function QuestMasterClient({ initialRows, kids }: Props) {
                   emoji: q.emoji,
                   isActive: q.isActive,
                   updatedAt: new Date().toISOString(),
+                  targetUserId: q.targetUserId,
+                  targetUserName: targetName,
                 }
               : r,
           ),
