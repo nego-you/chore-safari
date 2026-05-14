@@ -1,10 +1,8 @@
 "use client";
 
-// 罠を仕掛けて待つ非同期サファリ。
-// 1. 罠とエサを選んで setTrap → ActiveTrap が PLACED で作られる
-// 2. クライアントで appears_at までカウントダウン、過ぎたら自動 checkTrap で APPEARED に
-// 3. 「どうぶつが きた！」ボタンでタイミングゲームを開始
-// 4. resolveTrap(id, isSuccess) で CAUGHT / ESCAPED
+// /kids/safari — 2D サファリフィールド。
+// バックエンド：setTrap / checkTrap / resolveTrap はそのまま使う。
+// UI は「業務リスト」をやめて、緑のフィールドに罠オブジェクトを散らす没入型に。
 
 import Link from "next/link";
 import {
@@ -46,7 +44,7 @@ type TrapDTO = {
   baitItemId: string;
   status: "PLACED" | "APPEARED";
   placedAt: string;
-  appearsAt: string; // ISO
+  appearsAt: string;
   targetAnimal: Animal;
 };
 
@@ -102,6 +100,32 @@ const ITEM_EMOJI: Record<string, string> = {
   mixed_food: "🍲",
 };
 
+// 罠の見た目を罠アイテム種別で出し分ける
+const TRAP_EMOJI: Record<string, string> = {
+  rope: "🌿",
+  wood: "📦",
+  net: "🪤",
+  sturdy_trap: "🪤",
+  hunter_net: "🥅",
+};
+function trapVisual(itemId: string): string {
+  return TRAP_EMOJI[itemId] ?? "🌿";
+}
+
+// 罠 id から決定論的に画面上の位置を出す（リロードしても同じ場所）。
+function positionFromId(id: string): { left: number; top: number } {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = ((hash << 5) - hash + id.charCodeAt(i)) | 0;
+  }
+  const a = Math.abs(hash);
+  const b = Math.abs(hash >> 8);
+  // フィールド内に収まるよう 12〜88% の範囲に。
+  const left = 12 + (a % 76);
+  const top = 18 + (b % 64);
+  return { left, top };
+}
+
 function NameRuby({ name }: { name: string }) {
   const yomi = NAME_READING[name];
   if (!yomi) return <>{name}</>;
@@ -119,9 +143,49 @@ function formatDate(iso: string) {
 }
 
 // ────────── タイミングゲーム設定（やさしめ） ──────────
-const GAME_CYCLE_MS = 2500; // 1往復にかかる時間（長め＝ゆっくり）
-const GAME_GREEN_MIN = 35; // 緑ゾーンの左端（%）
-const GAME_GREEN_MAX = 65; // 緑ゾーンの右端（%）
+const GAME_CYCLE_MS = 2500;
+const GAME_GREEN_MIN = 35;
+const GAME_GREEN_MAX = 65;
+
+// ────────── キーフレーム（フィールド用） ──────────
+const FIELD_KEYFRAMES = `
+  @keyframes rustle {
+    0%, 100% { transform: translate(-50%, -50%) rotate(0deg); }
+    15% { transform: translate(calc(-50% - 4px), -50%) rotate(-10deg); }
+    30% { transform: translate(calc(-50% + 4px), -50%) rotate(8deg); }
+    45% { transform: translate(calc(-50% - 3px), -50%) rotate(-7deg); }
+    60% { transform: translate(calc(-50% + 3px), -50%) rotate(6deg); }
+    75% { transform: translate(calc(-50% - 2px), -50%) rotate(-4deg); }
+  }
+  .trap-rustle { animation: rustle 0.35s ease-in-out infinite; }
+
+  @keyframes glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.5); }
+    50% { box-shadow: 0 0 16px 8px rgba(244, 63, 94, 0.45); }
+  }
+  .trap-glow { animation: glow 1s ease-in-out infinite; }
+
+  @keyframes float-bubble {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+  }
+  .bubble-float { animation: float-bubble 1.6s ease-in-out infinite; }
+
+  @keyframes pop-in {
+    0% { transform: translate(-50%, -50%) scale(0); opacity: 0; }
+    60% { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  }
+  .trap-pop-in { animation: pop-in 0.45s cubic-bezier(.34,1.56,.64,1) both; }
+
+  @keyframes shake {
+    0% { transform: translateX(0); }
+    25% { transform: translateX(-8px); }
+    50% { transform: translateX(8px); }
+    75% { transform: translateX(-6px); }
+    100% { transform: translateX(0); }
+  }
+`;
 
 export function SafariClient({
   initialKidId,
@@ -144,7 +208,6 @@ export function SafariClient({
 
   const [, startTransition] = useTransition();
 
-  // props が更新されたら同期。
   useEffect(() => setInv(inventory), [inventory]);
   useEffect(() => setTraps(initialTraps), [initialTraps]);
   useEffect(() => setCatches(initialCatches), [initialCatches]);
@@ -161,7 +224,7 @@ export function SafariClient({
     [inv],
   );
 
-  // ── PLACED の罠を自動チェック（appears_at を過ぎたら checkTrap） ──
+  // ── PLACED の罠を appears_at で自動 APPEARED 化 ──
   useEffect(() => {
     if (!kidId) return;
     let cancelled = false;
@@ -204,16 +267,12 @@ export function SafariClient({
         alert(r.error);
         return;
       }
-      // ローカル在庫を減らし、罠リストに新規を追加。
       setInv((prev) =>
         prev.map((i) => {
           const u = r.updatedInventory.find((x) => x.itemId === i.itemId);
           return u ? { ...i, quantity: u.quantity } : i;
         }),
       );
-      // 仕掛けた直後は targetAnimal は隠したいが、内部 state には保持しておく必要がある。
-      // サーバ側は include していないが、UI 上の演出はカウントダウンと「？？？」の表示で済む。
-      // 仮の placeholder animal を入れておく。
       setTraps((prev) => [
         ...prev,
         {
@@ -253,17 +312,13 @@ export function SafariClient({
       alert(r.error);
       return;
     }
-    // 罠リストから外す
     setTraps((prev) => prev.filter((t) => t.id !== trap.id));
     if (r.caught) {
       setCatches((prev) => [
         {
           id: `tmp-${Date.now()}`,
           animal: r.animal,
-          caughtBy: {
-            id: trap.userId,
-            name: selectedKid?.name ?? "",
-          },
+          caughtBy: { id: trap.userId, name: selectedKid?.name ?? "" },
           caughtAt: r.caughtAt,
         },
         ...prev,
@@ -307,8 +362,10 @@ export function SafariClient({
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-emerald-100 via-yellow-50 to-sky-100 px-4 py-8">
-      <div className="mx-auto max-w-3xl space-y-6">
+    <main className="min-h-screen bg-gradient-to-b from-sky-200 via-emerald-100 to-amber-50 px-4 py-6">
+      <style>{FIELD_KEYFRAMES}</style>
+
+      <div className="mx-auto max-w-3xl space-y-4">
         {/* ヘッダー */}
         <div className="flex items-center justify-between">
           <Link
@@ -317,38 +374,22 @@ export function SafariClient({
           >
             ← ポータルへ
           </Link>
-          <p className="text-sm font-bold text-emerald-700/80">サファリ たんけん</p>
+          <p className="text-sm font-bold text-emerald-700/80">
+            🌿 サファリ フィールド 🌿
+          </p>
+          <p className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-bold text-emerald-700">
+            <NameRuby name={selectedKid.name} />
+          </p>
         </div>
 
-        {/* タイトル */}
-        <section className="rounded-[2rem] bg-gradient-to-br from-emerald-300 via-lime-200 to-yellow-200 p-1 shadow-xl">
-          <div className="rounded-[1.75rem] bg-white/95 p-5 text-center">
-            <p className="text-4xl">🌿🦁🌿</p>
-            <h1 className="mt-1 text-2xl font-black text-emerald-700 sm:text-3xl">
-              ワナを しかけよう！
-            </h1>
-            <p className="mt-1 text-xs text-emerald-600/80">
-              <NameRuby name={selectedKid.name} /> ちゃんが たんけん するよ
-            </p>
-          </div>
-        </section>
+        {/* サファリフィールド */}
+        <SafariField traps={myTraps} onCatchAppeared={openGame} />
 
-        {/* 仕掛けるフォーム */}
-        <SetTrapPanel
-          foods={foods}
-          traps={trapsInv}
-          onSubmit={handleSetTrap}
-        />
-
-        {/* 仕掛け中のワナ */}
-        <ActiveTrapsList traps={myTraps} onCatch={openGame} />
+        {/* もちもの（仕掛けるフォーム） */}
+        <Pouch foods={foods} traps={trapsInv} onSubmit={handleSetTrap} />
 
         {/* かぞくのどうぶつずかん */}
         <Zukan catches={catches} />
-
-        <p className="text-center text-xs text-emerald-700/70">
-          ✨ いちど しかけたら しばらく まってね。どうぶつが きたら タップ！ ✨
-        </p>
       </div>
 
       {gameTrap && (
@@ -365,8 +406,183 @@ export function SafariClient({
   );
 }
 
-// ────────── 罠を仕掛けるフォーム ──────────
-function SetTrapPanel({
+// ────────── サファリフィールド ──────────
+type Decoration = {
+  emoji: string;
+  x: number;
+  y: number;
+  size: number;
+  z: number; // CSS z-index 用
+};
+
+function generateDecorations(): Decoration[] {
+  const pool: Array<{ emoji: string; min: number; max: number }> = [
+    { emoji: "🌲", min: 2.5, max: 4.5 },
+    { emoji: "🌳", min: 2.5, max: 4.5 },
+    { emoji: "🌴", min: 2.5, max: 4 },
+    { emoji: "🌿", min: 1.5, max: 2.5 },
+    { emoji: "🌷", min: 1.4, max: 2 },
+    { emoji: "🌼", min: 1.4, max: 2 },
+    { emoji: "🍄", min: 1.4, max: 2 },
+  ];
+  const items: Decoration[] = [];
+  // 16 個ほど散らす
+  for (let i = 0; i < 16; i++) {
+    const p = pool[Math.floor(Math.random() * pool.length)];
+    items.push({
+      emoji: p.emoji,
+      x: Math.random() * 95 + 2,
+      y: Math.random() * 88 + 6,
+      size: p.min + Math.random() * (p.max - p.min),
+      z: Math.floor(p.min),
+    });
+  }
+  return items;
+}
+
+function SafariField({
+  traps,
+  onCatchAppeared,
+}: {
+  traps: TrapDTO[];
+  onCatchAppeared: (trap: TrapDTO) => void;
+}) {
+  // 装飾は初回マウント時にだけ生成（毎更新で動くと目が痛い）
+  const decorations = useMemo(generateDecorations, []);
+
+  return (
+    <section className="relative aspect-[4/5] w-full overflow-hidden rounded-[2rem] bg-gradient-to-b from-sky-300 via-emerald-300 to-emerald-500 shadow-2xl ring-4 ring-white">
+      {/* 空グラデ */}
+      <div className="absolute inset-x-0 top-0 h-1/3 bg-gradient-to-b from-sky-200/90 via-sky-100/40 to-transparent" />
+      {/* 太陽と雲 */}
+      <span aria-hidden className="absolute right-6 top-4 text-5xl drop-shadow">
+        ☀️
+      </span>
+      <span aria-hidden className="absolute left-8 top-6 text-3xl opacity-90">
+        ☁️
+      </span>
+      <span aria-hidden className="absolute left-1/2 top-12 text-2xl opacity-80">
+        ☁️
+      </span>
+      {/* 遠景の山 */}
+      <div
+        aria-hidden
+        className="absolute inset-x-0 top-[28%] h-[18%]"
+        style={{
+          background:
+            "linear-gradient(180deg, rgba(132,170,134,0.6) 0%, rgba(132,170,134,0) 100%)",
+          clipPath:
+            "polygon(0 100%, 10% 30%, 22% 60%, 35% 10%, 50% 55%, 62% 25%, 78% 65%, 92% 20%, 100% 70%, 100% 100%)",
+        }}
+      />
+
+      {/* 地面の手前ハイライト */}
+      <div
+        aria-hidden
+        className="absolute inset-x-0 bottom-0 h-1/2"
+        style={{
+          background:
+            "linear-gradient(to top, rgba(132, 204, 22, 0.4) 0%, rgba(132, 204, 22, 0) 100%)",
+        }}
+      />
+
+      {/* 草・木の装飾 */}
+      {decorations.map((d, i) => (
+        <span
+          key={i}
+          aria-hidden
+          className="absolute pointer-events-none select-none drop-shadow"
+          style={{
+            left: `${d.x}%`,
+            top: `${d.y}%`,
+            transform: "translate(-50%, -50%)",
+            fontSize: `${d.size}rem`,
+            zIndex: d.z,
+          }}
+        >
+          {d.emoji}
+        </span>
+      ))}
+
+      {/* 罠オブジェクト */}
+      {traps.map((trap) => (
+        <FieldTrap
+          key={trap.id}
+          trap={trap}
+          onCatchAppeared={onCatchAppeared}
+        />
+      ))}
+
+      {/* ヒントテキスト */}
+      {traps.length === 0 && (
+        <div className="absolute inset-x-0 bottom-5 z-30 text-center">
+          <p className="inline-block rounded-full bg-white/85 px-4 py-2 text-sm font-extrabold text-emerald-700 shadow ring-1 ring-emerald-200">
+            ↓「もちもの」から ワナを しかけよう！
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ────────── フィールド上の罠オブジェクト ──────────
+function FieldTrap({
+  trap,
+  onCatchAppeared,
+}: {
+  trap: TrapDTO;
+  onCatchAppeared: (trap: TrapDTO) => void;
+}) {
+  const pos = useMemo(() => positionFromId(trap.id), [trap.id]);
+  const visual = trapVisual(trap.trapItemId);
+  const now = Date.now();
+  const remaining = Math.max(
+    0,
+    Math.ceil((new Date(trap.appearsAt).getTime() - now) / 1000),
+  );
+  const appeared = trap.status === "APPEARED" || remaining === 0;
+
+  return (
+    <button
+      type="button"
+      onClick={() => appeared && onCatchAppeared(trap)}
+      disabled={!appeared}
+      aria-label={
+        appeared ? "どうぶつが きた！キャッチ" : "ワナを セットちゅう"
+      }
+      className="trap-pop-in absolute z-20 flex flex-col items-center"
+      style={{
+        left: `${pos.left}%`,
+        top: `${pos.top}%`,
+        transform: "translate(-50%, -50%)",
+      }}
+    >
+      <span
+        aria-hidden
+        className={`block text-6xl drop-shadow-lg select-none ${
+          appeared ? "trap-rustle" : ""
+        }`}
+        style={{ filter: appeared ? "drop-shadow(0 0 6px #fde68a)" : undefined }}
+      >
+        {visual}
+      </span>
+
+      {/* 吹き出し / 通知 */}
+      {appeared ? (
+        <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-rose-500 px-3 py-1 text-xs font-extrabold text-white shadow-lg ring-2 ring-rose-200 trap-glow bubble-float">
+          ！ タップして キャッチ！
+        </span>
+      ) : (
+        <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-white/95 px-2 py-0.5 text-[11px] font-bold text-emerald-800 shadow ring-1 ring-emerald-200 bubble-float">
+          ⏳ あと {remaining} びょう
+        </span>
+      )}
+    </button>
+  );
+}
+
+// ────────── もちもの（罠を仕掛けるフォーム） ──────────
+function Pouch({
   foods,
   traps,
   onSubmit,
@@ -398,17 +614,22 @@ function SetTrapPanel({
     (foods.find((f) => f.itemId === baitId)?.quantity ?? 0) > 0;
 
   return (
-    <section className="rounded-3xl bg-white/95 p-5 shadow ring-2 ring-emerald-200">
-      <h2 className="flex items-center gap-2 text-base font-extrabold text-emerald-800">
-        <span aria-hidden>🪤</span> ここに ワナを しかける
-      </h2>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <label className="block text-xs font-bold text-amber-800">
-          🛠️ つかう わな
+    <section className="rounded-3xl bg-white/95 p-3 shadow-lg ring-2 ring-emerald-200">
+      <div className="flex items-center justify-between gap-2 pb-2">
+        <p className="flex items-center gap-1 text-xs font-extrabold text-emerald-800">
+          🎒 もちもの
+        </p>
+        <p className="text-[10px] text-emerald-700/70">
+          えらんで「しかける！」
+        </p>
+      </div>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="block min-w-[8rem] flex-1 text-[11px] font-bold text-amber-800">
+          🛠️ ワナ
           <select
             value={trapId}
             onChange={(e) => setTrapId(e.target.value)}
-            className="mt-1 w-full rounded-2xl border-2 border-amber-300 bg-amber-50 px-3 py-2 text-base font-bold text-amber-900 focus:border-amber-500 focus:outline-none"
+            className="mt-1 w-full rounded-xl border-2 border-amber-300 bg-amber-50 px-2 py-1.5 text-sm font-bold text-amber-900 focus:border-amber-500 focus:outline-none"
           >
             {traps.length === 0 && <option value="">わなが ないよ</option>}
             {traps.map((t) => (
@@ -418,12 +639,12 @@ function SetTrapPanel({
             ))}
           </select>
         </label>
-        <label className="block text-xs font-bold text-rose-700">
-          🍱 つかう エサ
+        <label className="block min-w-[8rem] flex-1 text-[11px] font-bold text-rose-700">
+          🍱 エサ
           <select
             value={baitId}
             onChange={(e) => setBaitId(e.target.value)}
-            className="mt-1 w-full rounded-2xl border-2 border-rose-300 bg-rose-50 px-3 py-2 text-base font-bold text-rose-900 focus:border-rose-500 focus:outline-none"
+            className="mt-1 w-full rounded-xl border-2 border-rose-300 bg-rose-50 px-2 py-1.5 text-sm font-bold text-rose-900 focus:border-rose-500 focus:outline-none"
           >
             {foods.length === 0 && <option value="">エサが ないよ</option>}
             {foods.map((f) => (
@@ -433,116 +654,24 @@ function SetTrapPanel({
             ))}
           </select>
         </label>
-      </div>
-      <button
-        type="button"
-        onClick={() => onSubmit(trapId, baitId)}
-        disabled={!canSubmit}
-        className={`mt-4 w-full rounded-2xl px-4 py-4 text-xl font-black text-white shadow-lg transition active:scale-[0.98] ${
-          canSubmit
-            ? "bg-gradient-to-r from-emerald-500 via-lime-500 to-yellow-500 hover:brightness-110"
-            : "cursor-not-allowed bg-gray-300 text-gray-500 shadow-none"
-        }`}
-      >
-        🪤 ここにしかける！
-      </button>
-      <p className="mt-2 text-[11px] text-emerald-700/60">
-        ※ ワナと エサは すぐ きえちゃうよ。きをつけて しかけよう
-      </p>
-    </section>
-  );
-}
-
-// ────────── 仕掛け中のワナ ──────────
-function ActiveTrapsList({
-  traps,
-  onCatch,
-}: {
-  traps: TrapDTO[];
-  onCatch: (trap: TrapDTO) => void;
-}) {
-  if (traps.length === 0) {
-    return (
-      <section className="rounded-3xl bg-white/80 p-5 text-center text-sm text-emerald-700/80 ring-1 ring-emerald-200">
-        まだ ワナを しかけていないよ。うえの ボタンから しかけよう！
-      </section>
-    );
-  }
-  return (
-    <section className="space-y-3">
-      <h2 className="flex items-center gap-2 text-base font-extrabold text-emerald-800">
-        <span aria-hidden>⏳</span> しかけてある ワナ（{traps.length}）
-      </h2>
-      <div className="space-y-2">
-        {traps.map((trap) => (
-          <TrapCard key={trap.id} trap={trap} onCatch={onCatch} />
-        ))}
+        <button
+          type="button"
+          onClick={() => onSubmit(trapId, baitId)}
+          disabled={!canSubmit}
+          className={`h-[42px] shrink-0 rounded-xl px-4 text-base font-black text-white shadow transition active:scale-[0.97] ${
+            canSubmit
+              ? "bg-gradient-to-r from-emerald-500 via-lime-500 to-yellow-500 hover:brightness-110"
+              : "cursor-not-allowed bg-gray-300 text-gray-500 shadow-none"
+          }`}
+        >
+          🪤 しかける！
+        </button>
       </div>
     </section>
   );
 }
 
-function TrapCard({
-  trap,
-  onCatch,
-}: {
-  trap: TrapDTO;
-  onCatch: (trap: TrapDTO) => void;
-}) {
-  const trapEmoji = ITEM_EMOJI[trap.trapItemId] ?? "🪤";
-  const baitEmoji = ITEM_EMOJI[trap.baitItemId] ?? "🍱";
-  const now = Date.now();
-  const appears = new Date(trap.appearsAt).getTime();
-  const remaining = Math.max(0, Math.ceil((appears - now) / 1000));
-
-  if (trap.status === "APPEARED" || remaining === 0) {
-    return (
-      <article className="overflow-hidden rounded-3xl bg-gradient-to-br from-rose-200 via-yellow-200 to-emerald-200 p-1 shadow-lg">
-        <div className="rounded-[1.4rem] bg-white px-4 py-3">
-          <div className="flex items-center gap-3">
-            <span className="text-3xl" aria-hidden>
-              {trapEmoji}
-              {baitEmoji}
-            </span>
-            <div className="flex-1 text-sm text-emerald-700">
-              <p className="font-extrabold text-rose-700 animate-pulse">
-                ！ どうぶつが きた！
-              </p>
-              <p className="text-xs text-emerald-600/80">タップで キャッチ チャレンジ</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => onCatch(trap)}
-            className="mt-3 w-full rounded-2xl bg-gradient-to-r from-rose-500 via-orange-500 to-amber-500 px-4 py-3 text-lg font-black text-white shadow transition active:scale-[0.98] hover:brightness-110"
-          >
-            🎯 どうぶつが きた！ キャッチする！
-          </button>
-        </div>
-      </article>
-    );
-  }
-
-  // PLACED の表示
-  return (
-    <article className="rounded-2xl bg-white px-4 py-3 shadow ring-1 ring-emerald-200">
-      <div className="flex items-center gap-3">
-        <span className="text-3xl" aria-hidden>
-          {trapEmoji}
-          {baitEmoji}
-        </span>
-        <div className="flex-1 text-sm">
-          <p className="font-bold text-emerald-800">どうぶつを まっているよ…</p>
-          <p className="mt-0.5 text-xs text-emerald-600/80">
-            あと {remaining} びょう
-          </p>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-// ────────── タイミングゲームモーダル ──────────
+// ────────── タイミングゲームモーダル（不変） ──────────
 function TimingGameModal({
   trap,
   onResolve,
@@ -558,13 +687,12 @@ function TimingGameModal({
   const rafRef = useRef<number | null>(null);
   const startRef = useRef<number | null>(null);
 
-  // 三角波で 0→100→0 を CYCLE_MS で繰り返す。
   useEffect(() => {
     const animate = (t: number) => {
       if (startRef.current === null) startRef.current = t;
       const elapsed = (t - startRef.current) % GAME_CYCLE_MS;
-      const phase = elapsed / GAME_CYCLE_MS; // 0..1
-      const p = phase < 0.5 ? phase * 2 : 2 - phase * 2; // 0..1..0
+      const phase = elapsed / GAME_CYCLE_MS;
+      const p = phase < 0.5 ? phase * 2 : 2 - phase * 2;
       const v = p * 100;
       posRef.current = v;
       setPos(v);
@@ -579,11 +707,9 @@ function TimingGameModal({
   const handleCatch = useCallback(() => {
     if (evaluating) return;
     setEvaluating(true);
-    // RAF 停止して、その瞬間の位置で判定。
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     const captured = posRef.current;
     const hit = captured >= GAME_GREEN_MIN && captured <= GAME_GREEN_MAX;
-    // 少しだけ間を置いてから結果送信（演出のため）
     setTimeout(() => onResolve(hit), 500);
   }, [evaluating, onResolve]);
 
@@ -602,9 +728,7 @@ function TimingGameModal({
             みどりの ゾーンで「キャッチ！」を おすと だいせいこう
           </p>
 
-          {/* バー */}
           <div className="relative mt-5 h-12 overflow-hidden rounded-full bg-slate-100 shadow-inner">
-            {/* 緑ゾーン */}
             <div
               className="absolute top-0 h-full bg-gradient-to-b from-emerald-300 to-emerald-400"
               style={{
@@ -612,21 +736,15 @@ function TimingGameModal({
                 width: `${GAME_GREEN_MAX - GAME_GREEN_MIN}%`,
               }}
             />
-            {/* マーカー */}
             <div
               className="absolute top-0 h-full"
-              style={{
-                left: `${pos}%`,
-                transform: "translateX(-50%)",
-                transition: evaluating ? "none" : "none",
-              }}
+              style={{ left: `${pos}%`, transform: "translateX(-50%)" }}
             >
               <div className="h-full w-2 rounded-full bg-rose-600 shadow-md" />
               <div className="absolute -top-2 left-1/2 -translate-x-1/2 text-base">
                 🎯
               </div>
             </div>
-            {/* 緑ゾーンのフチ */}
             <div
               className="absolute top-0 h-full border-x-2 border-emerald-700/60"
               style={{
@@ -637,7 +755,6 @@ function TimingGameModal({
             />
           </div>
 
-          {/* キャッチボタン */}
           <button
             type="button"
             onClick={handleCatch}
@@ -676,7 +793,6 @@ function ResultModal({
   const style = RARITY_STYLE[result.animal.rarity];
   const isCaught = result.kind === "caught";
 
-  // 成功時の紙吹雪
   useEffect(() => {
     if (!isCaught) return;
     let cancelled = false;
@@ -684,12 +800,7 @@ function ResultModal({
       const mod = await import("canvas-confetti");
       if (cancelled) return;
       const palette = [
-        "#fda4af",
-        "#fcd34d",
-        "#a7f3d0",
-        "#bae6fd",
-        "#ddd6fe",
-        "#fbcfe8",
+        "#fda4af", "#fcd34d", "#a7f3d0", "#bae6fd", "#ddd6fe", "#fbcfe8",
       ];
       mod.default({
         particleCount: 180,
@@ -733,17 +844,11 @@ function ResultModal({
                   {result.animal.emoji}
                 </span>
               </div>
-              <p className={`text-3xl font-black ${style.text}`}>
-                {result.animal.name}
-              </p>
-              <p
-                className={`mt-1 inline-block rounded-full ${style.bg} px-3 py-0.5 text-xs font-extrabold ${style.text} ring-1 ${style.ring}`}
-              >
+              <p className={`text-3xl font-black ${style.text}`}>{result.animal.name}</p>
+              <p className={`mt-1 inline-block rounded-full ${style.bg} px-3 py-0.5 text-xs font-extrabold ${style.text} ring-1 ${style.ring}`}>
                 {RARITY_LABEL[result.animal.rarity]}
               </p>
-              <p className="mt-3 text-sm text-slate-600">
-                {result.animal.description}
-              </p>
+              <p className="mt-3 text-sm text-slate-600">{result.animal.description}</p>
               <p className="mt-4 text-base font-bold text-emerald-700">
                 を つかまえた！
               </p>
@@ -762,9 +867,7 @@ function ResultModal({
                   {result.animal.emoji}
                 </span>
               </div>
-              <p className="text-2xl font-black text-slate-700">
-                {result.animal.name}
-              </p>
+              <p className="text-2xl font-black text-slate-700">{result.animal.name}</p>
               <p className="mt-3 text-sm text-slate-500">
                 タイミングが ずれちゃった。また あした がんばろう！
               </p>
@@ -777,25 +880,13 @@ function ResultModal({
             type="button"
             onClick={onClose}
             className={`mt-6 rounded-full px-6 py-2 text-sm font-extrabold text-white shadow transition hover:brightness-110 ${
-              isCaught
-                ? "bg-emerald-500"
-                : "bg-slate-500"
+              isCaught ? "bg-emerald-500" : "bg-slate-500"
             }`}
           >
             {isCaught ? "やったー！" : "つぎは がんばる"}
           </button>
         </div>
       </div>
-
-      <style>{`
-        @keyframes shake {
-          0% { transform: translateX(0); }
-          25% { transform: translateX(-8px); }
-          50% { transform: translateX(8px); }
-          75% { transform: translateX(-6px); }
-          100% { transform: translateX(0); }
-        }
-      `}</style>
     </div>
   );
 }
@@ -805,11 +896,7 @@ function Zukan({ catches }: { catches: CatchEntry[] }) {
   const grouped = useMemo(() => {
     const map = new Map<
       string,
-      {
-        animal: Animal;
-        total: number;
-        latest: CatchEntry;
-      }
+      { animal: Animal; total: number; latest: CatchEntry }
     >();
     for (const c of catches) {
       const key = c.animal.animalId;
@@ -822,10 +909,7 @@ function Zukan({ catches }: { catches: CatchEntry[] }) {
       }
     }
     const rank: Record<Rarity, number> = {
-      LEGENDARY: 0,
-      EPIC: 1,
-      RARE: 2,
-      COMMON: 3,
+      LEGENDARY: 0, EPIC: 1, RARE: 2, COMMON: 3,
     };
     return [...map.values()].sort((a, b) => {
       const dr = rank[a.animal.rarity] - rank[b.animal.rarity];
@@ -835,56 +919,42 @@ function Zukan({ catches }: { catches: CatchEntry[] }) {
   }, [catches]);
 
   return (
-    <section className="rounded-3xl bg-white/90 p-5 shadow-lg ring-1 ring-emerald-200 backdrop-blur">
+    <section className="rounded-3xl bg-white/90 p-4 shadow-lg ring-1 ring-emerald-200 backdrop-blur">
       <div className="mb-3 flex items-center gap-3">
-        <span className="text-3xl" aria-hidden>📖</span>
+        <span className="text-2xl" aria-hidden>📖</span>
         <div>
-          <h2 className="text-xl font-extrabold text-emerald-800">
+          <h2 className="text-base font-extrabold text-emerald-800">
             かぞくの どうぶつずかん
           </h2>
-          <p className="text-xs text-emerald-700/80">
-            つかまえた どうぶつたち（{catches.length} ひき）
+          <p className="text-[11px] text-emerald-700/80">
+            ぜんぶで {catches.length} ひき
           </p>
         </div>
       </div>
       {grouped.length === 0 ? (
-        <p className="rounded-2xl bg-emerald-50 p-3 text-center text-sm text-emerald-700">
+        <p className="rounded-2xl bg-emerald-50 p-3 text-center text-xs text-emerald-700">
           まだ なにも つかまえてないよ。
         </p>
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-2">
+        <ul className="grid gap-2 sm:grid-cols-2">
           {grouped.map((g) => {
             const s = RARITY_STYLE[g.animal.rarity];
             return (
-              <li
-                key={g.animal.animalId}
-                className={`rounded-2xl ${s.bg} p-4 ring-2 ${s.ring}`}
-              >
-                <div className="flex items-start gap-3">
-                  <span className="text-5xl drop-shadow" aria-hidden>
+              <li key={g.animal.animalId} className={`rounded-xl ${s.bg} px-3 py-2 ring-1 ${s.ring}`}>
+                <div className="flex items-center gap-2">
+                  <span className="text-3xl drop-shadow" aria-hidden>
                     {g.animal.emoji}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className={`text-lg font-black ${s.text}`}>
-                        {g.animal.name}
-                      </p>
-                      <span
-                        className={`rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-extrabold ${s.text}`}
-                      >
+                      <p className={`text-sm font-black ${s.text}`}>{g.animal.name}</p>
+                      <span className={`rounded-full bg-white/70 px-1.5 py-0 text-[9px] font-extrabold ${s.text}`}>
                         {RARITY_LABEL[g.animal.rarity]}
                       </span>
                     </div>
-                    <p className={`mt-1 text-xs ${s.text} opacity-80`}>
-                      {g.animal.description}
-                    </p>
-                    <p className={`mt-2 text-xs font-bold ${s.text}`}>
-                      ぜんぶで <span className="font-mono">×{g.total}</span> ひき
-                    </p>
-                    <p className={`mt-1 text-[11px] ${s.text} opacity-80`}>
-                      さいきん：
+                    <p className={`text-[10px] font-bold ${s.text}`}>
+                      ×{g.total} · さいきん {formatDate(g.latest.caughtAt)} ·{" "}
                       <NameRuby name={g.latest.caughtBy.name} />
-                      が {formatDate(g.latest.caughtAt)}
                     </p>
                   </div>
                 </div>
