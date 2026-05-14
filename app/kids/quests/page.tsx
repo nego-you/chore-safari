@@ -30,8 +30,11 @@ export default async function QuestsPage({
       where: {
         isActive: true,
         OR: kidParam
-          ? [{ targetUserId: null }, { targetUserId: kidParam }]
-          : [{ targetUserId: null }],
+          ? [
+              { targetUsers: { none: {} } }, // 空 = 全員用
+              { targetUsers: { some: { id: kidParam } } }, // 自分を含む
+            ]
+          : [{ targetUsers: { none: {} } }],
       },
       orderBy: [{ rewardCoins: "asc" }, { createdAt: "asc" }],
       select: {
@@ -40,7 +43,7 @@ export default async function QuestsPage({
         description: true,
         rewardCoins: true,
         emoji: true,
-        targetUserId: true,
+        targetUsers: { select: { id: true } },
       },
     }),
     // 直近の各申請（誰の何のクエストが PENDING/APPROVED/REJECTED か）。

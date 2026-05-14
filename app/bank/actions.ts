@@ -240,7 +240,7 @@ export type QuestMasterInput = {
   description?: string;
   rewardCoins: number;
   emoji?: string;
-  targetUserId?: string | null;
+  targetUserIds: string[];
 };
 
 export type QuestMasterResult =
@@ -253,7 +253,7 @@ export type QuestMasterResult =
         rewardCoins: number;
         emoji: string;
         isActive: boolean;
-        targetUserId: string | null;
+        targetUserIds: string[];
       };
     }
   | { success: false; error: string };
@@ -290,8 +290,11 @@ export async function createQuest(
         description: data.description?.trim() || null,
         rewardCoins: data.rewardCoins,
         emoji: data.emoji?.trim() || "⭐",
-        targetUserId: data.targetUserId || null,
+        targetUsers: data.targetUserIds.length > 0 ? {
+          connect: data.targetUserIds.map(id => ({ id })),
+        } : undefined,
       },
+      include: { targetUsers: true },
     });
 
     revalidatePath("/bank");
@@ -307,7 +310,7 @@ export async function createQuest(
         rewardCoins: quest.rewardCoins,
         emoji: quest.emoji,
         isActive: quest.isActive,
-        targetUserId: quest.targetUserId,
+        targetUserIds: quest.targetUsers.map(u => u.id),
       },
     };
   } catch (e) {
@@ -336,8 +339,11 @@ export async function updateQuest(
         description: data.description?.trim() || null,
         rewardCoins: data.rewardCoins,
         emoji: data.emoji?.trim() || exists.emoji || "⭐",
-        targetUserId: data.targetUserId || null,
+        targetUsers: {
+          set: data.targetUserIds.map(id => ({ id })),
+        },
       },
+      include: { targetUsers: true },
     });
 
     revalidatePath("/bank");
@@ -353,7 +359,7 @@ export async function updateQuest(
         rewardCoins: quest.rewardCoins,
         emoji: quest.emoji,
         isActive: quest.isActive,
-        targetUserId: quest.targetUserId,
+        targetUserIds: quest.targetUsers.map(u => u.id),
       },
     };
   } catch (e) {

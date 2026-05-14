@@ -16,7 +16,7 @@ type QuestLite = {
   description: string | null;
   rewardCoins: number;
   emoji: string;
-  targetUserId: string | null;
+  targetUsers: { id: string }[];
 };
 
 type SubmissionLite = {
@@ -231,7 +231,7 @@ function QuestCard({
           {quest.description && (
             <p className="text-xs text-emerald-700/80">{quest.description}</p>
           )}
-          {quest.targetUserId === selectedKid.id && (
+          {quest.targetUsers.some(u => u.id === selectedKid.id) && (
             <p className="mt-1 inline-block rounded-full bg-pink-200 px-2 py-0.5 text-xs font-extrabold text-pink-900">
               🎀 {selectedKid.name}ちゃん専用！ 🎀
             </p>

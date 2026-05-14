@@ -17,8 +17,8 @@ type Row = {
   submissionCount: number;
   createdAt: string;
   updatedAt: string;
-  targetUserId: string | null;
-  targetUserName: string | null;
+  targetUserIds: string[];
+  targetUserNames: string;
 };
 
 type Props = {
@@ -33,7 +33,7 @@ type FormState = {
   description: string;
   rewardCoins: number;
   emoji: string;
-  targetUserId: string | null;
+  targetUserIds: string[];
 };
 
 const EMPTY_FORM: FormState = {
@@ -43,7 +43,7 @@ const EMPTY_FORM: FormState = {
   description: "",
   rewardCoins: 50,
   emoji: "⭐",
-  targetUserId: null,
+  targetUserIds: [],
 };
 
 function formatDate(iso: string) {
@@ -84,7 +84,7 @@ export function QuestMasterClient({ initialRows, kids }: Props) {
       description: row.description ?? "",
       rewardCoins: row.rewardCoins,
       emoji: row.emoji,
-      targetUserId: row.targetUserId,
+      targetUserIds: row.targetUserIds,
     });
   };
 
@@ -103,7 +103,7 @@ export function QuestMasterClient({ initialRows, kids }: Props) {
       description: form.description.trim() || undefined,
       rewardCoins: Number(form.rewardCoins),
       emoji: form.emoji.trim() || undefined,
-      targetUserId: form.targetUserId,
+      targetUserIds: form.targetUserIds,
     };
 
     startTransition(async () => {
@@ -229,7 +229,7 @@ export function QuestMasterClient({ initialRows, kids }: Props) {
             </button>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-[80px_1fr_120px_140px]">
+          <div className="grid gap-3 sm:grid-cols-[80px_1fr_140px]">
             <label className="block text-xs text-slate-300">
               絵文字
               <input
@@ -257,27 +257,6 @@ export function QuestMasterClient({ initialRows, kids }: Props) {
             </label>
 
             <label className="block text-xs text-slate-300">
-              対象の子供
-              <select
-                value={form.targetUserId || ""}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    targetUserId: e.target.value || null,
-                  })
-                }
-                className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-slate-50 focus:border-emerald-400 focus:outline-none"
-              >
-                <option value="">全員（共通）</option>
-                {kids.map((kid) => (
-                  <option key={kid.id} value={kid.id}>
-                    {kid.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block text-xs text-slate-300">
               報酬コイン <span className="text-rose-400">*</span>
               <input
                 type="number"
@@ -299,6 +278,38 @@ export function QuestMasterClient({ initialRows, kids }: Props) {
               />
             </label>
           </div>
+
+          <label className="block text-xs text-slate-300">
+            対象の子供（複数選択可）
+            <div className="mt-2 space-y-2">
+              {kids.map((kid) => (
+                <label key={kid.id} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={form.targetUserIds.includes(kid.id)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setForm({
+                          ...form,
+                          targetUserIds: [...form.targetUserIds, kid.id],
+                        });
+                      } else {
+                        setForm({
+                          ...form,
+                          targetUserIds: form.targetUserIds.filter(id => id !== kid.id),
+                        });
+                      }
+                    }}
+                    className="rounded border-slate-600 bg-slate-950 text-emerald-400 focus:ring-emerald-400"
+                  />
+                  <span className="text-sm text-slate-100">{kid.name}</span>
+                </label>
+              ))}
+            </div>
+            <p className="mt-1 text-xs text-slate-400">
+              チェックなし = 全員対象
+            </p>
+          </label>
 
           <label className="block text-xs text-slate-300">
             説明（任意）
@@ -361,7 +372,7 @@ export function QuestMasterClient({ initialRows, kids }: Props) {
             {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={6}
                   className="px-3 py-8 text-center text-sm text-slate-400"
                 >
                   クエストが登録されていません。「＋ 新規クエスト登録」から追加してください。
@@ -385,7 +396,7 @@ export function QuestMasterClient({ initialRows, kids }: Props) {
                   )}
                 </td>
                 <td className="px-3 py-3 text-xs text-slate-400">
-                  {row.targetUserName || "全員"}
+                  {row.targetUserNames}
                 </td>
                 <td className="px-3 py-3 text-right">
                   <span className="font-mono text-amber-200">

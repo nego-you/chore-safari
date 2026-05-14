@@ -13,7 +13,7 @@ export default async function QuestMasterPage() {
       orderBy: [{ rewardCoins: "asc" }, { createdAt: "asc" }],
       include: {
         _count: { select: { submissions: true } },
-        targetUser: { select: { id: true, name: true } },
+        targetUsers: { select: { id: true, name: true } },
       },
     }),
     prisma.user.findMany({
@@ -33,8 +33,8 @@ export default async function QuestMasterPage() {
     submissionCount: q._count.submissions,
     createdAt: q.createdAt.toISOString(),
     updatedAt: q.updatedAt.toISOString(),
-    targetUserId: q.targetUserId,
-    targetUserName: q.targetUser?.name || null,
+    targetUserIds: q.targetUsers.map(u => u.id),
+    targetUserNames: q.targetUsers.length > 0 ? q.targetUsers.map(u => u.name).join(', ') : '全員',
   }));
 
   return (
