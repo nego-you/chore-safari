@@ -240,6 +240,7 @@ export type QuestMasterInput = {
   description?: string;
   rewardCoins: number;
   emoji?: string;
+  targetUserId?: string | null;
 };
 
 export type QuestMasterResult =
@@ -252,6 +253,7 @@ export type QuestMasterResult =
         rewardCoins: number;
         emoji: string;
         isActive: boolean;
+        targetUserId: string | null;
       };
     }
   | { success: false; error: string };
@@ -288,6 +290,7 @@ export async function createQuest(
         description: data.description?.trim() || null,
         rewardCoins: data.rewardCoins,
         emoji: data.emoji?.trim() || "⭐",
+        targetUserId: data.targetUserId || null,
       },
     });
 
@@ -332,6 +335,7 @@ export async function updateQuest(
         description: data.description?.trim() || null,
         rewardCoins: data.rewardCoins,
         emoji: data.emoji?.trim() || exists.emoji || "⭐",
+        targetUserId: data.targetUserId || null,
       },
     });
 
@@ -348,6 +352,7 @@ export async function updateQuest(
         rewardCoins: quest.rewardCoins,
         emoji: quest.emoji,
         isActive: quest.isActive,
+        targetUserId: quest.targetUserId,
       },
     };
   } catch (e) {

@@ -16,6 +16,7 @@ type QuestLite = {
   description: string | null;
   rewardCoins: number;
   emoji: string;
+  targetUserId: string | null;
 };
 
 type SubmissionLite = {
@@ -187,6 +188,7 @@ export function QuestsClient({
                 isPending={pendingQuestId === q.id}
                 error={errorByQuest[q.id]}
                 onSubmit={() => handleSubmit(q)}
+                selectedKid={selectedKid}
               />
             );
           })}
@@ -206,12 +208,14 @@ function QuestCard({
   isPending,
   error,
   onSubmit,
+  selectedKid,
 }: {
   quest: QuestLite;
   latest: SubmissionLite | undefined;
   isPending: boolean;
   error?: string;
   onSubmit: () => void;
+  selectedKid: KidLite;
 }) {
   const status = latest?.status ?? null;
   const isAwaiting = status === "PENDING";
@@ -226,6 +230,11 @@ function QuestCard({
           <p className="text-lg font-black text-emerald-800">{quest.title}</p>
           {quest.description && (
             <p className="text-xs text-emerald-700/80">{quest.description}</p>
+          )}
+          {quest.targetUserId === selectedKid.id && (
+            <p className="mt-1 inline-block rounded-full bg-pink-200 px-2 py-0.5 text-xs font-extrabold text-pink-900">
+              🎀 {selectedKid.name}ちゃん専用！ 🎀
+            </p>
           )}
           <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-200 px-2 py-0.5 text-xs font-extrabold text-amber-900">
             +{quest.rewardCoins} コイン 🪙

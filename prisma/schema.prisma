@@ -80,6 +80,8 @@ model User {
   bonusNotifications SpecialBonusNotification[]
   questSubmissions   QuestSubmission[]
   activeTraps        ActiveTrap[]
+  // 専用クエストの対象となる場合
+  targetQuests       Quest[]
 
   @@map("users")
 }
@@ -190,6 +192,9 @@ model Quest {
   emoji       String            @default("⭐")
   // 一覧から非表示にしたい時に使う（廃止クエスト）。
   isActive    Boolean           @default(true) @map("is_active")
+  // 特定の子供専用クエストにする場合に設定（null=全員用）
+  targetUserId String?          @map("target_user_id")
+  targetUser   User?             @relation(fields: [targetUserId], references: [id], onDelete: SetNull)
   createdAt   DateTime          @default(now()) @map("created_at")
   updatedAt   DateTime          @updatedAt @map("updated_at")
   submissions QuestSubmission[]

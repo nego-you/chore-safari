@@ -8,12 +8,20 @@ import { QuestMasterClient } from "./QuestMasterClient";
 export const dynamic = "force-dynamic";
 
 export default async function QuestMasterPage() {
-  const quests = await prisma.quest.findMany({
-    orderBy: [{ rewardCoins: "asc" }, { createdAt: "asc" }],
-    include: {
-      _count: { select: { submissions: true } },
-    },
-  });
+  const [quests, kids] = await Promise.all([
+    prisma.quest.findMany({
+      orderBy: [{ rewardCoins: "asc" }, { createdAt: "asc" }],
+      include: {
+        _count: { select: { submissions: true } },
+        targetUser: { select: { id: true, name: true } },
+      },
+    }),
+    prisma.user.findMany({
+      where: { role: "CHILD" },
+      orderBy: { birthDate: "asc" },
+      select: { id: true, name: true },
+    }),
+  ]);
 
   const rows = quests.map((q) => ({
     id: q.id,
@@ -25,6 +33,8 @@ export default async function QuestMasterPage() {
     submissionCount: q._count.submissions,
     createdAt: q.createdAt.toISOString(),
     updatedAt: q.updatedAt.toISOString(),
+    targetUserId: q.targetUserId,
+    targetUserName: q.targetUser?.name || null,
   }));
 
   return (
@@ -50,7 +60,7 @@ export default async function QuestMasterPage() {
         </p>
       </header>
 
-      <QuestMasterClient initialRows={rows} />
+      <QuestMasterClient initialRows={rows} kids={kids} />
     </main>
   );
 }

@@ -23,8 +23,22 @@ export default async function QuestsPage({
       select: { id: true, name: true, coinBalance: true },
     }),
     prisma.quest.findMany({
-      where: { isActive: true },
+      where: {
+        isActive: true,
+        OR: [
+          { targetUserId: null }, // 全員用
+          { targetUserId: kidParam }, // 自分専用
+        ],
+      },
       orderBy: [{ rewardCoins: "asc" }, { createdAt: "asc" }],
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        rewardCoins: true,
+        emoji: true,
+        targetUserId: true,
+      },
     }),
     // 直近の各申請（誰の何のクエストが PENDING/APPROVED/REJECTED か）。
     // 各クエストごとに最新の状態だけ知れれば良いので take は十分に大きく取る。
