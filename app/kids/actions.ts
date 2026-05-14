@@ -705,7 +705,27 @@ function drawCranePrize(): PoolEntry {
   return CRANE_POOL[CRANE_POOL.length - 1];
 }
 
-export async function playCraneGame(userId: string): Promise<GachaResult> {
+// クレーン結果：捕獲成功なら item.totalQuantity に在庫数、失敗（途中で落とす）
+// なら inventory には入れず、prize 情報だけ返す（演出用）。
+// クライアントは「アニメーションを全部走らせた最終結果」を didCatch に乗せて呼ぶ。
+export type CraneResult =
+  | {
+      success: true;
+      didCatch: boolean;
+      item: {
+        itemId: string;
+        itemName: string;
+        itemType: "FOOD" | "TRAP_PART";
+        totalQuantity: number | null; // didCatch=false なら null
+      };
+      newCoinBalance: number;
+    }
+  | { success: false; error: string };
+
+export async function playCraneGame(
+  userId: string,
+  didCatch: boolean,
+): Promise<CraneResult> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { id: true, role: true, coinBalance: true },
@@ -725,6 +745,7 @@ export async function playCraneGame(userId: string): Promise<GachaResult> {
 
   try {
     const result = await prisma.$transaction(async (tx) => {
+      // コインは必ず引く（リアルなクレーンゲーム仕様）。
       const updated = await tx.user.updateMany({
         where: { id: userId, coinBalance: { gte: CRANE_COST } },
         data: { coinBalance: { decrement: CRANE_COST } },
@@ -736,39 +757,48 @@ export async function playCraneGame(userId: string): Promise<GachaResult> {
         select: { coinBalance: true },
       });
 
+      // コイン履歴は成否で文言を分ける。
       await tx.coinTransaction.create({
         data: {
           userId,
           amount: -CRANE_COST,
           kind: "GACHA",
-          reason: `クレーン: ${prize.itemName}`,
+          reason: didCatch
+            ? `クレーン: ${prize.itemName}`
+            : `クレーン失敗（${prize.itemName}を落とした）`,
         },
       });
 
-      const row = await tx.sharedInventoryItem.upsert({
-        where: { itemId: prize.itemId },
-        update: { quantity: { increment: 1 } },
-        create: {
-          itemId: prize.itemId,
-          itemName: prize.itemName,
-          itemType: prize.itemType,
-          quantity: 1,
-        },
-      });
+      let totalQuantity: number | null = null;
 
-      await tx.gachaTransaction.create({
-        data: {
-          userId,
-          costAmount: CRANE_COST,
-          itemId: prize.itemId,
-          itemName: prize.itemName,
-          itemType: prize.itemType,
-        },
-      });
+      if (didCatch) {
+        // 取り出し口まで運べた時だけ在庫追加 + ガチャ履歴。
+        const row = await tx.sharedInventoryItem.upsert({
+          where: { itemId: prize.itemId },
+          update: { quantity: { increment: 1 } },
+          create: {
+            itemId: prize.itemId,
+            itemName: prize.itemName,
+            itemType: prize.itemType,
+            quantity: 1,
+          },
+        });
+        totalQuantity = row.quantity;
+
+        await tx.gachaTransaction.create({
+          data: {
+            userId,
+            costAmount: CRANE_COST,
+            itemId: prize.itemId,
+            itemName: prize.itemName,
+            itemType: prize.itemType,
+          },
+        });
+      }
 
       return {
         newCoinBalance: fresh.coinBalance,
-        totalQuantity: row.quantity,
+        totalQuantity,
       };
     });
 
@@ -778,6 +808,7 @@ export async function playCraneGame(userId: string): Promise<GachaResult> {
 
     return {
       success: true,
+      didCatch,
       item: {
         itemId: prize.itemId,
         itemName: prize.itemName,

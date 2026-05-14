@@ -1,12 +1,13 @@
 "use client";
 
-// クレーンゲーム（UFO キャッチャー）クライアント。
-// X 軸（左右）と Z 軸（前後＝奥行き）の 2 軸でクレーンを動かし、
-// キャッチで降下 → 引き上げ → 取り出し口へ移動 → ドロップ → 結果モーダル。
-// Three.js は使わず、CSS の transform / scale / transition だけで擬似 3D。
+// アーケード仕様のクレーンゲーム。
+// - アイテムは中央に「山積み」（座標と結果のミスマッチを回避）
+// - フェーズ: IDLE → DROPPING → GRABBING → RAISING → MOVING_TO_EXIT → RELEASE → SHOW
+// - RAISING / MOVING_TO_EXIT 中に 20% の確率でアイテム落下（ハラハラ仕様）
+// - 落下時は inventory に入らず、コインだけ消費（バックエンドの didCatch=false で）
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { playCraneGame } from "../actions";
 import { CRANE_COST } from "../config";
 
@@ -47,41 +48,95 @@ function NameRuby({ name }: { name: string }) {
   );
 }
 
-// (x, z) ∈ [0,100]² を、トラペゾイドの床に擬似 3D 投影する。
-// z=0 が手前（大きく、画面下）、z=100 が奥（小さく、画面上）。
-function project(x: number, z: number) {
-  const t = z / 100; // 0=front, 1=back
-  const leftEdge = 0.06 + 0.22 * t;
-  const rightEdge = 0.94 - 0.22 * t;
-  const xRatio = leftEdge + (x / 100) * (rightEdge - leftEdge);
-  const yRatio = 1.0 - 0.7 * t;
-  const scale = 1.0 - 0.4 * t;
-  return { xRatio, yRatio, scale };
-}
-
 type Phase =
   | "idle"
-  | "descend"
-  | "grip"
-  | "lift"
-  | "move"
-  | "drop"
-  | "result";
+  | "dropping"      // アームが降りる
+  | "grabbing"      // ツメを閉じる（API 叩く）
+  | "raising"       // 持ち上げる
+  | "moving_to_exit"
+  | "release"
+  | "show";
 
 type Prize = {
   itemId: string;
   itemName: string;
   itemType: "FOOD" | "TRAP_PART";
-  totalQuantity: number;
+  totalQuantity: number | null;
+  emoji: string;
 };
 
-// 取り出し口の位置（左手前）。
-const OUTLET = { x: 10, z: 8 };
+type Outcome =
+  | { kind: "caught"; prize: Prize }
+  | { kind: "dropped"; prize: Prize }
+  | null;
 
-const STEP = 18; // 1 押しでの移動量
+const STEP = 18;
+const DROP_CHANCE = 0.2; // 20%
+const OUTLET = { x: 10, z: 5 };
+
+// 各フェーズ時間 (ms)
+const T = {
+  drop: 1100,
+  grab: 500,
+  raise: 1000,
+  move: 1100,
+  release: 600,
+  fall: 800, // 途中で落ちる演出
+};
 
 function wait(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms));
+}
+
+// (x, z) ∈ [0,100]² を擬似 3D 投影（クレーンの平面位置だけに使う）
+function projectCrane(x: number, z: number) {
+  const t = z / 100;
+  const leftEdge = 0.08 + 0.22 * t;
+  const rightEdge = 0.92 - 0.22 * t;
+  const xRatio = leftEdge + (x / 100) * (rightEdge - leftEdge);
+  const scale = 1.0 - 0.35 * t;
+  return { xRatio, scale };
+}
+
+// 山積みアイテム：中央の床に重なって積まれた絵文字群。
+// 初期マウントで一度だけ生成し、リザルトを閉じるたびにシャッフル。
+type HeapItem = {
+  key: string;
+  emoji: string;
+  dx: number; // 中心からの横ずれ (px 換算: -60..60)
+  dy: number; // 中心からの縦ずれ
+  rot: number; // 回転
+  size: number; // rem
+  z: number; // 奥行きで重なる順
+};
+
+function buildHeap(seed: number): HeapItem[] {
+  // 12〜16 個ほど積む。ITEM_EMOJI からランダム選択。
+  const keys = Object.keys(ITEM_EMOJI);
+  const count = 14;
+  const items: HeapItem[] = [];
+  // 疑似乱数（seed を変えるごとに違う配置に）
+  let s = seed;
+  const rand = () => {
+    s = (s * 9301 + 49297) % 233280;
+    return s / 233280;
+  };
+  for (let i = 0; i < count; i++) {
+    const itemId = keys[Math.floor(rand() * keys.length)];
+    items.push({
+      key: `${seed}-${i}`,
+      emoji: ITEM_EMOJI[itemId] ?? "❓",
+      // 横はまんべんなく、縦は下に行くほど詰まる感じに
+      dx: (rand() - 0.5) * 130,
+      dy: -rand() * 60,
+      rot: (rand() - 0.5) * 40,
+      size: 2.6 + rand() * 1.0,
+      z: i,
+    });
+  }
+  // 上から積み上がる感じに dy 降順で並べる（手前のものほど画面下）
+  items.sort((a, b) => a.dy - b.dy);
+  return items;
 }
 
 export function CraneClient({ initialKidId, kids }: Props) {
@@ -89,13 +144,20 @@ export function CraneClient({ initialKidId, kids }: Props) {
   const [craneX, setCraneX] = useState(50);
   const [craneZ, setCraneZ] = useState(50);
   const [phase, setPhase] = useState<Phase>("idle");
-  const [prize, setPrize] = useState<Prize | null>(null);
+  const [outcome, setOutcome] = useState<Outcome>(null);
   const [error, setError] = useState<string | null>(null);
   const [coinBalance, setCoinBalance] = useState(
     initialKidId
       ? kids.find((k) => k.id === initialKidId)?.coinBalance ?? 0
       : 0,
   );
+  const [heapSeed, setHeapSeed] = useState(1);
+  const heap = useMemo(() => buildHeap(heapSeed), [heapSeed]);
+
+  // 持ち上げ中アイテムの絵文字（grabbing 以降で見える）
+  const [carriedEmoji, setCarriedEmoji] = useState<string | null>(null);
+  // 落下中フラグ（drop アニメーションを発火）
+  const [falling, setFalling] = useState(false);
 
   // 子の切替時に残高を取り直す
   useEffect(() => {
@@ -105,22 +167,6 @@ export function CraneClient({ initialKidId, kids }: Props) {
   }, [kidId, kids]);
 
   const selectedKid = kidId ? kids.find((k) => k.id === kidId) ?? null : null;
-
-  // 筐体に入っているアイテム（装飾）。リザルトを閉じるごとに再シャッフル。
-  const [shuffleSeed, setShuffleSeed] = useState(0);
-  const items = useMemo(() => {
-    const pool = Object.keys(ITEM_EMOJI);
-    const seed = shuffleSeed; // ← デプス用フラグ
-    void seed;
-    return Array.from({ length: 11 }).map((_, i) => ({
-      id: `${shuffleSeed}-${i}`,
-      itemId: pool[Math.floor(Math.random() * pool.length)],
-      x: 12 + Math.random() * 76,
-      z: 12 + Math.random() * 76,
-      rot: (Math.random() - 0.5) * 30,
-    }));
-  }, [shuffleSeed]);
-
   const moveBusy = phase !== "idle";
 
   const move = (dx: number, dz: number) => {
@@ -136,49 +182,92 @@ export function CraneClient({ initialKidId, kids }: Props) {
       return;
     }
     setError(null);
+    setFalling(false);
+    setCarriedEmoji(null);
 
-    // 降下開始と同時にサーバ抽選を投げる（演出と並行）
-    const resultPromise = playCraneGame(selectedKid.id);
+    // 運命判定：落ちるか、落ちないか。落ちる場合はどのフェーズで落とすか。
+    const willDrop = Math.random() < DROP_CHANCE;
+    const dropPhase: "raise" | "move" | null = willDrop
+      ? Math.random() < 0.5
+        ? "raise"
+        : "move"
+      : null;
+    const didCatch = !willDrop;
 
-    setPhase("descend");
-    await wait(1100);
+    // === DROPPING ===
+    setPhase("dropping");
+    await wait(T.drop);
 
-    setPhase("grip");
-    const result = await resultPromise;
+    // === GRABBING ===
+    setPhase("grabbing");
+    // 結果を取得（didCatch 確定）
+    const result = await playCraneGame(selectedKid.id, didCatch);
     if (!result.success) {
       setError(result.error);
       setPhase("idle");
       return;
     }
-    setPrize({
+    setCoinBalance(result.newCoinBalance);
+    const prize: Prize = {
       itemId: result.item.itemId,
       itemName: result.item.itemName,
       itemType: result.item.itemType,
       totalQuantity: result.item.totalQuantity,
-    });
-    setCoinBalance(result.newCoinBalance);
-    await wait(450);
+      emoji: ITEM_EMOJI[result.item.itemId] ?? "🎁",
+    };
+    setCarriedEmoji(prize.emoji);
+    await wait(T.grab);
 
-    setPhase("lift");
-    await wait(1000);
+    // === RAISING ===
+    setPhase("raising");
+    if (dropPhase === "raise") {
+      // 上昇途中で落とす：raise の半分でつるん…
+      await wait(T.raise / 2);
+      setFalling(true);
+      await wait(T.fall);
+      setCarriedEmoji(null);
+      setFalling(false);
+      setOutcome({ kind: "dropped", prize });
+      setPhase("show");
+      return;
+    }
+    await wait(T.raise);
 
-    setPhase("move");
+    // === MOVING_TO_EXIT ===
+    setPhase("moving_to_exit");
     setCraneX(OUTLET.x);
     setCraneZ(OUTLET.z);
-    await wait(1100);
+    if (dropPhase === "move") {
+      // 移動途中で落とす：move の半分でつるん…
+      await wait(T.move / 2);
+      setFalling(true);
+      await wait(T.fall);
+      setCarriedEmoji(null);
+      setFalling(false);
+      setOutcome({ kind: "dropped", prize });
+      setPhase("show");
+      return;
+    }
+    await wait(T.move);
 
-    setPhase("drop");
-    await wait(550);
+    // === RELEASE ===
+    setPhase("release");
+    await wait(T.release);
 
-    setPhase("result");
+    // === SHOW ===
+    setCarriedEmoji(null);
+    setOutcome({ kind: "caught", prize });
+    setPhase("show");
   };
 
   const closeResult = () => {
+    setOutcome(null);
     setPhase("idle");
-    setPrize(null);
-    setShuffleSeed((s) => s + 1);
     setCraneX(50);
     setCraneZ(50);
+    setCarriedEmoji(null);
+    setFalling(false);
+    setHeapSeed((s) => s + 1);
   };
 
   // ── キッド未選択 ─────────────────────────────
@@ -213,30 +302,12 @@ export function CraneClient({ initialKidId, kids }: Props) {
     );
   }
 
-  // クレーン本体の投影位置
-  const craneProj = project(craneX, craneZ);
-
-  // キャッチ動作中のケーブル長さ（プレイエリア高さに対する％）
-  const cableTopPercent = 6; // 天井すぐ下
-  const cableRestPercent = 24; // 通常時のケーブル先端 Y
-  const cableDeepPercent = 78; // 降りきった時の Y
-  const cableTipPercent =
-    phase === "descend" || phase === "grip"
-      ? cableDeepPercent
-      : phase === "drop"
-        ? 60
-        : cableRestPercent;
-
-  // 掴んだアイテムを表示するのは grip 以降 result まで
-  const showCarriedItem =
-    prize !== null &&
-    (phase === "grip" ||
-      phase === "lift" ||
-      phase === "move" ||
-      phase === "drop");
+  const cranePos = projectCrane(craneX, craneZ);
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-fuchsia-100 via-pink-100 to-amber-100 px-4 py-6">
+      <style>{CSS_KEYFRAMES}</style>
+
       <div className="mx-auto max-w-2xl space-y-5">
         {/* ヘッダー */}
         <div className="flex items-center justify-between">
@@ -263,26 +334,23 @@ export function CraneClient({ initialKidId, kids }: Props) {
               </p>
             </div>
 
-            {/* プレイエリア（ガラス窓） */}
             <PlayArea
-              items={items}
-              craneProj={craneProj}
+              heap={heap}
+              cranePos={cranePos}
               craneX={craneX}
               craneZ={craneZ}
               phase={phase}
-              prize={prize}
-              cableTopPercent={cableTopPercent}
-              cableTipPercent={cableTipPercent}
-              showCarriedItem={showCarriedItem}
+              carriedEmoji={carriedEmoji}
+              falling={falling}
             />
 
-            {/* コインスロット風の装飾 */}
+            {/* フッタ装飾 */}
             <div className="mt-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 rounded-xl bg-white/80 px-3 py-2 text-xs font-bold text-fuchsia-700 ring-1 ring-fuchsia-300">
                 🪙 1かい {CRANE_COST}
               </div>
               <div className="rounded-xl bg-rose-100 px-3 py-2 text-[10px] font-extrabold text-rose-700 ring-1 ring-rose-300">
-                クラフトひんも でるよ！
+                {DROP_CHANCE * 100}% で とちゅう おち！？
               </div>
             </div>
           </div>
@@ -324,7 +392,6 @@ export function CraneClient({ initialKidId, kids }: Props) {
               <div className="absolute inset-x-12 inset-y-12 rounded-full bg-fuchsia-100" />
             </div>
 
-            {/* キャッチ */}
             <button
               type="button"
               onClick={handleCatch}
@@ -349,78 +416,75 @@ export function CraneClient({ initialKidId, kids }: Props) {
             </p>
           )}
           {moveBusy && (
-            <p className="mt-3 text-center text-xs text-fuchsia-600/80">
-              ☆ どうさちゅう… おちつけ おちつけ ☆
+            <p className="mt-3 text-center text-xs font-bold text-fuchsia-600/80">
+              {phase === "dropping" && "⬇️ アームが おりていくよ…"}
+              {phase === "grabbing" && "✊ つかむ！"}
+              {phase === "raising" && "⬆️ もちあげちゅう…"}
+              {phase === "moving_to_exit" && "🛒 とりだしぐちへ うんぱん…"}
+              {phase === "release" && "🎁 おとす！"}
             </p>
           )}
         </section>
 
         <p className="text-center text-xs text-fuchsia-700/70">
-          ✨ クレーンゲームは ガチャより いい アイテムが でるよ ✨
+          ✨ ガチャより いい アイテムが でるよ。でも 5かいに 1かいくらい とちゅうで おとすかも… ✨
         </p>
       </div>
 
-      {phase === "result" && prize && (
-        <ResultModal prize={prize} onClose={closeResult} />
-      )}
+      {outcome && <ResultModal outcome={outcome} onClose={closeResult} />}
     </main>
   );
 }
 
 // ────────── プレイエリア ──────────
 function PlayArea({
-  items,
-  craneProj,
+  heap,
+  cranePos,
   craneX,
   craneZ,
   phase,
-  prize,
-  cableTopPercent,
-  cableTipPercent,
-  showCarriedItem,
+  carriedEmoji,
+  falling,
 }: {
-  items: Array<{ id: string; itemId: string; x: number; z: number; rot: number }>;
-  craneProj: { xRatio: number; yRatio: number; scale: number };
+  heap: HeapItem[];
+  cranePos: { xRatio: number; scale: number };
   craneX: number;
   craneZ: number;
   phase: Phase;
-  prize: Prize | null;
-  cableTopPercent: number;
-  cableTipPercent: number;
-  showCarriedItem: boolean;
+  carriedEmoji: string | null;
+  falling: boolean;
 }) {
-  const areaRef = useRef<HTMLDivElement>(null);
+  // ケーブル先端 Y (%)。dropping/grabbing は深く、それ以外は引っ込めて。
+  const CABLE_TOP_PERCENT = 6;
+  let cableTip = 24;
+  if (phase === "dropping" || phase === "grabbing") cableTip = 76;
+  else if (phase === "release") cableTip = 60;
 
-  // 移動アニメ用のトランジション秒数（フェーズで切り替え）
   const carriageTransition =
-    phase === "move"
-      ? "left 1.0s cubic-bezier(.4,0,.2,1), top 1.0s cubic-bezier(.4,0,.2,1), transform 1.0s"
-      : "left 0.45s, top 0.45s, transform 0.45s";
-
+    phase === "moving_to_exit"
+      ? "left 1.0s cubic-bezier(.4,0,.2,1), transform 1.0s"
+      : "left 0.45s, transform 0.45s";
   const cableTransition =
-    phase === "descend"
-      ? "top 1.1s cubic-bezier(.55,.05,.4,1), height 1.1s cubic-bezier(.55,.05,.4,1)"
-      : phase === "lift"
-        ? "top 1.0s cubic-bezier(.4,0,.2,1), height 1.0s cubic-bezier(.4,0,.2,1)"
-        : phase === "drop"
-          ? "top 0.55s ease-in, height 0.55s ease-in"
+    phase === "dropping"
+      ? `top ${T.drop}ms cubic-bezier(.55,.05,.4,1), height ${T.drop}ms cubic-bezier(.55,.05,.4,1)`
+      : phase === "raising"
+        ? `top ${T.raise}ms cubic-bezier(.4,0,.2,1), height ${T.raise}ms cubic-bezier(.4,0,.2,1)`
+        : phase === "release"
+          ? `top ${T.release}ms ease-in, height ${T.release}ms ease-in`
           : "top 0.4s, height 0.4s";
 
   return (
-    <div
-      ref={areaRef}
-      className="relative aspect-[5/6] w-full overflow-hidden rounded-2xl bg-gradient-to-b from-sky-100 via-amber-50 to-amber-200 shadow-inner"
-    >
-      {/* 背景の奥の壁＋床（パース感） */}
+    <div className="relative aspect-[5/6] w-full overflow-hidden rounded-2xl bg-gradient-to-b from-sky-100 via-amber-50 to-amber-200 shadow-inner">
+      {/* 奥の壁ハイライト */}
       <div
         aria-hidden
         className="absolute inset-0"
         style={{
           background:
-            "linear-gradient(to bottom, rgba(125,184,255,0.25) 0%, rgba(125,184,255,0.12) 25%, transparent 40%)",
+            "linear-gradient(to bottom, rgba(125,184,255,0.25) 0%, rgba(125,184,255,0.10) 25%, transparent 40%)",
         }}
       />
-      {/* 床（台形クリップで奥行き） */}
+      {/* 台形の床 */}
       <div
         aria-hidden
         className="absolute inset-0"
@@ -430,25 +494,6 @@ function PlayArea({
           clipPath: "polygon(6% 100%, 94% 100%, 72% 30%, 28% 30%)",
         }}
       />
-      {/* 床のグリッド線（薄め） */}
-      <svg
-        aria-hidden
-        className="absolute inset-0 h-full w-full"
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-      >
-        {[0.4, 0.55, 0.7, 0.85].map((y, i) => (
-          <line
-            key={i}
-            x1={28 - (100 - y * 100) * 0}
-            x2={72 + (100 - y * 100) * 0}
-            y1={30 + (100 - 30) * ((y - 0.4) / 0.6)}
-            y2={30 + (100 - 30) * ((y - 0.4) / 0.6)}
-            stroke="rgba(120,80,40,0.18)"
-            strokeWidth="0.4"
-          />
-        ))}
-      </svg>
 
       {/* 取り出し口 */}
       <div
@@ -465,70 +510,80 @@ function PlayArea({
         </p>
       </div>
 
-      {/* 上部の天井レール */}
-      <div className="absolute inset-x-3 top-3 h-2 rounded-full bg-gradient-to-b from-slate-700 to-slate-500 shadow" />
-
-      {/* 落ちているアイテム達 */}
-      {items.map((it) => {
-        const p = project(it.x, it.z);
-        return (
-          <span
-            key={it.id}
-            className="pointer-events-none absolute select-none drop-shadow"
-            style={{
-              left: `${p.xRatio * 100}%`,
-              top: `${p.yRatio * 100}%`,
-              transform: `translate(-50%, -50%) scale(${p.scale}) rotate(${it.rot}deg)`,
-              fontSize: "2.5rem",
-              transition: "transform 0.3s",
-            }}
-          >
-            {ITEM_EMOJI[it.itemId] ?? "❓"}
-          </span>
-        );
-      })}
-
-      {/* クレーン本体（キャリッジ＋ケーブル＋グラバー） */}
+      {/* 山積みアイテム：中央の床に集中 */}
       <div
         className="pointer-events-none absolute"
         style={{
-          left: `${craneProj.xRatio * 100}%`,
-          top: `${cableTopPercent}%`,
-          transform: `translate(-50%, 0) scale(${craneProj.scale})`,
+          left: "50%",
+          bottom: "8%",
+          transform: "translateX(-50%)",
+        }}
+      >
+        {heap.map((it) => (
+          <span
+            key={it.key}
+            aria-hidden
+            className="absolute select-none drop-shadow"
+            style={{
+              left: `${it.dx}px`,
+              bottom: `${it.dy}px`,
+              transform: `translate(-50%, 0) rotate(${it.rot}deg)`,
+              fontSize: `${it.size}rem`,
+              zIndex: it.z,
+            }}
+          >
+            {it.emoji}
+          </span>
+        ))}
+        {/* 山の影 */}
+        <span
+          aria-hidden
+          className="absolute -bottom-2 left-1/2 -z-10 block h-4 w-44 -translate-x-1/2 rounded-full bg-amber-900/30 blur"
+        />
+      </div>
+
+      {/* 上部レール */}
+      <div className="absolute inset-x-3 top-3 h-2 rounded-full bg-gradient-to-b from-slate-700 to-slate-500 shadow" />
+
+      {/* キャリッジ（X 軸の見た目位置）*/}
+      <div
+        className="pointer-events-none absolute"
+        style={{
+          left: `${cranePos.xRatio * 100}%`,
+          top: `${CABLE_TOP_PERCENT}%`,
+          transform: `translate(-50%, 0) scale(${cranePos.scale})`,
           transformOrigin: "top center",
           transition: carriageTransition,
         }}
       >
-        {/* キャリッジ */}
         <div className="relative -translate-x-1/2 left-1/2">
           <div className="h-3 w-16 rounded-md bg-gradient-to-b from-slate-700 to-slate-900 shadow-lg" />
           <div className="mx-auto h-1 w-2 bg-slate-700" />
         </div>
       </div>
 
-      {/* ケーブル + グラバー（同じ X だが、ケーブル先端の Y は phase で変動） */}
+      {/* ケーブル + グラバー（Y 軸＝伸縮） */}
       <div
         className="pointer-events-none absolute"
         style={{
-          left: `${craneProj.xRatio * 100}%`,
-          top: `${cableTopPercent + 2}%`,
-          transform: `translate(-50%, 0)`,
-          transition: "left 0.45s, transform 0.45s",
+          left: `${cranePos.xRatio * 100}%`,
+          top: `${CABLE_TOP_PERCENT + 2}%`,
+          transform: "translate(-50%, 0)",
+          transition: carriageTransition,
+          zIndex: 30,
         }}
       >
-        {/* ケーブル（高さ可変） */}
         <div
           className="mx-auto w-[3px] bg-gradient-to-b from-slate-500 to-slate-700"
           style={{
-            height: `calc(${cableTipPercent - cableTopPercent - 2}% * 6)`,
+            height: `calc(${cableTip - CABLE_TOP_PERCENT - 2}% * 6)`,
             transition: cableTransition,
           }}
         />
-        {/* グラバー */}
         <div
           className="relative -mt-1 mx-auto flex h-8 w-10 items-end justify-center"
           style={{
-            transform: `scale(${craneProj.scale})`,
+            transform: `scale(${cranePos.scale})`,
             transformOrigin: "top center",
             transition: "transform 0.45s",
           }}
@@ -538,9 +593,11 @@ function PlayArea({
             className="absolute -left-1 bottom-0 block h-7 w-2 rounded-b-md bg-gradient-to-b from-slate-500 to-slate-800"
             style={{
               transform:
-                phase === "grip" || phase === "lift" || phase === "move"
-                  ? "rotate(20deg)"
-                  : "rotate(40deg)",
+                phase === "grabbing" ||
+                phase === "raising" ||
+                phase === "moving_to_exit"
+                  ? "rotate(15deg)"
+                  : "rotate(42deg)",
               transformOrigin: "top center",
               transition: "transform 0.4s",
             }}
@@ -550,39 +607,53 @@ function PlayArea({
             className="absolute -right-1 bottom-0 block h-7 w-2 rounded-b-md bg-gradient-to-b from-slate-500 to-slate-800"
             style={{
               transform:
-                phase === "grip" || phase === "lift" || phase === "move"
-                  ? "rotate(-20deg)"
-                  : "rotate(-40deg)",
+                phase === "grabbing" ||
+                phase === "raising" ||
+                phase === "moving_to_exit"
+                  ? "rotate(-15deg)"
+                  : "rotate(-42deg)",
               transformOrigin: "top center",
               transition: "transform 0.4s",
             }}
           />
-          {/* 中央の本体 */}
+          {/* 本体 */}
           <span className="block h-3 w-6 rounded-b-md bg-slate-700" />
 
-          {/* 掴んだアイテム */}
-          {showCarriedItem && prize && (
+          {/* 持ち上げ中のアイテム or 落下中のアイテム */}
+          {carriedEmoji && !falling && (
             <span
               className="absolute left-1/2 top-3 -translate-x-1/2 select-none text-3xl drop-shadow"
               style={{
-                transition: "transform 0.5s",
+                transition: "transform 0.4s",
                 transform:
-                  phase === "drop"
-                    ? "translate(-50%, 36px) scale(0.9)"
+                  phase === "release"
+                    ? "translate(-50%, 30px) scale(0.85)"
                     : "translate(-50%, 0) scale(1)",
-                opacity: phase === "drop" ? 0.5 : 1,
+                opacity: phase === "release" ? 0.5 : 1,
               }}
             >
-              {ITEM_EMOJI[prize.itemId] ?? "❓"}
+              {carriedEmoji}
             </span>
           )}
         </div>
       </div>
 
-      {/* デバッグ：座標表示（小さく） */}
-      <div className="absolute right-2 top-2 rounded-md bg-white/70 px-2 py-0.5 text-[10px] font-bold text-fuchsia-700">
-        X:{craneX} Z:{craneZ}
-      </div>
+      {/* 落下中アイテム：グラバーから外れて床へ。
+          フェーズ独立に絶対配置で表示。 */}
+      {falling && carriedEmoji && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute z-40 text-4xl drop-shadow-lg"
+          style={{
+            left: `${cranePos.xRatio * 100}%`,
+            top: `${cableTip}%`,
+            transform: "translate(-50%, -50%)",
+            animation: `fall-bounce ${T.fall}ms cubic-bezier(.5,0,.8,1) forwards`,
+          }}
+        >
+          {carriedEmoji}
+        </span>
+      )}
     </div>
   );
 }
@@ -630,12 +701,42 @@ function DPadButton({
 
 // ────────── 結果モーダル ──────────
 function ResultModal({
-  prize,
+  outcome,
   onClose,
 }: {
-  prize: Prize;
+  outcome: { kind: "caught"; prize: Prize } | { kind: "dropped"; prize: Prize };
   onClose: () => void;
 }) {
+  const isCaught = outcome.kind === "caught";
+
+  // 成功時のみ紙吹雪
+  useEffect(() => {
+    if (!isCaught) return;
+    let cancelled = false;
+    (async () => {
+      const mod = await import("canvas-confetti");
+      if (cancelled) return;
+      const palette = [
+        "#fda4af",
+        "#fcd34d",
+        "#a7f3d0",
+        "#bae6fd",
+        "#ddd6fe",
+        "#fbcfe8",
+      ];
+      mod.default({
+        particleCount: 180,
+        spread: 100,
+        origin: { y: 0.55 },
+        colors: palette,
+        zIndex: 9999,
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isCaught]);
+
   return (
     <div
       role="dialog"
@@ -645,41 +746,95 @@ function ResultModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="mx-4 max-w-sm rounded-[2rem] bg-gradient-to-br from-yellow-200 via-pink-200 to-violet-200 p-1 shadow-2xl"
+        className={`mx-4 max-w-sm rounded-[2rem] p-1 shadow-2xl ${
+          isCaught
+            ? "bg-gradient-to-br from-yellow-200 via-pink-200 to-violet-200"
+            : "bg-gradient-to-br from-slate-300 via-slate-200 to-slate-300"
+        }`}
       >
         <div className="rounded-[1.7rem] bg-white px-6 py-10 text-center">
-          <p className="text-sm font-extrabold tracking-[0.3em] text-fuchsia-500">
-            ✨ ゲット ✨
-          </p>
-          <div className="relative my-4 flex items-center justify-center">
-            <span aria-hidden className="absolute text-9xl opacity-20 blur-md">
-              {ITEM_EMOJI[prize.itemId] ?? "🎁"}
-            </span>
-            <span
-              aria-hidden
-              className="relative text-8xl drop-shadow-lg animate-bounce"
-            >
-              {ITEM_EMOJI[prize.itemId] ?? "🎁"}
-            </span>
-          </div>
-          <p className="text-3xl font-black text-fuchsia-700">
-            {prize.itemName}
-          </p>
-          <p className="mt-2 text-base font-bold text-fuchsia-500">
-            を ゲットしたよ！
-          </p>
-          <p className="mt-2 text-xs text-fuchsia-700/70">
-            そうこに ぜんぶで {prize.totalQuantity} こ
-          </p>
+          {isCaught ? (
+            <>
+              <p className="text-sm font-extrabold tracking-[0.3em] text-fuchsia-500">
+                ✨ ゲット ✨
+              </p>
+              <div className="relative my-4 flex items-center justify-center">
+                <span aria-hidden className="absolute text-9xl opacity-20 blur-md">
+                  {outcome.prize.emoji}
+                </span>
+                <span
+                  aria-hidden
+                  className="relative text-8xl drop-shadow-lg animate-bounce"
+                >
+                  {outcome.prize.emoji}
+                </span>
+              </div>
+              <p className="text-3xl font-black text-fuchsia-700">
+                {outcome.prize.itemName}
+              </p>
+              <p className="mt-2 text-base font-bold text-fuchsia-500">
+                を ゲットしたよ！
+              </p>
+              {outcome.prize.totalQuantity !== null && (
+                <p className="mt-2 text-xs text-fuchsia-700/70">
+                  そうこに ぜんぶで {outcome.prize.totalQuantity} こ
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-extrabold tracking-[0.3em] text-slate-500 animate-pulse">
+                💧 とちゅう おち 💧
+              </p>
+              <div className="relative my-4 flex items-center justify-center">
+                <span
+                  aria-hidden
+                  className="relative text-8xl opacity-60 grayscale drop-shadow-lg"
+                  style={{ animation: "shake 0.4s linear 3" }}
+                >
+                  {outcome.prize.emoji}
+                </span>
+              </div>
+              <p className="text-2xl font-black text-slate-700">
+                {outcome.prize.itemName}
+              </p>
+              <p className="mt-3 text-sm font-bold text-slate-600">
+                ああっ！ とちゅうで おちちゃった…
+              </p>
+              <p className="mt-1 text-xs text-rose-500">
+                ※ コインだけ なくなったよ（ざんねん…）
+              </p>
+            </>
+          )}
+
           <button
             type="button"
             onClick={onClose}
-            className="mt-6 rounded-full bg-fuchsia-500 px-6 py-2 text-sm font-extrabold text-white shadow transition hover:brightness-110"
+            className={`mt-6 rounded-full px-6 py-2 text-sm font-extrabold text-white shadow transition hover:brightness-110 ${
+              isCaught ? "bg-fuchsia-500" : "bg-slate-500"
+            }`}
           >
-            やったー！
+            {isCaught ? "やったー！" : "もう いっかい！"}
           </button>
         </div>
       </div>
     </div>
   );
 }
+
+// ────────── キーフレーム ──────────
+const CSS_KEYFRAMES = `
+  @keyframes fall-bounce {
+    0% { transform: translate(-50%, -50%); opacity: 1; }
+    70% { transform: translate(-50%, 250%); opacity: 1; }
+    85% { transform: translate(-50%, 230%) rotate(-15deg); }
+    100% { transform: translate(-50%, 240%) rotate(10deg); opacity: 0.6; }
+  }
+  @keyframes shake {
+    0% { transform: translateX(0); }
+    25% { transform: translateX(-8px); }
+    50% { transform: translateX(8px); }
+    75% { transform: translateX(-6px); }
+    100% { transform: translateX(0); }
+  }
+`;
