@@ -76,13 +76,21 @@ const OUTLET = { x: 10, z: 5 };
 
 // 各フェーズ時間 (ms)
 const T = {
-  drop: 1100,
+  drop: 1000,
   grab: 500,
   raise: 1000,
-  move: 1100,
+  move: 1000,
   release: 600,
   fall: 800, // 途中で落ちる演出
 };
+
+// アームの降下量（px）。play area の中央〜下まで届く長さ。
+// vh と px の min で「広い画面では 360px、狭い画面では 48vh」の保険つき。
+const ARM_DESCEND = {
+  rest: "0px",
+  deep: "min(48vh, 360px)",  // dropping / grabbing
+  release: "min(28vh, 200px)", // 取り出し口で少しだけ下げる
+} as const;
 
 function wait(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms));
@@ -454,24 +462,39 @@ function PlayArea({
   carriedEmoji: string | null;
   falling: boolean;
 }) {
-  // ケーブル先端 Y (%)。dropping/grabbing は深く、それ以外は引っ込めて。
-  const CABLE_TOP_PERCENT = 6;
-  let cableTip = 24;
-  if (phase === "dropping" || phase === "grabbing") cableTip = 76;
-  else if (phase === "release") cableTip = 60;
+  // ケーブルの上端（プレイエリア上端からの位置）。
+  const CABLE_TOP_PERCENT = 8;
 
+  // フェーズごとの「アームの降下量」と transition 時間。
+  // ARM_DESCEND.* は CSS 文字列（"min(48vh, 360px)" 等）。
+  const armDescent =
+    phase === "dropping" || phase === "grabbing"
+      ? ARM_DESCEND.deep
+      : phase === "release"
+        ? ARM_DESCEND.release
+        : ARM_DESCEND.rest;
+
+  const armTransitionMs =
+    phase === "dropping"
+      ? T.drop
+      : phase === "raising"
+        ? T.raise
+        : phase === "release"
+          ? T.release
+          : 450;
+
+  // 上下移動の cubic-bezier。ためを作って「ぐぐっ」と落ちる感じ。
+  const armEasing = "cubic-bezier(.55,.06,.36,1)";
+
+  // 横移動の transition（取り出し口への横スライド用）。
   const carriageTransition =
     phase === "moving_to_exit"
-      ? "left 1.0s cubic-bezier(.4,0,.2,1), transform 1.0s"
+      ? `left ${T.move}ms cubic-bezier(.4,0,.2,1), transform ${T.move}ms`
       : "left 0.45s, transform 0.45s";
-  const cableTransition =
-    phase === "dropping"
-      ? `top ${T.drop}ms cubic-bezier(.55,.05,.4,1), height ${T.drop}ms cubic-bezier(.55,.05,.4,1)`
-      : phase === "raising"
-        ? `top ${T.raise}ms cubic-bezier(.4,0,.2,1), height ${T.raise}ms cubic-bezier(.4,0,.2,1)`
-        : phase === "release"
-          ? `top ${T.release}ms ease-in, height ${T.release}ms ease-in`
-          : "top 0.4s, height 0.4s";
+
+  // ケーブルとアームで同じ降下量・同じ transition を使う。
+  const armVerticalTransition = `transform ${armTransitionMs}ms ${armEasing}, left ${T.move}ms cubic-bezier(.4,0,.2,1)`;
+  const cableVerticalTransition = `height ${armTransitionMs}ms ${armEasing}, left ${T.move}ms cubic-bezier(.4,0,.2,1)`;
 
   return (
     <div className="relative aspect-[5/6] w-full overflow-hidden rounded-2xl bg-gradient-to-b from-sky-100 via-amber-50 to-amber-200 shadow-inner">
@@ -545,43 +568,52 @@ function PlayArea({
       {/* 上部レール */}
       <div className="absolute inset-x-3 top-3 h-2 rounded-full bg-gradient-to-b from-slate-700 to-slate-500 shadow" />
 
-      {/* キャリッジ（X 軸の見た目位置）*/}
+      {/* キャリッジ（レールに沿って X だけ動く）*/}
+      <div
+        className="pointer-events-none absolute"
+        style={{
+          left: `${cranePos.xRatio * 100}%`,
+          top: `${CABLE_TOP_PERCENT - 2}%`,
+          transform: `translate(-50%, 0) scale(${cranePos.scale})`,
+          transformOrigin: "top center",
+          transition: carriageTransition,
+          zIndex: 25,
+        }}
+      >
+        <div className="h-3 w-16 rounded-md bg-gradient-to-b from-slate-700 to-slate-900 shadow-lg" />
+      </div>
+
+      {/* ケーブル（カバーから伸び縮みする紐）。高さを armDescent と連動。 */}
       <div
         className="pointer-events-none absolute"
         style={{
           left: `${cranePos.xRatio * 100}%`,
           top: `${CABLE_TOP_PERCENT}%`,
-          transform: `translate(-50%, 0) scale(${cranePos.scale})`,
-          transformOrigin: "top center",
-          transition: carriageTransition,
+          width: "3px",
+          height: armDescent,
+          background:
+            "linear-gradient(to bottom, #475569, #334155 30%, #1e293b)",
+          transform: "translateX(-50%)",
+          transition: cableVerticalTransition,
+          zIndex: 28,
+          boxShadow: "0 0 2px rgba(0,0,0,0.4)",
         }}
-      >
-        <div className="relative -translate-x-1/2 left-1/2">
-          <div className="h-3 w-16 rounded-md bg-gradient-to-b from-slate-700 to-slate-900 shadow-lg" />
-          <div className="mx-auto h-1 w-2 bg-slate-700" />
-        </div>
-      </div>
+      />
 
-      {/* ケーブル + グラバー（Y 軸＝伸縮） */}
+      {/* アーム本体（ツメ＋掴んだアイテム）。translateY で確実に降下。 */}
       <div
         className="pointer-events-none absolute"
         style={{
           left: `${cranePos.xRatio * 100}%`,
-          top: `${CABLE_TOP_PERCENT + 2}%`,
-          transform: "translate(-50%, 0)",
-          transition: carriageTransition,
+          top: `${CABLE_TOP_PERCENT}%`,
+          // X方向は中央寄せ、Y方向は armDescent ぶんだけ降ろす。
+          transform: `translate(-50%, 0) translateY(${armDescent})`,
+          transition: armVerticalTransition,
           zIndex: 30,
         }}
       >
         <div
-          className="mx-auto w-[3px] bg-gradient-to-b from-slate-500 to-slate-700"
-          style={{
-            height: `calc(${cableTip - CABLE_TOP_PERCENT - 2}% * 6)`,
-            transition: cableTransition,
-          }}
-        />
-        <div
-          className="relative -mt-1 mx-auto flex h-8 w-10 items-end justify-center"
+          className="relative flex h-10 w-12 items-end justify-center"
           style={{
             transform: `scale(${cranePos.scale})`,
             transformOrigin: "top center",
@@ -616,20 +648,20 @@ function PlayArea({
               transition: "transform 0.4s",
             }}
           />
-          {/* 本体 */}
-          <span className="block h-3 w-6 rounded-b-md bg-slate-700" />
+          {/* 本体（ツメの軸） */}
+          <span className="block h-3 w-7 rounded-b-md bg-slate-700 shadow" />
 
-          {/* 持ち上げ中のアイテム or 落下中のアイテム */}
+          {/* 持ち上げ中のアイテム：ツメの内側にぶらさがる */}
           {carriedEmoji && !falling && (
             <span
-              className="absolute left-1/2 top-3 -translate-x-1/2 select-none text-3xl drop-shadow"
+              className="absolute left-1/2 top-4 -translate-x-1/2 select-none text-4xl drop-shadow"
               style={{
-                transition: "transform 0.4s",
+                transition: "transform 0.4s, opacity 0.4s",
                 transform:
                   phase === "release"
-                    ? "translate(-50%, 30px) scale(0.85)"
+                    ? "translate(-50%, 32px) scale(0.85)"
                     : "translate(-50%, 0) scale(1)",
-                opacity: phase === "release" ? 0.5 : 1,
+                opacity: phase === "release" ? 0.3 : 1,
               }}
             >
               {carriedEmoji}
@@ -638,21 +670,26 @@ function PlayArea({
         </div>
       </div>
 
-      {/* 落下中アイテム：グラバーから外れて床へ。
-          フェーズ独立に絶対配置で表示。 */}
+      {/* 落下中アイテム：アームの位置から床へ。 */}
       {falling && carriedEmoji && (
-        <span
+        <div
           aria-hidden
-          className="pointer-events-none absolute z-40 text-4xl drop-shadow-lg"
+          className="pointer-events-none absolute z-40"
           style={{
             left: `${cranePos.xRatio * 100}%`,
-            top: `${cableTip}%`,
-            transform: "translate(-50%, -50%)",
-            animation: `fall-bounce ${T.fall}ms cubic-bezier(.5,0,.8,1) forwards`,
+            top: `${CABLE_TOP_PERCENT}%`,
+            transform: `translate(-50%, 0) translateY(${armDescent})`,
           }}
         >
-          {carriedEmoji}
-        </span>
+          <span
+            className="block text-4xl drop-shadow-lg"
+            style={{
+              animation: `fall-from-arm ${T.fall}ms cubic-bezier(.5,0,.8,1) forwards`,
+            }}
+          >
+            {carriedEmoji}
+          </span>
+        </div>
       )}
     </div>
   );
@@ -823,12 +860,15 @@ function ResultModal({
 }
 
 // ────────── キーフレーム ──────────
+// 落下中アイテムが「アームの位置」から「下にスポーン」していく演出。
+// 親 div が transform: translate(-50%, 0) translateY(armDescent) で位置決め済みなので、
+// この span 自身は translateY のみで下方向にずれる。
 const CSS_KEYFRAMES = `
-  @keyframes fall-bounce {
-    0% { transform: translate(-50%, -50%); opacity: 1; }
-    70% { transform: translate(-50%, 250%); opacity: 1; }
-    85% { transform: translate(-50%, 230%) rotate(-15deg); }
-    100% { transform: translate(-50%, 240%) rotate(10deg); opacity: 0.6; }
+  @keyframes fall-from-arm {
+    0% { transform: translateY(0) rotate(0); opacity: 1; }
+    70% { transform: translateY(220px) rotate(0); opacity: 1; }
+    85% { transform: translateY(205px) rotate(-15deg); opacity: 1; }
+    100% { transform: translateY(218px) rotate(12deg); opacity: 0.55; }
   }
   @keyframes shake {
     0% { transform: translateX(0); }
