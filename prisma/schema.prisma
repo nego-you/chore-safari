@@ -82,6 +82,8 @@ model User {
   activeTraps        ActiveTrap[]
   // 専用クエストの対象となる場合
   targetedQuests     Quest[]
+  // 専用ペナルティの対象となる場合
+  targetedPenalties  Penalty[]
 
   @@map("users")
 }
@@ -192,6 +194,12 @@ model Quest {
   emoji       String            @default("⭐")
   // 一覧から非表示にしたい時に使う（廃止クエスト）。
   isActive    Boolean           @default(true) @map("is_active")
+  // クエストの属性。子供側の画面でセクション分けや色分けに使う。
+  //   CHORE : おてつだい（掃除・配膳など）
+  //   STUDY : おべんきょう（プリント・読書など）
+  //   LIFE  : せいかつ（早起き・歯みがき・就寝など）
+  // 値はアプリケーション側で検証する（DB 側は文字列のまま保持）。
+  category    String            @default("CHORE")
   // 対象となる子供たち（空=全員用）
   targetUsers User[]
   createdAt   DateTime          @default(now()) @map("created_at")
@@ -236,9 +244,29 @@ model ActiveTrap {
   targetAnimalId  String     @map("target_animal_id")
   targetAnimal    Animal     @relation(fields: [targetAnimalId], references: [id], onDelete: Cascade)
   resolvedAt      DateTime?  @map("resolved_at")
+  // 子供がフィールド上でタップした位置（% で 0〜100）
+  posX            Float      @default(50) @map("pos_x")
+  posY            Float      @default(50) @map("pos_y")
 
   @@index([userId, status])
   @@index([appearsAt])
   @@index([targetAnimalId])
   @@map("active_traps")
+}
+
+// ペナルティマスタ：親が「やったらコイン没収」を事前定義しておく。
+// targetUsers に含まれている子供だけが対象。空のときは全員用。
+model Penalty {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  // 没収するコイン枚数（正の整数）
+  coinAmount  Int      @map("coin_amount")
+  emoji       String   @default("🚨")
+  isActive    Boolean  @default(true) @map("is_active")
+  targetUsers User[]
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("penalties")
 }

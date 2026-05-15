@@ -30,11 +30,16 @@ export default async function QuestMasterPage() {
     rewardCoins: q.rewardCoins,
     emoji: q.emoji,
     isActive: q.isActive,
+    // DB は String カラム。許容値外はクライアント側で CHORE に丸める。
+    category: q.category,
     submissionCount: q._count.submissions,
     createdAt: q.createdAt.toISOString(),
     updatedAt: q.updatedAt.toISOString(),
-    targetUserIds: q.targetUsers.map(u => u.id),
-    targetUserNames: q.targetUsers.length > 0 ? q.targetUsers.map(u => u.name).join(', ') : '全員',
+    targetUserIds: q.targetUsers.map((u) => u.id),
+    targetUserNames:
+      q.targetUsers.length > 0
+        ? q.targetUsers.map((u) => u.name).join(", ")
+        : "全員",
   }));
 
   return (

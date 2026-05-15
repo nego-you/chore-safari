@@ -12,7 +12,7 @@ import { QuestReviewPanel } from "./QuestReviewPanel";
 export const dynamic = "force-dynamic";
 
 export default async function BankPage() {
-  const [children, pendingSubmissions] = await Promise.all([
+  const [children, pendingSubmissions, penalties] = await Promise.all([
     prisma.user.findMany({
       where: { role: "CHILD" },
       orderBy: { birthDate: "asc" },
@@ -25,7 +25,21 @@ export default async function BankPage() {
         user: { select: { id: true, name: true } },
       },
     }),
+    prisma.penalty.findMany({
+      where: { isActive: true },
+      orderBy: [{ coinAmount: "asc" }, { createdAt: "asc" }],
+      include: { targetUsers: { select: { id: true } } },
+    }),
   ]);
+
+  const penaltyItems = penalties.map((p) => ({
+    id: p.id,
+    title: p.title,
+    description: p.description,
+    coinAmount: p.coinAmount,
+    emoji: p.emoji,
+    targetUserIds: p.targetUsers.map((u) => u.id),
+  }));
 
   const childOptions = children.map((c) => ({ id: c.id, name: c.name }));
   const totalBalance = children.reduce((sum, c) => sum + c.coinBalance, 0);
@@ -63,6 +77,12 @@ export default async function BankPage() {
             className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-200 transition hover:bg-emerald-500/20"
           >
             📋 クエスト管理マスタ
+          </Link>
+          <Link
+            href="/bank/penalties"
+            className="inline-flex items-center gap-2 rounded-lg border border-rose-400/40 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-200 transition hover:bg-rose-500/20"
+          >
+            🚨 ペナルティ管理マスタ
           </Link>
         </nav>
       </header>
@@ -136,7 +156,7 @@ export default async function BankPage() {
             </p>
           </div>
         </div>
-        <PenaltyPanel children={childOptions} />
+        <PenaltyPanel children={childOptions} penalties={penaltyItems} />
       </section>
 
       {/* 特大達成ボーナス（UI 枠） */}

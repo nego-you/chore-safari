@@ -235,11 +235,28 @@ const QUEST_DESC_MAX = 400;
 const QUEST_REWARD_MIN = 1;
 const QUEST_REWARD_MAX = 10000;
 
+// クエストカテゴリ。スキーマ側は String だが、アプリケーションで許容値を縛る。
+//   CHORE : おてつだい
+//   STUDY : おべんきょう
+//   LIFE  : せいかつ
+export const QUEST_CATEGORIES = ["CHORE", "STUDY", "LIFE"] as const;
+export type QuestCategory = (typeof QUEST_CATEGORIES)[number];
+const QUEST_CATEGORY_DEFAULT: QuestCategory = "CHORE";
+
+function normalizeCategory(value: unknown): QuestCategory {
+  if (typeof value !== "string") return QUEST_CATEGORY_DEFAULT;
+  const upper = value.trim().toUpperCase();
+  return (QUEST_CATEGORIES as readonly string[]).includes(upper)
+    ? (upper as QuestCategory)
+    : QUEST_CATEGORY_DEFAULT;
+}
+
 export type QuestMasterInput = {
   title: string;
   description?: string;
   rewardCoins: number;
   emoji?: string;
+  category?: QuestCategory;
   targetUserIds: string[];
 };
 
@@ -253,6 +270,7 @@ export type QuestMasterResult =
         rewardCoins: number;
         emoji: string;
         isActive: boolean;
+        category: QuestCategory;
         targetUserIds: string[];
       };
     }
@@ -274,6 +292,12 @@ function validateQuestInput(data: QuestMasterInput): string | null {
   ) {
     return `報酬コインは ${QUEST_REWARD_MIN}〜${QUEST_REWARD_MAX} の整数で指定してください`;
   }
+  if (
+    data.category !== undefined &&
+    !(QUEST_CATEGORIES as readonly string[]).includes(data.category)
+  ) {
+    return `カテゴリは ${QUEST_CATEGORIES.join(" / ")} のいずれかを指定してください`;
+  }
   return null;
 }
 
@@ -290,6 +314,7 @@ export async function createQuest(
         description: data.description?.trim() || null,
         rewardCoins: data.rewardCoins,
         emoji: data.emoji?.trim() || "⭐",
+        category: normalizeCategory(data.category),
         targetUsers: data.targetUserIds.length > 0 ? {
           connect: data.targetUserIds.map(id => ({ id })),
         } : undefined,
@@ -310,6 +335,7 @@ export async function createQuest(
         rewardCoins: quest.rewardCoins,
         emoji: quest.emoji,
         isActive: quest.isActive,
+        category: normalizeCategory(quest.category),
         targetUserIds: quest.targetUsers.map(u => u.id),
       },
     };
@@ -339,6 +365,7 @@ export async function updateQuest(
         description: data.description?.trim() || null,
         rewardCoins: data.rewardCoins,
         emoji: data.emoji?.trim() || exists.emoji || "⭐",
+        category: normalizeCategory(data.category),
         targetUsers: {
           set: data.targetUserIds.map(id => ({ id })),
         },
@@ -359,6 +386,7 @@ export async function updateQuest(
         rewardCoins: quest.rewardCoins,
         emoji: quest.emoji,
         isActive: quest.isActive,
+        category: normalizeCategory(quest.category),
         targetUserIds: quest.targetUsers.map(u => u.id),
       },
     };
@@ -390,5 +418,252 @@ export async function deleteQuest(
   } catch (e) {
     console.error("deleteQuest failed:", e);
     return { success: false, error: "クエストの削除に失敗しました" };
+  }
+}
+
+// ─────────────────────────────────────────────
+// ペナルティマスタ管理（親が「やったらコイン没収」を事前定義）
+// クエストと同じく、targetUserIds が空なら全員用、入っていれば特定の子供のみ。
+// applyPenaltyMaster で実際にコインを没収し、coin_transactions に記録する。
+// ─────────────────────────────────────────────
+
+const PENALTY_TITLE_MAX = 80;
+const PENALTY_DESC_MAX = 400;
+const PENALTY_COIN_MIN = 1;
+const PENALTY_COIN_MAX = 10000;
+
+export type PenaltyMasterInput = {
+  title: string;
+  description?: string;
+  coinAmount: number;
+  emoji?: string;
+  targetUserIds: string[];
+};
+
+export type PenaltyMasterResult =
+  | {
+      success: true;
+      penalty: {
+        id: string;
+        title: string;
+        description: string | null;
+        coinAmount: number;
+        emoji: string;
+        isActive: boolean;
+        targetUserIds: string[];
+      };
+    }
+  | { success: false; error: string };
+
+function validatePenaltyInput(data: PenaltyMasterInput): string | null {
+  const title = data.title?.trim();
+  if (!title) return "タイトルは必須です";
+  if (title.length > PENALTY_TITLE_MAX) {
+    return `タイトルは ${PENALTY_TITLE_MAX} 文字以内にしてください`;
+  }
+  if (data.description && data.description.length > PENALTY_DESC_MAX) {
+    return `説明は ${PENALTY_DESC_MAX} 文字以内にしてください`;
+  }
+  if (
+    !Number.isInteger(data.coinAmount) ||
+    data.coinAmount < PENALTY_COIN_MIN ||
+    data.coinAmount > PENALTY_COIN_MAX
+  ) {
+    return `没収コインは ${PENALTY_COIN_MIN}〜${PENALTY_COIN_MAX} の整数で指定してください`;
+  }
+  return null;
+}
+
+export async function createPenalty(
+  data: PenaltyMasterInput,
+): Promise<PenaltyMasterResult> {
+  const err = validatePenaltyInput(data);
+  if (err) return { success: false, error: err };
+
+  try {
+    const penalty = await prisma.penalty.create({
+      data: {
+        title: data.title.trim(),
+        description: data.description?.trim() || null,
+        coinAmount: data.coinAmount,
+        emoji: data.emoji?.trim() || "🚨",
+        targetUsers:
+          data.targetUserIds.length > 0
+            ? { connect: data.targetUserIds.map((id) => ({ id })) }
+            : undefined,
+      },
+      include: { targetUsers: true },
+    });
+
+    revalidatePath("/bank");
+    revalidatePath("/bank/penalties");
+
+    return {
+      success: true,
+      penalty: {
+        id: penalty.id,
+        title: penalty.title,
+        description: penalty.description,
+        coinAmount: penalty.coinAmount,
+        emoji: penalty.emoji,
+        isActive: penalty.isActive,
+        targetUserIds: penalty.targetUsers.map((u) => u.id),
+      },
+    };
+  } catch (e) {
+    console.error("createPenalty failed:", e);
+    return { success: false, error: "ペナルティの作成に失敗しました" };
+  }
+}
+
+export async function updatePenalty(
+  id: string,
+  data: PenaltyMasterInput,
+): Promise<PenaltyMasterResult> {
+  const err = validatePenaltyInput(data);
+  if (err) return { success: false, error: err };
+
+  try {
+    const exists = await prisma.penalty.findUnique({ where: { id } });
+    if (!exists) {
+      return { success: false, error: "ペナルティが見つかりません" };
+    }
+
+    const penalty = await prisma.penalty.update({
+      where: { id },
+      data: {
+        title: data.title.trim(),
+        description: data.description?.trim() || null,
+        coinAmount: data.coinAmount,
+        emoji: data.emoji?.trim() || exists.emoji || "🚨",
+        targetUsers: {
+          set: data.targetUserIds.map((id) => ({ id })),
+        },
+      },
+      include: { targetUsers: true },
+    });
+
+    revalidatePath("/bank");
+    revalidatePath("/bank/penalties");
+
+    return {
+      success: true,
+      penalty: {
+        id: penalty.id,
+        title: penalty.title,
+        description: penalty.description,
+        coinAmount: penalty.coinAmount,
+        emoji: penalty.emoji,
+        isActive: penalty.isActive,
+        targetUserIds: penalty.targetUsers.map((u) => u.id),
+      },
+    };
+  } catch (e) {
+    console.error("updatePenalty failed:", e);
+    return { success: false, error: "ペナルティの更新に失敗しました" };
+  }
+}
+
+export async function deletePenalty(
+  id: string,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await prisma.penalty.delete({ where: { id } });
+    revalidatePath("/bank");
+    revalidatePath("/bank/penalties");
+    return { success: true };
+  } catch (e) {
+    console.error("deletePenalty failed:", e);
+    return { success: false, error: "ペナルティの削除に失敗しました" };
+  }
+}
+
+// マスタから選んだペナルティを実際に適用する。
+// 既存の applyPenalty(userId, reason) と違って、coinAmount は penalty 側に従う。
+export async function applyPenaltyMaster(
+  penaltyId: string,
+  userId: string,
+): Promise<{ success: boolean; error?: string; newCoinBalance?: number }> {
+  try {
+    const penalty = await prisma.penalty.findUnique({
+      where: { id: penaltyId },
+      include: { targetUsers: { select: { id: true } } },
+    });
+    if (!penalty || !penalty.isActive) {
+      return { success: false, error: "ペナルティが見つかりません" };
+    }
+
+    // 対象チェック：targetUsers が空なら全員 OK。指定があればその子だけ。
+    if (
+      penalty.targetUsers.length > 0 &&
+      !penalty.targetUsers.some((u) => u.id === userId)
+    ) {
+      return { success: false, error: "この子供は対象ではありません" };
+    }
+
+    await ensureChild(userId);
+
+    const updatedUser = await prisma.$transaction(async (tx) => {
+      const u = await tx.user.update({
+        where: { id: userId },
+        data: { coinBalance: { decrement: penalty.coinAmount } },
+      });
+      await tx.coinTransaction.create({
+        data: {
+          userId,
+          amount: -penalty.coinAmount,
+          kind: "PENALTY",
+          reason: penalty.title,
+        },
+      });
+      return u;
+    });
+
+    revalidatePath("/bank");
+    revalidatePath("/kids");
+
+    return { success: true, newCoinBalance: updatedUser.coinBalance };
+  } catch (e) {
+    console.error("applyPenaltyMaster failed:", e);
+    return { success: false, error: "ペナルティ適用に失敗しました" };
+  }
+}
+ (!penalty || !penalty.isActive) {
+      return { success: false, error: "ペナルティが見つかりません" };
+    }
+
+    // 対象チェック：targetUsers が空なら全員 OK。指定があればその子だけ。
+    if (
+      penalty.targetUsers.length > 0 &&
+      !penalty.targetUsers.some((u) => u.id === userId)
+    ) {
+      return { success: false, error: "この子供は対象ではありません" };
+    }
+
+    await ensureChild(userId);
+
+    const updatedUser = await prisma.$transaction(async (tx) => {
+      const u = await tx.user.update({
+        where: { id: userId },
+        data: { coinBalance: { decrement: penalty.coinAmount } },
+      });
+      await tx.coinTransaction.create({
+        data: {
+          userId,
+          amount: -penalty.coinAmount,
+          kind: "PENALTY",
+          reason: penalty.title,
+        },
+      });
+      return u;
+    });
+
+    revalidatePath("/bank");
+    revalidatePath("/kids");
+
+    return { success: true, newCoinBalance: updatedUser.coinBalance };
+  } catch (e) {
+    console.error("applyPenaltyMaster failed:", e);
+    return { success: false, error: "ペナルティ適用に失敗しました" };
   }
 }

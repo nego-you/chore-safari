@@ -59,6 +59,8 @@ export default async function SafariPage({
     status: t.status as "PLACED" | "APPEARED",
     placedAt: t.placedAt.toISOString(),
     appearsAt: t.appearsAt.toISOString(),
+    posX: t.posX,
+    posY: t.posY,
     // ターゲットの種別だけ最小限渡す（捕獲成功時の演出用に使う）
     targetAnimal: {
       id: t.targetAnimal.id,

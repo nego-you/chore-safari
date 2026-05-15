@@ -50,6 +50,21 @@ type QuestSeed = {
   emoji: string;
 };
 
+type PenaltySeed = {
+  title: string;
+  description?: string;
+  coinAmount: number;
+  emoji: string;
+};
+
+// ペナルティ初期データ。target_users 空＝全員に適用可能。
+const PENALTIES: PenaltySeed[] = [
+  { title: "けんか", description: "きょうだい げんかをした", coinAmount: 50, emoji: "🚨" },
+  { title: "うそをついた", description: "うそを ついて あやまらなかった", coinAmount: 80, emoji: "🤥" },
+  { title: "かたづけない", description: "おもちゃを ちらかしっぱなし", coinAmount: 20, emoji: "🧹" },
+  { title: "やくそく やぶり", description: "ねるじかんを まもらなかった", coinAmount: 30, emoji: "⏰" },
+];
+
 // 親が承認するクエスト一覧。子供3人共通で使えるイメージ。
 const QUESTS: QuestSeed[] = [
   { title: "おふろそうじ", description: "おふろを ピカピカに してね", rewardCoins: 50, emoji: "🛁" },
@@ -168,6 +183,32 @@ async function main() {
         });
     console.log(
       `Seeded quest: ${upserted.emoji} ${upserted.title} (+${upserted.rewardCoins})`,
+    );
+  }
+
+  // ペナルティマスタ（クエストと同じく title 一致で upsert）
+  for (const p of PENALTIES) {
+    const existing = await prisma.penalty.findFirst({ where: { title: p.title } });
+    const upserted = existing
+      ? await prisma.penalty.update({
+          where: { id: existing.id },
+          data: {
+            description: p.description ?? null,
+            coinAmount: p.coinAmount,
+            emoji: p.emoji,
+            isActive: true,
+          },
+        })
+      : await prisma.penalty.create({
+          data: {
+            title: p.title,
+            description: p.description ?? null,
+            coinAmount: p.coinAmount,
+            emoji: p.emoji,
+          },
+        });
+    console.log(
+      `Seeded penalty: ${upserted.emoji} ${upserted.title} (-${upserted.coinAmount})`,
     );
   }
 }

@@ -1,12 +1,19 @@
 "use client";
 
 // /kids/quests のクライアント本体。
-// クエストカードを並べ、それぞれの状態（やったよ！/ かくにん中... / OKもらった / もういちど）で
+// クエストカードをカテゴリ別セクションで並べ、それぞれの状態
+// （やったよ！/ かくにん中... / OKもらった / もういちど）で
 // ボタン表示を切り替える。送信は submitQuest を呼ぶ。
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { submitQuest } from "../actions";
+import {
+  QUEST_CATEGORIES,
+  QUEST_CATEGORY_ORDER,
+  questCategoryMeta,
+  type QuestCategory,
+} from "@/lib/quest-categories";
 
 type KidLite = { id: string; name: string; coinBalance: number };
 
@@ -16,6 +23,8 @@ type QuestLite = {
   description: string | null;
   rewardCoins: number;
   emoji: string;
+  // 親側で保存された生の値。許容値外はクライアントで CHORE に丸める。
+  category: string;
   targetUsers: { id: string }[];
 };
 
@@ -35,10 +44,17 @@ type Props = {
   submissions: SubmissionLite[];
 };
 
+function toCategory(value: string | null | undefined): QuestCategory {
+  const upper = (value ?? "").toUpperCase();
+  return (QUEST_CATEGORIES as readonly string[]).includes(upper)
+    ? (upper as QuestCategory)
+    : "CHORE";
+}
+
 const NAME_READING: Record<string, string> = {
-  "美琴": "みこと",
-  "幸仁": "ゆきと",
-  "叶泰": "かなた",
+  美琴: "みこと",
+  幸仁: "ゆきと",
+  叶泰: "かなた",
 };
 
 function NameRuby({ name }: { name: string }) {
@@ -80,6 +96,22 @@ export function QuestsClient({
     }
     return map;
   }, [submissions, kidId]);
+
+  // クエストをカテゴリごとに束ねる。カテゴリ順は QUEST_CATEGORY_ORDER に従う。
+  // 中身が 0 件のカテゴリは表示しない。
+  const questsByCategory = useMemo(() => {
+    const groups = new Map<QuestCategory, QuestLite[]>();
+    for (const q of quests) {
+      const key = toCategory(q.category);
+      const list = groups.get(key);
+      if (list) list.push(q);
+      else groups.set(key, [q]);
+    }
+    return QUEST_CATEGORY_ORDER.flatMap((key) => {
+      const list = groups.get(key);
+      return list && list.length > 0 ? [{ key, quests: list }] : [];
+    });
+  }, [quests]);
 
   const handleSubmit = (quest: QuestLite) => {
     if (!selectedKid) return;
@@ -176,23 +208,54 @@ export function QuestsClient({
           </div>
         </section>
 
-        {/* クエスト一覧 */}
-        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {quests.map((q) => {
-            const latest = latestByQuest.get(q.id);
-            return (
-              <QuestCard
-                key={q.id}
-                quest={q}
-                latest={latest}
-                isPending={pendingQuestId === q.id}
-                error={errorByQuest[q.id]}
-                onSubmit={() => handleSubmit(q)}
-                selectedKid={selectedKid}
-              />
-            );
-          })}
-        </section>
+        {/* クエスト一覧（カテゴリ別セクション） */}
+        {questsByCategory.length === 0 && (
+          <p className="rounded-2xl bg-white/90 px-4 py-6 text-center text-sm font-bold text-emerald-700 ring-2 ring-emerald-200">
+            いま ちょうせんできる クエストは ないみたい。おうちのひとに きいてみよう！
+          </p>
+        )}
+        {questsByCategory.map(({ key, quests: groupQuests }) => {
+          const meta = questCategoryMeta(key);
+          return (
+            <section
+              key={key}
+              className={`space-y-4 rounded-[2rem] p-5 shadow-md ${meta.kidsSectionBgClass}`}
+              aria-labelledby={`quest-section-${key}`}
+            >
+              <header className="flex items-center gap-3">
+                <span className="text-4xl drop-shadow" aria-hidden>
+                  {meta.emoji}
+                </span>
+                <h2
+                  id={`quest-section-${key}`}
+                  className={`text-2xl font-black ${meta.kidsHeadingClass}`}
+                >
+                  {meta.kidsLabel}
+                </h2>
+                <span className="ml-auto rounded-full bg-white/80 px-3 py-1 text-xs font-extrabold text-slate-700 ring-1 ring-slate-200">
+                  {groupQuests.length}こ
+                </span>
+              </header>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {groupQuests.map((q) => {
+                  const latest = latestByQuest.get(q.id);
+                  return (
+                    <QuestCard
+                      key={q.id}
+                      quest={q}
+                      latest={latest}
+                      isPending={pendingQuestId === q.id}
+                      error={errorByQuest[q.id]}
+                      onSubmit={() => handleSubmit(q)}
+                      selectedKid={selectedKid}
+                    />
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
 
         <p className="text-center text-xs text-emerald-700/70">
           ✨ おうちのひとが OK したら コインが もらえるよ ✨
@@ -231,7 +294,7 @@ function QuestCard({
           {quest.description && (
             <p className="text-xs text-emerald-700/80">{quest.description}</p>
           )}
-          {quest.targetUsers.some(u => u.id === selectedKid.id) && (
+          {quest.targetUsers.some((u) => u.id === selectedKid.id) && (
             <p className="mt-1 inline-block rounded-full bg-pink-200 px-2 py-0.5 text-xs font-extrabold text-pink-900">
               🎀 {selectedKid.name}ちゃん専用！ 🎀
             </p>

@@ -210,6 +210,10 @@ export type SetTrapResult =
         status: "PLACED";
         placedAt: string;
         appearsAt: string;
+        posX: number;
+        posY: number;
+        // 動物の正体（name / emoji）は隠すが、難易度ヒント用に rarity だけ返す
+        targetRarity: "COMMON" | "RARE" | "EPIC" | "LEGENDARY";
       };
       updatedInventory: Array<{ itemId: string; quantity: number }>;
     }
@@ -219,7 +223,13 @@ export async function setTrap(
   userId: string,
   trapItemId: string,
   baitItemId: string,
+  posX: number = 50,
+  posY: number = 50,
 ): Promise<SetTrapResult> {
+  // 座標を 0〜100 の範囲に丸める（フィールド端にめり込まない安全マージン）
+  const clampedX = Math.max(4, Math.min(96, Number(posX) || 50));
+  const clampedY = Math.max(8, Math.min(92, Number(posY) || 50));
+
   if (!trapItemId || !baitItemId) {
     return { success: false, error: "わなと エサを えらんでね" };
   }
@@ -281,6 +291,8 @@ export async function setTrap(
           status: "PLACED",
           appearsAt,
           targetAnimalId: chosen.id,
+          posX: clampedX,
+          posY: clampedY,
         },
       });
     });
@@ -298,6 +310,13 @@ export async function setTrap(
         status: "PLACED",
         placedAt: created.placedAt.toISOString(),
         appearsAt: created.appearsAt.toISOString(),
+        posX: created.posX,
+        posY: created.posY,
+        targetRarity: chosen.rarity as
+          | "COMMON"
+          | "RARE"
+          | "EPIC"
+          | "LEGENDARY",
       },
       updatedInventory: [
         { itemId: trapItemId, quantity: trap.quantity - 1 },

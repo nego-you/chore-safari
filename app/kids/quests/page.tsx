@@ -43,6 +43,7 @@ export default async function QuestsPage({
         description: true,
         rewardCoins: true,
         emoji: true,
+        category: true,
         targetUsers: { select: { id: true } },
       },
     }),
@@ -75,8 +76,10 @@ export default async function QuestsPage({
         description: q.description,
         rewardCoins: q.rewardCoins,
         emoji: q.emoji,
+        // DB は String なので、許容値外はクライアント側で CHORE に丸める。
+        category: q.category,
         // 専用クエスト判定（クライアント側で「○○ちゃん専用」バッジ表示に使う）
-        targetUserId: q.targetUserId,
+        targetUsers: q.targetUsers,
       }))}
       submissions={submissions.map((s) => ({
         id: s.id,

@@ -45,6 +45,8 @@ type TrapDTO = {
   status: "PLACED" | "APPEARED";
   placedAt: string;
   appearsAt: string;
+  posX: number;
+  posY: number;
   targetAnimal: Animal;
 };
 
@@ -142,10 +144,45 @@ function formatDate(iso: string) {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-// ────────── タイミングゲーム設定（やさしめ） ──────────
-const GAME_CYCLE_MS = 2500;
+// ────────── タイミングゲーム設定 ──────────
+// 緑ゾーン幅は固定。スピードはレアリティで可変。
 const GAME_GREEN_MIN = 35;
 const GAME_GREEN_MAX = 65;
+
+// レアリティ → 1往復にかかる ms（小さいほど高速）
+const CYCLE_BY_RARITY: Record<Rarity, number> = {
+  COMMON: 2800,   // ゆっくり（叶泰くんでも当てやすい）
+  RARE: 2000,
+  EPIC: 1400,
+  LEGENDARY: 1000, // 超高速
+};
+
+// レアリティ → モーダルで出す難易度ヒント
+const HINT_BY_RARITY: Record<
+  Rarity,
+  { text: string; subText: string; className: string }
+> = {
+  COMMON: {
+    text: "ふつうの けはい…",
+    subText: "おちついて タップ！",
+    className: "text-emerald-600",
+  },
+  RARE: {
+    text: "なんだか はやい けはい…！",
+    subText: "あなどれない…！",
+    className: "text-sky-600",
+  },
+  EPIC: {
+    text: "やばい、すごく はやいぞ！",
+    subText: "しゅうちゅう！",
+    className: "text-fuchsia-600 font-extrabold",
+  },
+  LEGENDARY: {
+    text: "！！ でんせつの けはい ！！",
+    subText: "ぜったい にがすな！",
+    className: "text-amber-600 font-black animate-pulse",
+  },
+};
 
 // ────────── キーフレーム（フィールド用） ──────────
 const FIELD_KEYFRAMES = `
@@ -206,6 +243,12 @@ export function SafariClient({
     | null
   >(null);
 
+  // 配置モード：「しかける！」を押した直後、フィールドタップ待ちの状態。
+  const [pendingPlacement, setPendingPlacement] = useState<
+    { trapItemId: string; baitItemId: string } | null
+  >(null);
+  const isPlacingMode = pendingPlacement !== null;
+
   const [, startTransition] = useTransition();
 
   useEffect(() => setInv(inventory), [inventory]);
@@ -259,10 +302,21 @@ export function SafariClient({
     return () => clearInterval(id);
   }, []);
 
+  // しかける！ボタン → 配置モードに入るだけ。座標を待つ。
   const handleSetTrap = (trapItemId: string, baitItemId: string) => {
     if (!selectedKid) return;
+    setPendingPlacement({ trapItemId, baitItemId });
+  };
+
+  const cancelPlacement = () => setPendingPlacement(null);
+
+  // フィールド上のタップ位置が確定したらサーバ呼び出し。
+  const confirmPlacement = (posX: number, posY: number) => {
+    if (!selectedKid || !pendingPlacement) return;
+    const { trapItemId, baitItemId } = pendingPlacement;
+    setPendingPlacement(null);
     startTransition(async () => {
-      const r = await setTrap(selectedKid.id, trapItemId, baitItemId);
+      const r = await setTrap(selectedKid.id, trapItemId, baitItemId, posX, posY);
       if (!r.success) {
         alert(r.error);
         return;
@@ -283,12 +337,15 @@ export function SafariClient({
           status: r.trap.status,
           placedAt: r.trap.placedAt,
           appearsAt: r.trap.appearsAt,
+          posX: r.trap.posX,
+          posY: r.trap.posY,
           targetAnimal: {
             id: "secret",
             animalId: "secret",
             name: "？？？",
             emoji: "❓",
-            rarity: "COMMON",
+            // 難易度ヒント用に「ホンモノのレアリティ」を保持する
+            rarity: r.trap.targetRarity,
             description: "なにか やってくるかも？",
             imageUrl: null,
           },
@@ -383,7 +440,13 @@ export function SafariClient({
         </div>
 
         {/* サファリフィールド */}
-        <SafariField traps={myTraps} onCatchAppeared={openGame} />
+        <SafariField
+          traps={myTraps}
+          onCatchAppeared={openGame}
+          isPlacingMode={isPlacingMode}
+          onPlace={confirmPlacement}
+          onCancelPlace={cancelPlacement}
+        />
 
         {/* もちもの（仕掛けるフォーム） */}
         <Pouch foods={foods} traps={trapsInv} onSubmit={handleSetTrap} />
@@ -443,15 +506,36 @@ function generateDecorations(): Decoration[] {
 function SafariField({
   traps,
   onCatchAppeared,
+  isPlacingMode,
+  onPlace,
+  onCancelPlace,
 }: {
   traps: TrapDTO[];
   onCatchAppeared: (trap: TrapDTO) => void;
+  isPlacingMode: boolean;
+  onPlace: (posX: number, posY: number) => void;
+  onCancelPlace: () => void;
 }) {
   // 装飾は初回マウント時にだけ生成（毎更新で動くと目が痛い）
   const decorations = useMemo(generateDecorations, []);
+  const fieldRef = useRef<HTMLElement>(null);
+
+  const handleFieldClick = (e: React.MouseEvent<HTMLElement>) => {
+    if (!isPlacingMode || !fieldRef.current) return;
+    const rect = fieldRef.current.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    onPlace(x, y);
+  };
 
   return (
-    <section className="relative aspect-[4/5] w-full overflow-hidden rounded-[2rem] bg-gradient-to-b from-sky-300 via-emerald-300 to-emerald-500 shadow-2xl ring-4 ring-white">
+    <section
+      ref={fieldRef}
+      onClick={handleFieldClick}
+      className={`relative aspect-[4/5] w-full overflow-hidden rounded-[2rem] bg-gradient-to-b from-sky-300 via-emerald-300 to-emerald-500 shadow-2xl ring-4 ring-white ${
+        isPlacingMode ? "cursor-crosshair" : ""
+      }`}
+    >
       {/* 空グラデ */}
       <div className="absolute inset-x-0 top-0 h-1/3 bg-gradient-to-b from-sky-200/90 via-sky-100/40 to-transparent" />
       {/* 太陽と雲 */}
@@ -514,12 +598,38 @@ function SafariField({
       ))}
 
       {/* ヒントテキスト */}
-      {traps.length === 0 && (
+      {traps.length === 0 && !isPlacingMode && (
         <div className="absolute inset-x-0 bottom-5 z-30 text-center">
           <p className="inline-block rounded-full bg-white/85 px-4 py-2 text-sm font-extrabold text-emerald-700 shadow ring-1 ring-emerald-200">
             ↓「もちもの」から ワナを しかけよう！
           </p>
         </div>
+      )}
+
+      {/* 配置モード：上部バナー + 取り消し */}
+      {isPlacingMode && (
+        <>
+          {/* 半透明オーバーレイで「いまタップ待ち」感を演出 */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-30 bg-yellow-200/15"
+          />
+          <div className="absolute inset-x-0 top-3 z-40 flex justify-center px-3">
+            <div className="rounded-full bg-rose-500 px-4 py-2 text-sm font-extrabold text-white shadow-lg ring-2 ring-white animate-bounce">
+              👆 フィールドを タップして、ワナを おく ばしょを きめてね！
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCancelPlace();
+            }}
+            className="absolute right-3 top-16 z-40 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-rose-700 shadow ring-1 ring-rose-300 hover:bg-rose-50"
+          >
+            ✕ やめる
+          </button>
+        </>
       )}
     </section>
   );
@@ -533,7 +643,8 @@ function FieldTrap({
   trap: TrapDTO;
   onCatchAppeared: (trap: TrapDTO) => void;
 }) {
-  const pos = useMemo(() => positionFromId(trap.id), [trap.id]);
+  // 子供がタップした座標をそのまま使う（pos_x / pos_y は %）
+  const pos = { left: trap.posX, top: trap.posY };
   const visual = trapVisual(trap.trapItemId);
   const now = Date.now();
   const remaining = Math.max(
@@ -545,7 +656,10 @@ function FieldTrap({
   return (
     <button
       type="button"
-      onClick={() => appeared && onCatchAppeared(trap)}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (appeared) onCatchAppeared(trap);
+      }}
       disabled={!appeared}
       aria-label={
         appeared ? "どうぶつが きた！キャッチ" : "ワナを セットちゅう"
@@ -664,7 +778,7 @@ function Pouch({
               : "cursor-not-allowed bg-gray-300 text-gray-500 shadow-none"
           }`}
         >
-          🪤 しかける！
+          🪤 しかける ばしょを えらぶ！
         </button>
       </div>
     </section>
@@ -681,6 +795,11 @@ function TimingGameModal({
   onResolve: (hit: boolean) => void;
   onCancel: () => void;
 }) {
+  // 罠に紐づいた動物のレアリティで難易度（スピード）を変える。
+  const rarity = trap.targetAnimal.rarity;
+  const cycleMs = CYCLE_BY_RARITY[rarity];
+  const hint = HINT_BY_RARITY[rarity];
+
   const [pos, setPos] = useState(0);
   const [evaluating, setEvaluating] = useState(false);
   const posRef = useRef(0);
@@ -690,10 +809,16 @@ function TimingGameModal({
   useEffect(() => {
     const animate = (t: number) => {
       if (startRef.current === null) startRef.current = t;
-      const elapsed = (t - startRef.current) % GAME_CYCLE_MS;
-      const phase = elapsed / GAME_CYCLE_MS;
-      const p = phase < 0.5 ? phase * 2 : 2 - phase * 2;
-      const v = p * 100;
+      const elapsed = (t - startRef.current) % cycleMs;
+      const phase = elapsed / cycleMs; // 0..1
+      // cosine ease-in-out: 0 → 1 → 0、端で少しゆっくり、中央で速い。
+      // さらに、レアリティが高いほど微小ジッターを乗せて読みにくくする。
+      const base = (1 - Math.cos(phase * Math.PI * 2)) / 2; // 0..1..0 smooth
+      const jitterAmp =
+        rarity === "EPIC" ? 1.5 : rarity === "LEGENDARY" ? 3.0 : 0;
+      const jitter =
+        jitterAmp > 0 ? Math.sin(elapsed * 0.018) * jitterAmp : 0;
+      const v = Math.max(0, Math.min(100, base * 100 + jitter));
       posRef.current = v;
       setPos(v);
       rafRef.current = requestAnimationFrame(animate);
@@ -702,7 +827,7 @@ function TimingGameModal({
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, []);
+  }, [cycleMs, rarity]);
 
   const handleCatch = useCallback(() => {
     if (evaluating) return;
@@ -724,7 +849,13 @@ function TimingGameModal({
           <p className="text-center text-sm font-extrabold tracking-widest text-rose-600">
             🎯 タイミング キャッチ 🎯
           </p>
-          <p className="mt-2 text-center text-xs text-slate-600">
+          <p className={`mt-2 text-center text-base ${hint.className}`}>
+            {hint.text}
+          </p>
+          <p className={`mt-0.5 text-center text-xs ${hint.className}`}>
+            {hint.subText}
+          </p>
+          <p className="mt-2 text-center text-[11px] text-slate-500">
             みどりの ゾーンで「キャッチ！」を おすと だいせいこう
           </p>
 
