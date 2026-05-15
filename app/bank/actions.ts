@@ -5,6 +5,11 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import {
+  QUEST_CATEGORIES,
+  normalizeCategory,
+  type QuestCategory,
+} from "@/lib/quest-categories";
 
 const CHORE_AMOUNT = 100;
 const PENALTY_AMOUNT = 50;
@@ -235,21 +240,9 @@ const QUEST_DESC_MAX = 400;
 const QUEST_REWARD_MIN = 1;
 const QUEST_REWARD_MAX = 10000;
 
-// クエストカテゴリ。スキーマ側は String だが、アプリケーションで許容値を縛る。
-//   CHORE : おてつだい
-//   STUDY : おべんきょう
-//   LIFE  : せいかつ
-export const QUEST_CATEGORIES = ["CHORE", "STUDY", "LIFE"] as const;
-export type QuestCategory = (typeof QUEST_CATEGORIES)[number];
-const QUEST_CATEGORY_DEFAULT: QuestCategory = "CHORE";
-
-function normalizeCategory(value: unknown): QuestCategory {
-  if (typeof value !== "string") return QUEST_CATEGORY_DEFAULT;
-  const upper = value.trim().toUpperCase();
-  return (QUEST_CATEGORIES as readonly string[]).includes(upper)
-    ? (upper as QuestCategory)
-    : QUEST_CATEGORY_DEFAULT;
-}
+// クエストカテゴリ（許容値・正規化・型）は lib/quest-categories.ts に集約。
+// "use server" ファイルからは非関数の export が Server Action 参照に
+// 変換されてしまうため、配列定数や型はここでは再定義せず import するだけにする。
 
 export type QuestMasterInput = {
   title: string;

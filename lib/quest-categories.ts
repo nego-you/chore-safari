@@ -1,12 +1,26 @@
-// クエストカテゴリの表示メタ。
-// 値定義（許容値・正規化・バリデーション）は app/bank/actions.ts 側に置き、
-// このファイルはあくまで「画面でどう見せるか」だけを集約する。
+// クエストカテゴリの定義・正規化・表示メタを集約する真の定義元。
 //
+// `actions.ts` 側はサーバアクション専用ファイル（"use server"）のため、
+// 非関数の export（配列定数や型のランタイム値）はクライアントから普通に
+// import できない（Next.js が Server Action 参照に変換してしまう）。
+// そのため値定義は必ずこのファイルに置く。
+
 //   CHORE : おてつだい（オレンジ／ピンク）
 //   STUDY : おべんきょう（青／緑）
 //   LIFE  : せいかつ（黄／薄黄）
 
-import { type QuestCategory, QUEST_CATEGORIES } from "@/app/bank/actions";
+export const QUEST_CATEGORIES = ["CHORE", "STUDY", "LIFE"] as const;
+export type QuestCategory = (typeof QUEST_CATEGORIES)[number];
+export const QUEST_CATEGORY_DEFAULT: QuestCategory = "CHORE";
+
+// DB の生値（String 列）を許容値に丸める。許容値外や非文字列は CHORE に倒す。
+export function normalizeCategory(value: unknown): QuestCategory {
+  if (typeof value !== "string") return QUEST_CATEGORY_DEFAULT;
+  const upper = value.trim().toUpperCase();
+  return (QUEST_CATEGORIES as readonly string[]).includes(upper)
+    ? (upper as QuestCategory)
+    : QUEST_CATEGORY_DEFAULT;
+}
 
 export type QuestCategoryMeta = {
   key: QuestCategory;
@@ -76,6 +90,3 @@ export const QUEST_CATEGORY_ORDER: readonly QuestCategory[] = [
   "CHORE",
   "LIFE",
 ] as const;
-
-export { QUEST_CATEGORIES };
-export type { QuestCategory };
