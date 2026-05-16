@@ -8,15 +8,14 @@ import { CraftClient } from "./CraftClient";
 
 export const dynamic = "force-dynamic";
 
-type SearchParams = Promise<{ kid?: string | string[] }>;
+type Params = Promise<{ kidId: string }>;
 
 export default async function CraftPage({
-  searchParams,
+  params,
 }: {
-  searchParams: SearchParams;
+  params: Params;
 }) {
-  const sp = await searchParams;
-  const kidParam = Array.isArray(sp.kid) ? sp.kid[0] : sp.kid;
+  const { kidId: kidParam } = await params;
 
   // レシピで参照されるすべての itemId（素材 + 完成品）を1回で取得。
   const itemIds = Array.from(

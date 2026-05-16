@@ -1,6 +1,7 @@
-// 子供用ポータル (/kids)
-// 「だれがあそぶ？」で子供を選び、その子のコインと共有インベントリを表示する。
-// 親から送られた未読の特大達成ボーナス通知もまとめて取得して渡す。
+// 子供用ポータルの入り口 (/kids)
+// 「だれがあそぶ？」のピッカー画面を出すだけ。
+// 子を選ぶと /kids/[kidId] へ遷移して、その子専用の画面が開く。
+// 各子の URL は PWA の「ホーム画面に追加」で個別ショートカットとして使える想定。
 
 import { prisma } from "@/lib/prisma";
 import { KidsPortal } from "./KidsPortal";
@@ -8,40 +9,21 @@ import { KidsPortal } from "./KidsPortal";
 export const dynamic = "force-dynamic";
 
 export default async function KidsPage() {
-  const [children, inventory, notifications] = await Promise.all([
-    prisma.user.findMany({
-      where: { role: "CHILD" },
-      orderBy: { birthDate: "asc" },
-      select: { id: true, name: true, coinBalance: true },
-    }),
-    prisma.sharedInventoryItem.findMany({
-      orderBy: [{ itemType: "asc" }, { itemName: "asc" }],
-      select: {
-        id: true,
-        itemId: true,
-        itemName: true,
-        quantity: true,
-        itemType: true,
-      },
-    }),
-    // 全 CHILD の未読通知を取得。クライアントでログイン中の子の分だけフィルタする。
-    prisma.specialBonusNotification.findMany({
-      where: { isRead: false },
-      orderBy: { createdAt: "asc" },
-    }),
-  ]);
+  // ピッカーで子供カードを描画するのに必要な最小限のデータだけ取る。
+  // 共有インベントリや通知はピッカーでは使わない（ホーム画面で取り直す）が、
+  // KidsPortal の Props を満たすために空配列を渡しておく。
+  const children = await prisma.user.findMany({
+    where: { role: "CHILD" },
+    orderBy: { birthDate: "asc" },
+    select: { id: true, name: true, coinBalance: true },
+  });
 
   return (
     <KidsPortal
       children={children}
-      inventory={inventory}
-      initialNotifications={notifications.map((n) => ({
-        id: n.id,
-        userId: n.userId,
-        reason: n.reason,
-        coinAmount: n.coinAmount,
-        createdAt: n.createdAt.toISOString(),
-      }))}
+      inventory={[]}
+      initialSelectedId={null}
+      initialNotifications={[]}
     />
   );
 }

@@ -7,15 +7,14 @@ import { RaceClient } from "./RaceClient";
 
 export const dynamic = "force-dynamic";
 
-type SearchParams = Promise<{ kid?: string | string[] }>;
+type Params = Promise<{ kidId: string }>;
 
 export default async function RacePage({
-  searchParams,
+  params,
 }: {
-  searchParams: SearchParams;
+  params: Params;
 }) {
-  const sp = await searchParams;
-  const kidParam = Array.isArray(sp.kid) ? sp.kid[0] : sp.kid;
+  const { kidId: kidParam } = await params;
 
   // 家族で捕まえたことのある動物を、種別ごとに最新の捕獲時刻つきで集める。
   const catches = await prisma.caughtAnimal.findMany({

@@ -38,6 +38,8 @@ type BonusNotification = {
 type Props = {
   children: ChildLite[];
   inventory: InventoryItem[];
+  // URL の ?kid= 由来。値があればピッカーをスキップして選択済み画面に飛ぶ。
+  initialSelectedId?: string | null;
   initialNotifications?: BonusNotification[];
 };
 
@@ -112,9 +114,12 @@ type GachaPopup = {
 export function KidsPortal({
   children,
   inventory,
+  initialSelectedId = null,
   initialNotifications = [],
 }: Props) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    initialSelectedId,
+  );
   const [childList, setChildList] = useState<ChildLite[]>(children);
   const [inventoryList, setInventoryList] =
     useState<InventoryItem[]>(inventory);
@@ -275,10 +280,9 @@ export function KidsPortal({
             {childList.map((child, i) => {
               const theme = themeFor(i);
               return (
-                <button
+                <Link
                   key={child.id}
-                  type="button"
-                  onClick={() => setSelectedId(child.id)}
+                  href={`/kids/${child.id}`}
                   className={`group relative flex flex-col items-center justify-center gap-3 rounded-3xl ${theme.bg} px-6 py-8 shadow-xl shadow-sky-200/40 ring-4 ring-white transition hover:-translate-y-1 hover:ring-offset-2 hover:${theme.ring} active:translate-y-0`}
                   aria-label={`${child.name} ではじめる`}
                 >
@@ -293,7 +297,7 @@ export function KidsPortal({
                   <span className="absolute right-3 top-3 rounded-full bg-white/70 px-3 py-1 text-xs font-bold text-sky-700">
                     {child.coinBalance.toLocaleString()} コイン
                   </span>
-                </button>
+                </Link>
               );
             })}
           </div>
@@ -315,16 +319,12 @@ export function KidsPortal({
       <div className="mx-auto max-w-3xl space-y-8">
         {/* ヘッダー：もどるボタン */}
         <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => {
-              setError(null);
-              setSelectedId(null);
-            }}
+          <Link
+            href="/kids"
             className="rounded-full bg-white/80 px-4 py-2 text-sm font-bold text-sky-700 shadow ring-1 ring-sky-200 transition hover:bg-white active:scale-95"
           >
             ← べつのこ
-          </button>
+          </Link>
           <p className="text-sm font-bold text-sky-700/80">こども ポータル</p>
         </div>
 
@@ -351,7 +351,7 @@ export function KidsPortal({
 
         {/* サファリへ いく */}
         <Link
-          href={`/kids/safari?kid=${selected.id}`}
+          href={`/kids/${selected.id}/safari`}
           className="block rounded-3xl bg-gradient-to-br from-emerald-300 via-lime-300 to-yellow-300 p-1 shadow-xl transition hover:brightness-110 active:scale-[0.99]"
         >
           <div className="flex items-center gap-4 rounded-[1.4rem] bg-white/90 px-5 py-4 backdrop-blur">
@@ -370,7 +370,7 @@ export function KidsPortal({
 
         {/* クエストに ちょうせん */}
         <Link
-          href={`/kids/quests?kid=${selected.id}`}
+          href={`/kids/${selected.id}/quests`}
           className="block rounded-3xl bg-gradient-to-br from-lime-300 via-amber-200 to-pink-200 p-1 shadow-xl transition active:scale-[0.99]"
         >
           <div className="flex items-center gap-4 rounded-[1.4rem] bg-white/90 px-5 py-4 backdrop-blur">
@@ -389,7 +389,7 @@ export function KidsPortal({
 
         {/* レース きじょうへ */}
         <Link
-          href="/kids/race"
+          href={`/kids/${selected.id}/race`}
           className="block rounded-3xl bg-gradient-to-br from-rose-400 via-orange-400 to-amber-400 p-1 shadow-xl transition hover:brightness-110 active:scale-[0.99]"
         >
           <div className="flex items-center gap-4 rounded-[1.4rem] bg-white/90 px-5 py-4 backdrop-blur">
@@ -408,7 +408,7 @@ export function KidsPortal({
 
         {/* アイテムを つくる */}
         <Link
-          href="/kids/craft"
+          href={`/kids/${selected.id}/craft`}
           className="block rounded-3xl bg-gradient-to-br from-violet-300 via-pink-200 to-amber-200 p-1 shadow-xl transition hover:brightness-110 active:scale-[0.99]"
         >
           <div className="flex items-center gap-4 rounded-[1.4rem] bg-white/90 px-5 py-4 backdrop-blur">
@@ -427,7 +427,7 @@ export function KidsPortal({
 
         {/* クレーンゲームへ */}
         <Link
-          href={`/kids/crane?kid=${selected.id}`}
+          href={`/kids/${selected.id}/crane`}
           className="block rounded-3xl bg-gradient-to-br from-pink-300 via-fuchsia-300 to-violet-300 p-1 shadow-xl transition active:scale-[0.99]"
         >
           <div className="flex items-center gap-4 rounded-[1.4rem] bg-white/90 px-5 py-4 backdrop-blur">

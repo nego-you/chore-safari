@@ -8,8 +8,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { playCraneGame } from "../actions";
-import { CRANE_COST } from "../config";
+import { playCraneGame } from "../../actions";
+import { CRANE_COST } from "../../config";
 
 type Kid = { id: string; name: string; coinBalance: number };
 
@@ -328,7 +328,7 @@ export function CraneClient({ initialKidId, kids }: Props) {
         {/* ヘッダー */}
         <div className="flex items-center justify-between">
           <Link
-            href={`/kids?kid=${selectedKid.id}`}
+            href={`/kids/${selectedKid.id}`}
             className="rounded-full bg-white/90 px-4 py-2 text-sm font-bold text-fuchsia-700 shadow ring-1 ring-fuchsia-200 transition active:scale-95"
           >
             ← ポータルへ

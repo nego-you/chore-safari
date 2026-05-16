@@ -37,7 +37,7 @@ const RARITY_PILL: Record<Rarity, string> = {
 };
 
 export function RaceClient({ animals, kidId = null }: Props) {
-  const portalHref = kidId ? `/kids?kid=${kidId}` : "/kids";
+  const portalHref = kidId ? `/kids/${kidId}` : "/kids";
   const [aId, setAId] = useState<string>(animals[0]?.animalId ?? "");
   const [bId, setBId] = useState<string>(animals[1]?.animalId ?? "");
   const [text, setText] = useState<string>("");

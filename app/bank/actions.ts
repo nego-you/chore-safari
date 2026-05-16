@@ -422,8 +422,10 @@ export async function deleteQuest(
 
 const PENALTY_TITLE_MAX = 80;
 const PENALTY_DESC_MAX = 400;
-const PENALTY_COIN_MIN = 1;
+// クエストと揃えて 10 の倍数に縛る（UI 側でも step=10 にしている）。
+const PENALTY_COIN_MIN = 10;
 const PENALTY_COIN_MAX = 10000;
+const PENALTY_COIN_STEP = 10;
 
 export type PenaltyMasterInput = {
   title: string;
@@ -463,6 +465,9 @@ function validatePenaltyInput(data: PenaltyMasterInput): string | null {
     data.coinAmount > PENALTY_COIN_MAX
   ) {
     return `没収コインは ${PENALTY_COIN_MIN}〜${PENALTY_COIN_MAX} の整数で指定してください`;
+  }
+  if (data.coinAmount % PENALTY_COIN_STEP !== 0) {
+    return `没収コインは ${PENALTY_COIN_STEP} の倍数で指定してください`;
   }
   return null;
 }

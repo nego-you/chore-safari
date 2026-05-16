@@ -94,6 +94,12 @@ const ANIMALS: AnimalSeed[] = [
   { animalId: "trex", name: "ティラノサウルス", emoji: "🦖", rarity: "LEGENDARY", description: "でんせつの だいきょうりゅう！" },
   { animalId: "dragon", name: "ドラゴン", emoji: "🐉", rarity: "LEGENDARY", description: "そらを とぶ でんせつの いきもの" },
   { animalId: "unicorn", name: "ユニコーン", emoji: "🦄", rarity: "LEGENDARY", description: "つのが きらきら かがやく ましんびじゅう" },
+  // ✨ SSR 最強王シリーズ（レアアイテム使用時のみ高確率で出現）
+  { animalId: "tyrannosaurus", name: "【恐竜王】ティラノサウルス", emoji: "🦖", rarity: "LEGENDARY", description: "ちきゅうさいきょうの だいきょうりゅう。あごのちからは すべてを くだく！" },
+  { animalId: "hercules_beetle", name: "【昆虫王】ヘラクレスオオカブト", emoji: "🪲", rarity: "LEGENDARY", description: "こんちゅうかいの おう。じぶんの からだの 850ばいを もちあげる きわみの ちから！" },
+  { animalId: "lion_king", name: "【百獣の王】ライオン", emoji: "🦁", rarity: "LEGENDARY", description: "さばんなに たつ でんせつの おう。そのほえごえは 8キロさきまで とどく！" },
+  { animalId: "megalodon", name: "【海帝】メガロドン", emoji: "🦈", rarity: "LEGENDARY", description: "うみのそこに ねむる きょだいザメ。ホホジロザメの 3ばいの おおきさ！" },
+  { animalId: "dragon_king", name: "【幻獣王】ドラゴン", emoji: "🐉", rarity: "LEGENDARY", description: "そらと だいちを しらべる でんせつの りゅう。そのほのおは てつをも とかす！" },
 ];
 
 async function main() {

@@ -39,7 +39,7 @@ const EMPTY_FORM: FormState = {
   editingId: null,
   title: "",
   description: "",
-  coinAmount: 30,
+  coinAmount: 50,
   emoji: "🚨",
   targetUserIds: [],
 };
@@ -259,16 +259,16 @@ export function PenaltyMasterClient({ initialRows, kids }: Props) {
               没収コイン <span className="text-rose-400">*</span>
               <input
                 type="number"
-                min={1}
+                min={10}
                 max={10000}
-                step={5}
+                step={10}
                 value={form.coinAmount}
                 onChange={(e) =>
                   setForm({
                     ...form,
                     coinAmount: Math.max(
-                      1,
-                      Math.min(10000, Number(e.target.value) || 0),
+                      10,
+                      Math.min(10000, Number(e.target.value) || 10),
                     ),
                   })
                 }

@@ -154,13 +154,31 @@ export async function playGacha(userId: string): Promise<GachaResult> {
 //   resolveTrap : タイミングゲームの結果で CAUGHT / ESCAPED にする
 // ─────────────────────────────────────────────
 
-// rarity ごとの出現重み（数値が大きいほど出やすい）。
+// rarity ごとの出現重み（数値が大きいほど出やすい）。通常エサ使用時。
 const RARITY_WEIGHT: Record<"COMMON" | "RARE" | "EPIC" | "LEGENDARY", number> = {
   COMMON: 55,
   RARE: 28,
   EPIC: 13,
   LEGENDARY: 4,
 };
+
+// ✨ レアアイテム使用時の出現重み（LEGENDARY が 15〜20% で出現する）。
+// SSR 最強王シリーズはこちらのテーブルでのみ高確率で選ばれる。
+const RARITY_WEIGHT_RARE_BAIT: Record<"COMMON" | "RARE" | "EPIC" | "LEGENDARY", number> = {
+  COMMON: 30,
+  RARE: 30,
+  EPIC: 22,
+  LEGENDARY: 18, // ≒ 18% で LEGENDARY（SSR が含まれる）
+};
+
+// レアアイテム（とっきゅうのエサ / ハンターネット / ミックスごはん / じょうぶなワナ）の itemId。
+// これらを使ったときだけ SSR 出現率テーブルを適用する。
+const RARE_BAIT_ITEM_IDS = new Set([
+  "premium_food",
+  "hunter_net",
+  "mixed_food",
+  "sturdy_trap",
+]);
 
 // 出現待ち時間の最小・最大（ms）。テスト用に短め＝30〜90秒。
 const TRAP_WAIT_MIN_MS = 30_000;
@@ -176,20 +194,41 @@ type AnimalLite = {
   imageUrl: string | null;
 };
 
-function pickAnimalByRarity<T extends { rarity: string }>(
+function pickAnimalByRarity<T extends { rarity: string; animalId: string }>(
   animals: T[],
+  useRareBait = false,
 ): T {
-  const total = animals.reduce(
+  const weightTable = useRareBait ? RARITY_WEIGHT_RARE_BAIT : RARITY_WEIGHT;
+
+  // レアアイテム使用時は SSR 最強王シリーズ（animalId に "_king" や固有IDを含む）
+  // を LEGENDARY プールに含める。通常時は SSR 固有動物を除外する。
+  const SSR_ANIMAL_IDS = new Set([
+    "tyrannosaurus",
+    "hercules_beetle",
+    "lion_king",
+    "megalodon",
+    "dragon_king",
+  ]);
+
+  const eligible = animals.filter((a) => {
+    const isSSR = SSR_ANIMAL_IDS.has(a.animalId);
+    // レアアイテム使用時のみ SSR 動物を候補に入れる
+    if (isSSR && !useRareBait) return false;
+    return true;
+  });
+
+  const pool = eligible.length > 0 ? eligible : animals;
+  const total = pool.reduce(
     (s, a) =>
-      s + (RARITY_WEIGHT[a.rarity as keyof typeof RARITY_WEIGHT] ?? 1),
+      s + (weightTable[a.rarity as keyof typeof weightTable] ?? 1),
     0,
   );
   let r = Math.random() * total;
-  for (const a of animals) {
-    r -= RARITY_WEIGHT[a.rarity as keyof typeof RARITY_WEIGHT] ?? 1;
+  for (const a of pool) {
+    r -= weightTable[a.rarity as keyof typeof weightTable] ?? 1;
     if (r <= 0) return a;
   }
-  return animals[animals.length - 1];
+  return pool[pool.length - 1];
 }
 
 function pickWaitMs(): number {
@@ -266,7 +305,9 @@ export async function setTrap(
   if (animals.length === 0) {
     return { success: false, error: "どうぶつが まだ いません" };
   }
-  const chosen = pickAnimalByRarity(animals);
+  // レアアイテム（とっきゅうのエサ等）を使った場合のみ SSR 動物が高確率で出現する
+  const useRareBait = RARE_BAIT_ITEM_IDS.has(baitItemId) || RARE_BAIT_ITEM_IDS.has(trapItemId);
+  const chosen = pickAnimalByRarity(animals, useRareBait);
   const appearsAt = new Date(Date.now() + pickWaitMs());
 
   try {
@@ -724,19 +765,37 @@ function drawCranePrize(): PoolEntry {
   return CRANE_POOL[CRANE_POOL.length - 1];
 }
 
-// クレーン結果：捕獲成功なら item.totalQuantity に在庫数、失敗（途中で落とす）
+// 1 プレイで何個取れるかを決める：
+//   70% で 1 個、25% で 2 個、5% で 3 個。
+// 落とした場合（didCatch=false）も同じ確率分布で「何個落としたか」を決める。
+function drawCranePrizeCount(): number {
+  const r = Math.random();
+  if (r < 0.05) return 3;
+  if (r < 0.3) return 2;
+  return 1;
+}
+
+// クレーン結果：捕獲成功なら各 itemId の totalQuantity に在庫数、失敗（途中で落とす）
 // なら inventory には入れず、prize 情報だけ返す（演出用）。
+// 1 プレイで 1〜3 個取れる可能性があり、同じ itemId が複数回当たった場合は
+// items[] 内で count で集約して返す（UI 側で「おにく × 2」と表示できるように）。
 // クライアントは「アニメーションを全部走らせた最終結果」を didCatch に乗せて呼ぶ。
+export type CranePrizeItem = {
+  itemId: string;
+  itemName: string;
+  itemType: "FOOD" | "TRAP_PART";
+  // この回で取れた（または落とした）個数
+  count: number;
+  // didCatch=false なら null。didCatch=true ならその itemId の在庫合計。
+  totalQuantity: number | null;
+};
+
 export type CraneResult =
   | {
       success: true;
       didCatch: boolean;
-      item: {
-        itemId: string;
-        itemName: string;
-        itemType: "FOOD" | "TRAP_PART";
-        totalQuantity: number | null; // didCatch=false なら null
-      };
+      // 1 件以上。複数取れた場合は itemId ごとにまとめてある。
+      items: CranePrizeItem[];
       newCoinBalance: number;
     }
   | { success: false; error: string };
@@ -760,7 +819,24 @@ export async function playCraneGame(
     };
   }
 
-  const prize = drawCranePrize();
+  // 抽選：個数 → 個数ぶん独立に prize を引く → itemId で集約。
+  const prizeCount = drawCranePrizeCount();
+  const drawnPrizes: PoolEntry[] = [];
+  for (let i = 0; i < prizeCount; i++) drawnPrizes.push(drawCranePrize());
+
+  type Aggregated = { entry: PoolEntry; count: number };
+  const aggregated = new Map<string, Aggregated>();
+  for (const p of drawnPrizes) {
+    const existing = aggregated.get(p.itemId);
+    if (existing) existing.count += 1;
+    else aggregated.set(p.itemId, { entry: p, count: 1 });
+  }
+  const aggregatedList = Array.from(aggregated.values());
+
+  // 履歴の reason 用ラベル：「おにく x2 + ロープ」のような形にする。
+  const reasonLabel = aggregatedList
+    .map((a) => (a.count > 1 ? `${a.entry.itemName} x${a.count}` : a.entry.itemName))
+    .join(" + ");
 
   try {
     const result = await prisma.$transaction(async (tx) => {
@@ -783,41 +859,54 @@ export async function playCraneGame(
           amount: -CRANE_COST,
           kind: "GACHA",
           reason: didCatch
-            ? `クレーン: ${prize.itemName}`
-            : `クレーン失敗（${prize.itemName}を落とした）`,
+            ? `クレーン: ${reasonLabel}`
+            : `クレーン失敗（${reasonLabel}を落とした）`,
         },
       });
 
-      let totalQuantity: number | null = null;
+      // didCatch=true なら、集約済みエントリごとに在庫を増やす + ガチャ履歴を残す。
+      // didCatch=false の時は在庫変動なし。totalQuantity は null。
+      const items: CranePrizeItem[] = [];
+      for (const { entry, count } of aggregatedList) {
+        let totalQuantity: number | null = null;
+        if (didCatch) {
+          const row = await tx.sharedInventoryItem.upsert({
+            where: { itemId: entry.itemId },
+            update: { quantity: { increment: count } },
+            create: {
+              itemId: entry.itemId,
+              itemName: entry.itemName,
+              itemType: entry.itemType,
+              quantity: count,
+            },
+          });
+          totalQuantity = row.quantity;
 
-      if (didCatch) {
-        // 取り出し口まで運べた時だけ在庫追加 + ガチャ履歴。
-        const row = await tx.sharedInventoryItem.upsert({
-          where: { itemId: prize.itemId },
-          update: { quantity: { increment: 1 } },
-          create: {
-            itemId: prize.itemId,
-            itemName: prize.itemName,
-            itemType: prize.itemType,
-            quantity: 1,
-          },
-        });
-        totalQuantity = row.quantity;
-
-        await tx.gachaTransaction.create({
-          data: {
-            userId,
-            costAmount: CRANE_COST,
-            itemId: prize.itemId,
-            itemName: prize.itemName,
-            itemType: prize.itemType,
-          },
+          // ガチャ履歴は「同じ itemId が n 個取れた」を 1 行にまとめる。
+          // costAmount は CRANE_COST をそのまま入れる（1 行で 1 プレイの代金）。
+          await tx.gachaTransaction.create({
+            data: {
+              userId,
+              costAmount: CRANE_COST,
+              itemId: entry.itemId,
+              itemName:
+                count > 1 ? `${entry.itemName} x${count}` : entry.itemName,
+              itemType: entry.itemType,
+            },
+          });
+        }
+        items.push({
+          itemId: entry.itemId,
+          itemName: entry.itemName,
+          itemType: entry.itemType,
+          count,
+          totalQuantity,
         });
       }
 
       return {
         newCoinBalance: fresh.coinBalance,
-        totalQuantity,
+        items,
       };
     });
 
@@ -828,12 +917,7 @@ export async function playCraneGame(
     return {
       success: true,
       didCatch,
-      item: {
-        itemId: prize.itemId,
-        itemName: prize.itemName,
-        itemType: prize.itemType,
-        totalQuantity: result.totalQuantity,
-      },
+      items: result.items,
       newCoinBalance: result.newCoinBalance,
     };
   } catch (err) {

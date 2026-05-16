@@ -13,7 +13,7 @@ import {
   useState,
   useTransition,
 } from "react";
-import { checkTrap, resolveTrap, setTrap } from "../actions";
+import { checkTrap, resolveTrap, setTrap } from "../../actions";
 
 type Rarity = "COMMON" | "RARE" | "EPIC" | "LEGENDARY";
 

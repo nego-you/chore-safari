@@ -6,7 +6,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import type { Recipe } from "@/lib/recipes";
-import { craftItem } from "../actions";
+import { craftItem } from "../../actions";
 
 type Inv = {
   itemId: string;
@@ -47,7 +47,7 @@ type Toast = {
 };
 
 export function CraftClient({ recipes, inventory, kidId = null }: Props) {
-  const portalHref = kidId ? `/kids?kid=${kidId}` : "/kids";
+  const portalHref = kidId ? `/kids/${kidId}` : "/kids";
   const [inv, setInv] = useState<Inv[]>(inventory);
   const [toast, setToast] = useState<Toast | null>(null);
   const [pendingRecipeId, setPendingRecipeId] = useState<string | null>(null);
