@@ -329,9 +329,10 @@ export async function setTrap(
       });
       if (baitUpd.count !== 1) throw new Error("OUT_OF_BAIT");
 
-      return tx.activeTrap.create({
+      return tx.hunt.create({
         data: {
           userId,
+          huntType: "TRAP",
           trapItemId,
           baitItemId,
           status: "PLACED",
@@ -392,14 +393,14 @@ export type CheckTrapResult =
   | { success: false; error: string };
 
 export async function checkTrap(trapId: string): Promise<CheckTrapResult> {
-  const trap = await prisma.activeTrap.findUnique({ where: { id: trapId } });
+  const trap = await prisma.hunt.findUnique({ where: { id: trapId } });
   if (!trap) {
     return { success: false, error: "罠が みつかりません" };
   }
 
   if (trap.status === "PLACED" && Date.now() >= trap.appearsAt.getTime()) {
     // PLACED → APPEARED へ昇格。並列リクエストにも耐えるよう条件付き update。
-    const upd = await prisma.activeTrap.updateMany({
+    const upd = await prisma.hunt.updateMany({
       where: { id: trapId, status: "PLACED" },
       data: { status: "APPEARED" },
     });
@@ -412,7 +413,7 @@ export async function checkTrap(trapId: string): Promise<CheckTrapResult> {
       };
     }
     // 競合で既に他リクエストが昇格させていた → 再 fetch して最新を返す。
-    const fresh = await prisma.activeTrap.findUnique({ where: { id: trapId } });
+    const fresh = await prisma.hunt.findUnique({ where: { id: trapId } });
     return {
       success: true,
       status: (fresh?.status ?? trap.status) as CheckTrapResult["status"] &
@@ -446,7 +447,7 @@ export async function resolveTrap(
   trapId: string,
   isSuccess: boolean,
 ): Promise<ResolveTrapResult> {
-  const trap = await prisma.activeTrap.findUnique({
+  const trap = await prisma.hunt.findUnique({
     where: { id: trapId },
     include: { targetAnimal: true },
   });
@@ -477,7 +478,7 @@ export async function resolveTrap(
     if (isSuccess) {
       const result = await prisma.$transaction(async (tx) => {
         // APPEARED → CAUGHT。二重処理を condition で防ぐ。
-        const upd = await tx.activeTrap.updateMany({
+        const upd = await tx.hunt.updateMany({
           where: { id: trapId, status: "APPEARED" },
           data: { status: "CAUGHT", resolvedAt: new Date() },
         });
@@ -504,7 +505,7 @@ export async function resolveTrap(
         caughtAt: result.caughtAt.toISOString(),
       };
     } else {
-      const upd = await prisma.activeTrap.updateMany({
+      const upd = await prisma.hunt.updateMany({
         where: { id: trapId, status: "APPEARED" },
         data: { status: "ESCAPED", resolvedAt: new Date() },
       });
@@ -521,6 +522,167 @@ export async function resolveTrap(
     console.error("resolveTrap failed:", err);
     return { success: false, error: "結果の保存に失敗しました" };
   }
+}
+
+// ─────────────────────────────────────────────
+// アクティブ狩り（投槍器・複合弓）：ゲージ式タイミングで即時決着するモード。
+//   startActiveHunt : 道具(Tool)を選んで開始。獲物事前抽選 → Hunt(huntType=BOW/SPEAR)を APPEARED 状態で生成し即返却。
+//   resolveActiveHunt : ゲージタイミングの結果 (0.0〜1.0 の命中精度) で CAUGHT/ESCAPED を決定。
+// 既存の TRAP モード (setTrap/checkTrap/resolveTrap) との二刀流。
+// ─────────────────────────────────────────────
+
+export type StartActiveHuntResult =
+  | {
+      success: true;
+      hunt: {
+        id: string;
+        userId: string;
+        huntType: "BOW" | "SPEAR";
+        toolId: string;
+        toolName: string;
+        toolEmoji: string;
+        status: "APPEARED";
+        placedAt: string;
+        appearsAt: string;
+        // 演出に必要な範囲で動物の情報を返す
+        targetAnimal: AnimalLite;
+        // 命中ゲージのスイートスポット幅（0〜1、道具で広がる）
+        sweetSpotWidth: number;
+      };
+      // 道具が消費型なら倉庫が更新される
+      updatedInventory?: Array<{ itemId: string; quantity: number }>;
+    }
+  | { success: false; error: string };
+
+export async function startActiveHunt(
+  userId: string,
+  toolDbId: string,
+  stageDbId?: string | null,
+): Promise<StartActiveHuntResult> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, role: true },
+  });
+  if (!user || user.role !== "CHILD") {
+    return { success: false, error: "ユーザーが みつかりません" };
+  }
+
+  const tool = await prisma.tool.findUnique({ where: { id: toolDbId } });
+  if (!tool) return { success: false, error: "どうぐが みつかりません" };
+  if (tool.type === "TRAP") {
+    return {
+      success: false,
+      error: "この どうぐは パッシブ罠 専用です（罠スタイルで仕掛けてね）",
+    };
+  }
+
+  // 消費型ツールなら、紐付けられた inventory アイテムを 1 個消費する
+  let inventoryRow: { itemId: string; quantity: number } | null = null;
+  if (tool.consumable && tool.inventoryItemId) {
+    const inv = await prisma.sharedInventoryItem.findUnique({
+      where: { itemId: tool.inventoryItemId },
+    });
+    if (!inv || inv.quantity < 1) {
+      return { success: false, error: `${tool.name}の素材が たりません` };
+    }
+    inventoryRow = { itemId: inv.itemId, quantity: inv.quantity };
+  }
+
+  // ステージで動物プールを絞り込む（指定が無ければ全体）
+  const animals = await prisma.animal.findMany({
+    where: stageDbId ? { stageId: stageDbId } : undefined,
+  });
+  if (animals.length === 0) {
+    return { success: false, error: "このステージに どうぶつが いません" };
+  }
+
+  // 道具の補正でレア出現率を少しブースト
+  const useRareBait = tool.successRateBonus >= 0.3;
+  const chosen = pickAnimalByRarity(animals, useRareBait);
+
+  const now = new Date();
+  try {
+    const created = await prisma.$transaction(async (tx) => {
+      if (inventoryRow) {
+        const upd = await tx.sharedInventoryItem.updateMany({
+          where: { itemId: inventoryRow.itemId, quantity: { gte: 1 } },
+          data: { quantity: { decrement: 1 } },
+        });
+        if (upd.count !== 1) throw new Error("OUT_OF_MATERIAL");
+      }
+      return tx.hunt.create({
+        data: {
+          userId,
+          huntType: tool.type === "BOW" ? "BOW" : "SPEAR",
+          toolId: tool.id,
+          // アクティブ狩りでも DB スキーマ上は trap/bait の id 列が必須なので、
+          // ツール識別子をそのまま入れて互換を保つ（罠スタイルとの衝突は huntType で識別）。
+          trapItemId: tool.toolId,
+          baitItemId: tool.toolId,
+          status: "APPEARED",
+          appearsAt: now,
+          targetAnimalId: chosen.id,
+          posX: 50,
+          posY: 50,
+        },
+      });
+    });
+
+    revalidatePath("/kids/safari");
+
+    const animal: AnimalLite = {
+      id: chosen.id,
+      animalId: chosen.animalId,
+      name: chosen.name,
+      genericName: chosen.genericName,
+      specificName: chosen.specificName,
+      emoji: chosen.emoji,
+      rarity: chosen.rarity as AnimalLite["rarity"],
+      description: chosen.description,
+      imageUrl: chosen.imageUrl,
+      isExtinct: chosen.isExtinct,
+    };
+
+    return {
+      success: true,
+      hunt: {
+        id: created.id,
+        userId: created.userId,
+        huntType: created.huntType as "BOW" | "SPEAR",
+        toolId: tool.id,
+        toolName: tool.name,
+        toolEmoji: tool.emoji,
+        status: "APPEARED",
+        placedAt: created.placedAt.toISOString(),
+        appearsAt: created.appearsAt.toISOString(),
+        targetAnimal: animal,
+        // 道具の successRateBonus を「スイートスポット幅」として UI に渡す（0.05〜0.45）
+        sweetSpotWidth: Math.max(0.05, Math.min(0.45, 0.1 + tool.successRateBonus)),
+      },
+      updatedInventory: inventoryRow
+        ? [{ itemId: inventoryRow.itemId, quantity: inventoryRow.quantity - 1 }]
+        : undefined,
+    };
+  } catch (err) {
+    if (err instanceof Error && err.message === "OUT_OF_MATERIAL") {
+      return { success: false, error: "素材が たりません" };
+    }
+    console.error("startActiveHunt failed:", err);
+    return { success: false, error: "狩りの開始に失敗しました" };
+  }
+}
+
+// アクティブ狩りの結果。resolveTrap と同じ shape を流用するため alias。
+export type ResolveActiveHuntResult = ResolveTrapResult;
+
+export async function resolveActiveHunt(
+  huntId: string,
+  precision: number, // 0.0〜1.0
+): Promise<ResolveActiveHuntResult> {
+  // 命中精度 → 成功/失敗
+  // 0.65 以上で命中扱い。失敗時も resolveTrap と同じく ESCAPED 経路で記録。
+  const isHit = precision >= 0.65;
+  return resolveTrap(huntId, isHit);
 }
 
 // ─────────────────────────────────────────────

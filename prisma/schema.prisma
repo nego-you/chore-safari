@@ -1,5 +1,10 @@
 // Chore Safari - Prisma schema
 // PostgreSQL backend. コイン残高・取引履歴・共有インベントリ・ガチャ履歴・どうぶつ図鑑を管理。
+//
+// 2026-05-17 大規模改修:
+//   - Stage(ステージ) / Tool(道具) モデル新設
+//   - Animal に habitat / stageId を追加
+//   - ActiveTrap → Hunt にリネーム（罠/弓/槍を区別する huntType を追加）
 
 generator client {
   provider = "prisma-client-js"
@@ -51,18 +56,39 @@ enum QuestStatus {
   @@map("quest_status")
 }
 
-// サファリで仕掛けた罠のライフサイクル。
-//   PLACED   : 仕掛けたばかり。appears_at まで待機中。
+// 狩りの種別。
+//   TRAP  : 落とし穴・トラバサミなどのパッシブ罠（仕掛けて待つ）
+//   BOW   : 複合弓などの飛び道具（ゲージ式タイミング）
+//   SPEAR : アトラトル(投槍器)・槍などの投擲武器（ゲージ式タイミング）
+enum HuntType {
+  TRAP
+  BOW
+  SPEAR
+
+  @@map("hunt_type")
+}
+
+// 道具種別。シードデータの type フィールドに対応。
+enum ToolType {
+  TRAP
+  BOW
+  SPEAR
+
+  @@map("tool_type")
+}
+
+// 罠/狩りのライフサイクル。
+//   PLACED   : 仕掛けたばかり/狙い始め。appears_at まで待機中。
 //   APPEARED : appears_at を過ぎて動物が出現済み（タイミングゲーム可能）。
 //   CAUGHT   : タイミングゲーム成功で捕獲済み。
 //   ESCAPED  : 失敗で逃げられた。アイテムは戻ってこない。
-enum TrapStatus {
+enum HuntStatus {
   PLACED
   APPEARED
   CAUGHT
   ESCAPED
 
-  @@map("trap_status")
+  @@map("hunt_status")
 }
 
 model User {
@@ -79,7 +105,7 @@ model User {
   caughtAnimals      CaughtAnimal[]
   bonusNotifications SpecialBonusNotification[]
   questSubmissions   QuestSubmission[]
-  activeTraps        ActiveTrap[]
+  hunts              Hunt[]
   // 専用クエストの対象となる場合
   targetedQuests     Quest[]
   // 専用ペナルティの対象となる場合
@@ -131,6 +157,59 @@ model GachaTransaction {
   @@map("gacha_transactions")
 }
 
+// ─────────────────────────────────────────────────────────────
+// 博物学ステージ（生息地カテゴリ）
+//   name 例: "サバンナ" / "森林" / "氷河期" / "深海" / "恐竜時代"
+//   unlockCondition は将来の段階開放用（NULL=最初から開放）。
+// ─────────────────────────────────────────────────────────────
+model Stage {
+  id              String   @id @default(cuid())
+  stageId         String   @unique @map("stage_id")     // "savanna" / "forest" / "ice_age" / "deep_sea" / "cretaceous"
+  name            String                                  // 表示名
+  emoji           String   @default("🌍")
+  description     String   @default("")                  // ステージの解説
+  // 解放条件（例: "図鑑を10種埋める" / null=最初から開放）
+  unlockCondition String?  @map("unlock_condition")
+  // 並び順（小さい数字ほど前に表示）
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  animals         Animal[]
+
+  @@map("stages")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 道具マスタ：落とし穴・トラバサミ・アトラトル(投槍器)・複合弓 など。
+//   type:        TRAP/BOW/SPEAR
+//   successRateBonus: 命中率/捕獲率に加算される倍率(0.0〜1.0)
+//   historicalContext: 「3万年前から使われたアトラトルは…」のような豆知識文。
+// ─────────────────────────────────────────────────────────────
+model Tool {
+  id                String   @id @default(cuid())
+  toolId            String   @unique @map("tool_id")        // "pitfall" / "leghold" / "atlatl" / "compound_bow"
+  name              String                                    // 表示名
+  emoji             String   @default("🛠️")
+  description       String   @default("")                    // 道具の効果説明
+  // 史実・歴史的背景。図鑑の道具タブで表示する。
+  historicalContext String   @default("") @map("historical_context")
+  type              ToolType
+  // 0.00〜1.00。命中率に加算（0.20 なら +20%）。
+  successRateBonus  Float    @default(0) @map("success_rate_bonus")
+  // インベントリの itemId と紐付ける（消費アイテムとして登録されていれば連動）。
+  // 罠は使い切り(消費)、弓・投槍器はストック扱い（消費 0）。
+  inventoryItemId   String?  @map("inventory_item_id")
+  consumable        Boolean  @default(true)
+  // 並び順（小さい数字ほど前に表示）
+  sortOrder         Int      @default(0) @map("sort_order")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  hunts             Hunt[]
+
+  @@index([type])
+  @@map("tools")
+}
+
 // 図鑑マスタ：捕獲可能などうぶつの定義。
 model Animal {
   id           String         @id @default(cuid())
@@ -150,13 +229,19 @@ model Animal {
   emoji        String         @default("🐾")
   // 絶滅種フラグ（true = 💀絶滅種バッジ表示）
   isExtinct    Boolean        @default(false) @map("is_extinct")
+  // 生息地の自由記述（例: "アフリカのサバンナ" / "北極圏" / "中生代白亜紀"）
+  habitat      String         @default("") @map("habitat")
+  // どのステージに属するか（null=未分類/プレイ可能ながらステージ未割当）
+  stageId      String?        @map("stage_id")
+  stage        Stage?         @relation(fields: [stageId], references: [id], onDelete: SetNull)
   createdAt    DateTime       @default(now()) @map("created_at")
   updatedAt    DateTime       @updatedAt @map("updated_at")
   catches      CaughtAnimal[]
-  activeTraps  ActiveTrap[]
+  hunts        Hunt[]
 
   @@index([rarity])
   @@index([genericName])
+  @@index([stageId])
   @@map("animals")
 }
 
@@ -170,6 +255,8 @@ model CaughtAnimal {
   // どの罠とエサで捕まえたかの記録（後で組み合わせ確率を分析できるように残しておく）。
   trapItemId     String?  @map("trap_item_id")
   foodItemId     String?  @map("food_item_id")
+  // どの道具（Tool）で捕まえたか。アクティブ狩りの記録用。
+  toolId         String?  @map("tool_id")
   caughtAt       DateTime @default(now()) @map("caught_at")
 
   @@index([animalId])
@@ -238,16 +325,26 @@ model QuestSubmission {
   @@map("quest_submissions")
 }
 
-// 仕掛け中の罠。setTrap で生成、appears_at までは PLACED、過ぎたら APPEARED、
-// タイミングゲームの結果で CAUGHT / ESCAPED に決まる。
-// target_animal_id は仕掛けた時に事前抽選した「もし成功したら捕まる」動物。
-model ActiveTrap {
+// 仕掛け中の罠 / 進行中の狩り（旧 ActiveTrap をリネーム）。
+//   huntType=TRAP   : 罠スタイル（パッシブ）。setTrap で生成、appearsAt まで PLACED、過ぎたら APPEARED、
+//                     タイミングゲームの結果で CAUGHT/ESCAPED。
+//   huntType=BOW    : 複合弓（アクティブ狩り）。startHunt 直後にゲージ式タイミングで即決着。
+//   huntType=SPEAR  : アトラトル/槍（アクティブ狩り）。BOW と同様にゲージ式タイミングで即決着。
+//
+// アクティブ狩りでは appearsAt は placedAt と同値（即時開始扱い）で保存。
+// targetAnimalId は仕掛けた時に事前抽選した「もし成功したら捕まる」動物。
+model Hunt {
   id              String     @id @default(cuid())
   userId          String     @map("user_id")
   user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  huntType        HuntType   @default(TRAP) @map("hunt_type")
+  // どの道具で狩ったか（後方互換のため null 許容）。
+  toolId          String?    @map("tool_id")
+  tool            Tool?      @relation(fields: [toolId], references: [id], onDelete: SetNull)
+  // 旧 ActiveTrap の trapItemId / baitItemId をそのまま維持（罠スタイル用）。
   trapItemId      String     @map("trap_item_id")
   baitItemId      String     @map("bait_item_id")
-  status          TrapStatus @default(PLACED)
+  status          HuntStatus @default(PLACED)
   placedAt        DateTime   @default(now()) @map("placed_at")
   appearsAt       DateTime   @map("appears_at")
   targetAnimalId  String     @map("target_animal_id")
@@ -260,7 +357,8 @@ model ActiveTrap {
   @@index([userId, status])
   @@index([appearsAt])
   @@index([targetAnimalId])
-  @@map("active_traps")
+  @@index([huntType])
+  @@map("hunts")
 }
 
 // ペナルティマスタ：親が「やったらコイン没収」を事前定義しておく。

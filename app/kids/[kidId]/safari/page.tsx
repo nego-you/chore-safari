@@ -32,7 +32,7 @@ export default async function SafariPage({
       },
     }),
     // 全 CHILD の仕掛け中・出現中の罠。クライアントで選択中の子の分だけ表示。
-    prisma.activeTrap.findMany({
+    prisma.hunt.findMany({
       where: { status: { in: ["PLACED", "APPEARED"] } },
       orderBy: { appearsAt: "asc" },
       include: { targetAnimal: true },
