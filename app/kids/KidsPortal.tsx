@@ -169,30 +169,30 @@ export function KidsPortal({
   // ── だれがあそぶ？画面 ──────────────────────────
   if (!selected) {
     return (
-      <main className="min-h-screen bg-gradient-to-b from-sky-100 via-pink-50 to-yellow-50 px-4 py-10">
-        <div className="mx-auto max-w-3xl text-center">
-          <p className="text-3xl">🎪</p>
-          <h1 className="mt-2 text-4xl font-extrabold tracking-wide text-sky-800 sm:text-5xl">
+      <main className="h-screen overflow-hidden bg-gradient-to-b from-sky-100 via-pink-50 to-yellow-50 px-4 py-4 flex flex-col justify-center">
+        <div className="mx-auto w-full max-w-3xl text-center">
+          <p className="text-2xl leading-none">🎪</p>
+          <h1 className="mt-1 text-3xl font-extrabold tracking-wide text-sky-800 sm:text-4xl">
             だれが あそぶ？
           </h1>
-          <p className="mt-3 text-base text-sky-700/80">
+          <p className="mt-1 text-sm text-sky-700/80">
             じぶんの なまえを タッチしてね
           </p>
 
-          <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-3">
+          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
             {childList.map((child, i) => {
               const theme = themeFor(i);
               return (
                 <Link
                   key={child.id}
                   href={`/kids/${child.id}`}
-                  className={`group relative flex flex-col items-center justify-center gap-3 rounded-3xl ${theme.bg} px-6 py-8 shadow-xl shadow-sky-200/40 ring-4 ring-white transition hover:-translate-y-1 hover:ring-offset-2 hover:${theme.ring} active:translate-y-0`}
+                  className={`group relative flex flex-col items-center justify-center gap-2 rounded-3xl ${theme.bg} px-6 py-5 shadow-xl shadow-sky-200/40 ring-4 ring-white transition hover:-translate-y-1 hover:ring-offset-2 hover:${theme.ring} active:translate-y-0`}
                   aria-label={`${child.name} ではじめる`}
                 >
-                  <span className="text-6xl drop-shadow" aria-hidden>
+                  <span className="text-5xl drop-shadow" aria-hidden>
                     {theme.emoji}
                   </span>
-                  <span className={`text-3xl font-extrabold ${theme.text}`}>
+                  <span className={`text-2xl font-extrabold ${theme.text}`}>
                     <NameRuby name={child.name} />
                   </span>
                   <span className="absolute right-3 top-3 rounded-full bg-white/70 px-3 py-1 text-xs font-bold text-sky-700">
@@ -203,7 +203,7 @@ export function KidsPortal({
             })}
           </div>
 
-          <p className="mt-10 text-xs text-sky-500/70">
+          <p className="mt-4 text-xs text-sky-500/70">
             ※ おとなのひとは <code className="rounded bg-white/70 px-1">/bank</code> から つかえるよ
           </p>
         </div>
@@ -216,11 +216,11 @@ export function KidsPortal({
 
   return (
     <main
-      className={`min-h-screen bg-gradient-to-b ${theme.mapBg} px-4 py-6`}
+      className={`h-screen overflow-hidden bg-gradient-to-b ${theme.mapBg} px-4 py-3 flex flex-col`}
     >
-      <div className="mx-auto max-w-3xl space-y-6">
+      <div className="mx-auto w-full max-w-3xl flex flex-col gap-3 h-full">
         {/* ヘッダー：もどるボタン */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between shrink-0">
           <Link
             href="/kids"
             className="rounded-full bg-white/80 px-4 py-2 text-sm font-bold text-slate-700 shadow ring-1 ring-slate-200 transition hover:bg-white active:scale-95"
@@ -234,29 +234,29 @@ export function KidsPortal({
 
         {/* ヒーロー：名前 + コイン */}
         <section
-          className={`rounded-[2rem] ${theme.bg} px-6 py-8 text-center shadow-xl ring-4 ring-white`}
+          className={`shrink-0 rounded-[2rem] ${theme.bg} px-6 py-4 text-center shadow-xl ring-4 ring-white`}
         >
-          <p className="text-6xl drop-shadow" aria-hidden>
+          <p className="text-4xl drop-shadow leading-none" aria-hidden>
             {theme.emoji}
           </p>
           <h1
-            className={`mt-1 text-3xl font-extrabold sm:text-4xl ${theme.text}`}
+            className={`mt-0.5 text-2xl font-extrabold sm:text-3xl ${theme.text}`}
           >
             <NameRuby name={selected.name} />
           </h1>
-          <p className="mt-4 text-xs font-bold text-white/90 tracking-widest">
+          <p className="mt-2 text-xs font-bold text-white/90 tracking-widest">
             きみの コイン
           </p>
-          <p className="mt-0.5 font-mono text-5xl font-black tracking-tight text-white drop-shadow sm:text-6xl">
+          <p className="mt-0.5 font-mono text-4xl font-black tracking-tight text-white drop-shadow sm:text-5xl">
             {selected.coinBalance.toLocaleString()}
-            <span className="ml-2 text-xl">🪙</span>
+            <span className="ml-2 text-lg">🪙</span>
           </p>
         </section>
 
         {/* ワールドマップの3拠点 */}
         <section
           aria-label="ワールドマップの拠点"
-          className="grid grid-cols-1 gap-4"
+          className="flex flex-col gap-3 flex-1 justify-center"
         >
           <SpokeCard
             href={`/kids/${selected.id}/guild`}
@@ -285,7 +285,7 @@ export function KidsPortal({
           />
         </section>
 
-        <p className="text-center text-[11px] font-bold text-slate-500/70 tracking-widest">
+        <p className="shrink-0 text-center text-[11px] font-bold text-slate-500/70 tracking-widest pb-1">
           🌍 サファリの 世界へ ようこそ 🌍
         </p>
       </div>
@@ -322,12 +322,12 @@ function SpokeCard({
         spotlight ? "ring-4 ring-white shadow-2xl" : ""
       }`}
     >
-      <div className="flex items-center gap-4 rounded-[1.4rem] bg-white/90 px-5 py-4 backdrop-blur">
-        <span className="text-5xl shrink-0" aria-hidden>
+      <div className="flex items-center gap-3 rounded-[1.4rem] bg-white/90 px-4 py-3 backdrop-blur">
+        <span className="text-4xl shrink-0" aria-hidden>
           {emoji}
         </span>
         <div className="flex-1 min-w-0">
-          <p className="text-xl font-black text-slate-800 leading-tight">
+          <p className="text-lg font-black text-slate-800 leading-tight">
             {title}
           </p>
           <p className="text-xs font-bold text-slate-600 mt-0.5">{subtitle}</p>
