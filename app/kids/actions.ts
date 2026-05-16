@@ -188,10 +188,15 @@ type AnimalLite = {
   id: string;
   animalId: string;
   name: string;
+  // ゲームプレイ中の抽象名（例: ゾウ）
+  genericName: string;
+  // 図鑑詳細の種名（例: アフリカゾウ）
+  specificName: string;
   emoji: string;
   rarity: "COMMON" | "RARE" | "EPIC" | "LEGENDARY";
   description: string;
   imageUrl: string | null;
+  isExtinct: boolean;
 };
 
 function pickAnimalByRarity<T extends { rarity: string; animalId: string }>(
@@ -459,10 +464,13 @@ export async function resolveTrap(
     id: trap.targetAnimal.id,
     animalId: trap.targetAnimal.animalId,
     name: trap.targetAnimal.name,
+    genericName: trap.targetAnimal.genericName,
+    specificName: trap.targetAnimal.specificName,
     emoji: trap.targetAnimal.emoji,
     rarity: trap.targetAnimal.rarity as AnimalLite["rarity"],
     description: trap.targetAnimal.description,
     imageUrl: trap.targetAnimal.imageUrl,
+    isExtinct: trap.targetAnimal.isExtinct,
   };
 
   try {

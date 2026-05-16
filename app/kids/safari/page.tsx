@@ -66,6 +66,8 @@ export default async function SafariPage({
       id: t.targetAnimal.id,
       animalId: t.targetAnimal.animalId,
       name: t.targetAnimal.name,
+      genericName: t.targetAnimal.genericName,
+      specificName: t.targetAnimal.specificName,
       emoji: t.targetAnimal.emoji,
       rarity: t.targetAnimal.rarity as
         | "COMMON"
@@ -74,6 +76,7 @@ export default async function SafariPage({
         | "LEGENDARY",
       description: t.targetAnimal.description,
       imageUrl: t.targetAnimal.imageUrl,
+      isExtinct: t.targetAnimal.isExtinct,
     },
   }));
 
@@ -83,10 +86,13 @@ export default async function SafariPage({
       id: c.animal.id,
       animalId: c.animal.animalId,
       name: c.animal.name,
+      genericName: c.animal.genericName,
+      specificName: c.animal.specificName,
       emoji: c.animal.emoji,
       rarity: c.animal.rarity as "COMMON" | "RARE" | "EPIC" | "LEGENDARY",
       description: c.animal.description,
       imageUrl: c.animal.imageUrl,
+      isExtinct: c.animal.isExtinct,
     },
     caughtBy: { id: c.caughtBy.id, name: c.caughtBy.name },
     caughtAt: c.caughtAt.toISOString(),

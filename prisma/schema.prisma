@@ -133,21 +133,30 @@ model GachaTransaction {
 
 // 図鑑マスタ：捕獲可能などうぶつの定義。
 model Animal {
-  id          String         @id @default(cuid())
+  id           String         @id @default(cuid())
   // ロジック上の識別子（'lion', 'rabbit', 'trex' など）。重複不可。
-  animalId    String         @unique @map("animal_id")
-  name        String
-  rarity      Rarity
-  description String
-  imageUrl    String?        @map("image_url")
+  animalId     String         @unique @map("animal_id")
+  // ゲームプレイ中に表示する抽象名（例: ゾウ、カブトムシ）
+  genericName  String         @default("") @map("generic_name")
+  // 図鑑に載る詳細な種名（例: アフリカゾウ、ヘラクレスオオカブト）
+  specificName String         @default("") @map("specific_name")
+  // 後方互換：旧 name フィールド（新規はgenericeNameを使う）
+  name         String
+  rarity       Rarity
+  // 約100文字の詳細解説文（図鑑で表示）
+  description  String
+  imageUrl     String?        @map("image_url")
   // 画像が無いときの表示用フォールバック絵文字。
-  emoji       String         @default("🐾")
-  createdAt   DateTime       @default(now()) @map("created_at")
-  updatedAt   DateTime       @updatedAt @map("updated_at")
-  catches     CaughtAnimal[]
-  activeTraps ActiveTrap[]
+  emoji        String         @default("🐾")
+  // 絶滅種フラグ（true = 💀絶滅種バッジ表示）
+  isExtinct    Boolean        @default(false) @map("is_extinct")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+  catches      CaughtAnimal[]
+  activeTraps  ActiveTrap[]
 
   @@index([rarity])
+  @@index([genericName])
   @@map("animals")
 }
 

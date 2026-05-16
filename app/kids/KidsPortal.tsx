@@ -425,6 +425,25 @@ export function KidsPortal({
           </div>
         </Link>
 
+        {/* どうぶつ図鑑へ */}
+        <Link
+          href={`/kids/${selected.id}/dictionary`}
+          className="block rounded-3xl bg-gradient-to-br from-sky-300 via-teal-300 to-emerald-300 p-1 shadow-xl transition hover:brightness-110 active:scale-[0.99]"
+        >
+          <div className="flex items-center gap-4 rounded-[1.4rem] bg-white/90 px-5 py-4 backdrop-blur">
+            <span className="text-5xl" aria-hidden>📖🔍🦒</span>
+            <div className="flex-1">
+              <p className="text-xl font-black text-teal-700">
+                どうぶつ図鑑
+              </p>
+              <p className="text-xs text-teal-600/80">
+                つかまえた どうぶつの しょうたいを しらべよう
+              </p>
+            </div>
+            <span className="text-2xl text-teal-600" aria-hidden>→</span>
+          </div>
+        </Link>
+
         {/* クレーンゲームへ */}
         <Link
           href={`/kids/${selected.id}/crane`}

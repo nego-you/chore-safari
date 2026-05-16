@@ -43,10 +43,13 @@ type Animal = {
   id: string;
   animalId: string;
   name: string;
+  genericName: string;
+  specificName: string;
   emoji: string;
   rarity: Rarity;
   description: string;
   imageUrl: string | null;
+  isExtinct: boolean;
 };
 
 type TrapDTO = {
@@ -1010,9 +1013,14 @@ function ResultModal({
   result: { kind: "caught"; animal: Animal } | { kind: "escaped"; animal: Animal };
   onClose: () => void;
 }) {
+  // Phase1: genericName 表示 → タップで Phase2: specificName + 解説 リビール
+  const [revealed, setReveal] = useState(false);
   const style = RARITY_STYLE[result.animal.rarity];
   const isCaught = result.kind === "caught";
   const isSSR = isCaught && isSSRAnimal(result.animal);
+  const genericName = result.animal.genericName || result.animal.name;
+  const specificName = result.animal.specificName || result.animal.name;
+  const isExtinct = result.animal.isExtinct;
 
   useEffect(() => {
     if (!isCaught) return;
@@ -1021,7 +1029,6 @@ function ResultModal({
       const mod = await import("canvas-confetti");
       if (cancelled) return;
       if (isSSR) {
-        // SSR: 金色の豪華紙吹雪を3連発！
         const goldPalette = ["#ffd700", "#ff8800", "#fff0a0", "#ff4500", "#ffe066", "#ffffff"];
         mod.default({ particleCount: 250, spread: 120, origin: { y: 0.5 }, colors: goldPalette, zIndex: 9999, startVelocity: 50 });
         setTimeout(() => {
@@ -1047,7 +1054,6 @@ function ResultModal({
         className="fixed inset-0 z-50 flex items-center justify-center touch-manipulation"
         style={{ background: "rgba(0,0,0,0.75)" }}
       >
-        {/* 全体シェイク + 金炎背景 */}
         <div
           className="ssr-shake mx-4 w-full max-w-sm rounded-[2rem] p-1.5 shadow-2xl"
           style={{
@@ -1085,10 +1091,7 @@ function ResultModal({
 
             {/* SSR バナー */}
             <div className="relative z-10">
-              <p
-                className="ssr-text-glow text-3xl font-black tracking-widest"
-                style={{ color: "#ffd700" }}
-              >
+              <p className="ssr-text-glow text-3xl font-black tracking-widest" style={{ color: "#ffd700" }}>
                 ⚡ SSR ゲット！！！ ⚡
               </p>
               <p className="mt-1 text-xs font-bold text-orange-300 tracking-widest">
@@ -1098,56 +1101,64 @@ function ResultModal({
 
             {/* 動物アイコン */}
             <div className="relative z-10 my-5 flex items-center justify-center">
-              <span
-                aria-hidden
-                className="absolute text-[8rem] opacity-30 blur-lg"
-                style={{ filter: "drop-shadow(0 0 30px #ffd700)" }}
-              >
+              <span aria-hidden className="absolute text-[8rem] opacity-30 blur-lg" style={{ filter: "drop-shadow(0 0 30px #ffd700)" }}>
                 {result.animal.emoji}
               </span>
-              <span
-                aria-hidden
-                className="ssr-zoom-bounce relative text-[7rem] drop-shadow-lg"
-                style={{ filter: "drop-shadow(0 0 20px #ff8800) drop-shadow(0 0 40px #ffd700)" }}
-              >
+              <span aria-hidden className="ssr-zoom-bounce relative text-[7rem] drop-shadow-lg" style={{ filter: "drop-shadow(0 0 20px #ff8800) drop-shadow(0 0 40px #ffd700)" }}>
                 {result.animal.emoji}
               </span>
             </div>
 
-            {/* 動物名 */}
+            {/* Phase 1: genericName → Phase 2: specificName + 解説 */}
             <div className="relative z-10">
-              <p
-                className="text-2xl font-black leading-tight"
-                style={{ color: "#ffd700", textShadow: "0 2px 8px #ff4500" }}
-              >
-                {result.animal.name}
-              </p>
-              <p
-                className="ssr-badge mt-2 inline-block rounded-full px-4 py-1 text-sm font-black"
-                style={{
-                  background: "linear-gradient(90deg, #ff6b00, #ffd700, #ff4500)",
-                  color: "#fff",
-                  boxShadow: "0 0 12px #ffd700",
-                }}
-              >
-                {SSR_LABEL}
-              </p>
-              <p className="mt-3 text-xs text-amber-300 leading-relaxed">
-                {result.animal.description}
-              </p>
-              <p className="mt-3 text-base font-black text-yellow-300">
-                🔥 を つかまえた！！ 🔥
-              </p>
+              {!revealed ? (
+                <>
+                  <p className="text-2xl font-black" style={{ color: "#ffd700", textShadow: "0 2px 8px #ff4500" }}>
+                    {genericName} を つかまえた！！
+                  </p>
+                  <p className="mt-2 text-xs text-orange-200">正体は…？</p>
+                  <button
+                    type="button"
+                    onClick={() => setReveal(true)}
+                    className="relative z-10 mt-4 rounded-full px-7 py-3 text-base font-black text-black shadow-lg transition hover:brightness-110 active:scale-95"
+                    style={{ background: "linear-gradient(90deg,#ffd700,#fff0a0,#ffd700)", boxShadow: "0 0 20px #ffd700" }}
+                  >
+                    🔍 しょうたいを あかせ！
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-[11px] font-bold text-orange-300 tracking-widest">正体は…</p>
+                  <p className="mt-1 text-xl font-black leading-tight" style={{ color: "#ffd700", textShadow: "0 2px 8px #ff4500" }}>
+                    {specificName}
+                  </p>
+                  <div className="mt-1 flex items-center justify-center gap-2">
+                    <p className="ssr-badge inline-block rounded-full px-4 py-1 text-sm font-black" style={{ background: "linear-gradient(90deg, #ff6b00, #ffd700, #ff4500)", color: "#fff", boxShadow: "0 0 12px #ffd700" }}>
+                      {SSR_LABEL}
+                    </p>
+                    {isExtinct && (
+                      <span className="rounded-full bg-gray-800 px-2 py-0.5 text-[10px] font-bold text-gray-300">
+                        💀絶滅種
+                      </span>
+                    )}
+                  </div>
+                  {result.animal.imageUrl && (
+                    <img src={result.animal.imageUrl} alt={specificName} className="mx-auto mt-3 h-24 w-24 rounded-xl object-cover ring-2 ring-yellow-400" />
+                  )}
+                  <p className="mt-3 text-xs text-amber-200 leading-relaxed text-left">
+                    {result.animal.description}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="relative z-10 mt-5 rounded-full px-8 py-3 text-base font-black text-white shadow-lg transition hover:brightness-110 active:scale-95"
+                    style={{ background: "linear-gradient(90deg, #ff6b00, #ffd700, #ff4500)", boxShadow: "0 0 20px #ffd700" }}
+                  >
+                    うおおお！さいきょう！！
+                  </button>
+                </>
+              )}
             </div>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="relative z-10 mt-6 rounded-full px-8 py-3 text-base font-black text-white shadow-lg transition hover:brightness-110 active:scale-95"
-              style={{ background: "linear-gradient(90deg, #ff6b00, #ffd700, #ff4500)", boxShadow: "0 0 20px #ffd700" }}
-            >
-              うおおお！さいきょう！！
-            </button>
           </div>
         </div>
       </div>
@@ -1184,14 +1195,51 @@ function ResultModal({
                   {result.animal.emoji}
                 </span>
               </div>
-              <p className={`text-3xl font-black ${style.text}`}>{result.animal.name}</p>
-              <p className={`mt-1 inline-block rounded-full ${style.bg} px-3 py-0.5 text-xs font-extrabold ${style.text} ring-1 ${style.ring}`}>
-                {RARITY_LABEL[result.animal.rarity]}
-              </p>
-              <p className="mt-3 text-sm text-slate-600">{result.animal.description}</p>
-              <p className="mt-4 text-base font-bold text-emerald-700">
-                を つかまえた！
-              </p>
+
+              {/* Phase 1: genericName → タップで Phase 2: specificName + 解説 */}
+              {!revealed ? (
+                <>
+                  <p className={`text-3xl font-black ${style.text}`}>
+                    {genericName} を<br />つかまえた！
+                  </p>
+                  <p className="mt-2 text-sm text-slate-500">正体は…？タップして みてみよう！</p>
+                  <button
+                    type="button"
+                    onClick={() => setReveal(true)}
+                    className="mt-5 rounded-full bg-emerald-500 px-7 py-3 text-sm font-extrabold text-white shadow transition hover:brightness-110 active:scale-95"
+                  >
+                    🔍 しょうたいを みる！
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-[11px] font-bold text-slate-400 tracking-widest">正体は…</p>
+                  <p className={`mt-1 text-2xl font-black ${style.text}`}>{specificName}</p>
+                  <div className="mt-1 flex items-center justify-center gap-2 flex-wrap">
+                    <span className={`inline-block rounded-full ${style.bg} px-3 py-0.5 text-xs font-extrabold ${style.text} ring-1 ${style.ring}`}>
+                      {RARITY_LABEL[result.animal.rarity]}
+                    </span>
+                    {isExtinct && (
+                      <span className="inline-block rounded-full bg-gray-700 px-2 py-0.5 text-[10px] font-bold text-gray-200">
+                        💀絶滅種
+                      </span>
+                    )}
+                  </div>
+                  {result.animal.imageUrl && (
+                    <img src={result.animal.imageUrl} alt={specificName} className="mx-auto mt-3 h-28 w-28 rounded-xl object-cover ring-2 ring-emerald-400 shadow" />
+                  )}
+                  <p className="mt-3 text-sm text-slate-600 text-left leading-relaxed">
+                    {result.animal.description}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="mt-5 rounded-full bg-emerald-500 px-6 py-2 text-sm font-extrabold text-white shadow transition hover:brightness-110"
+                  >
+                    やったー！図鑑に のったよ！
+                  </button>
+                </>
+              )}
             </>
           ) : (
             <>
@@ -1207,24 +1255,22 @@ function ResultModal({
                   {result.animal.emoji}
                 </span>
               </div>
-              <p className="text-2xl font-black text-slate-700">{result.animal.name}</p>
+              <p className="text-2xl font-black text-slate-700">{genericName}</p>
               <p className="mt-3 text-sm text-slate-500">
                 タイミングが ずれちゃった。また あした がんばろう！
               </p>
               <p className="mt-3 text-[11px] text-rose-500">
                 ※ つかった ワナと エサは なくなったよ
               </p>
+              <button
+                type="button"
+                onClick={onClose}
+                className="mt-6 rounded-full bg-slate-500 px-6 py-2 text-sm font-extrabold text-white shadow transition hover:brightness-110"
+              >
+                つぎは がんばる
+              </button>
             </>
           )}
-          <button
-            type="button"
-            onClick={onClose}
-            className={`mt-6 rounded-full px-6 py-2 text-sm font-extrabold text-white shadow transition hover:brightness-110 ${
-              isCaught ? "bg-emerald-500" : "bg-slate-500"
-            }`}
-          >
-            {isCaught ? "やったー！" : "つぎは がんばる"}
-          </button>
         </div>
       </div>
     </div>
@@ -1299,7 +1345,7 @@ function Zukan({ catches }: { catches: CatchEntry[] }) {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className={`text-sm font-black ${ssr ? "text-yellow-300" : s.text}`}>
-                        {g.animal.name}
+                        {g.animal.specificName || g.animal.name}
                       </p>
                       {ssr ? (
                         <span className="ssr-badge rounded-full px-2 py-0 text-[9px] font-black text-white" style={{ background: "linear-gradient(90deg,#ff6b00,#ffd700,#ff4500)" }}>
