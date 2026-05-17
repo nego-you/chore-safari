@@ -97,6 +97,12 @@ export function BankPortal({
             >
               🚨 ペナルティ管理マスタ
             </Link>
+            <Link
+              href="/bank/dev"
+              className="inline-flex items-center gap-1 rounded-lg border border-amber-400/40 bg-amber-500/10 px-2 py-1 text-[11px] font-bold text-amber-300 transition hover:bg-amber-500/20 whitespace-nowrap"
+            >
+              🧪 DEV
+            </Link>
           </nav>
         </div>
       </header>

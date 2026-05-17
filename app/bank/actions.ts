@@ -626,3 +626,40 @@ export async function applyPenaltyMaster(
     return { success: false, error: "ペナルティ適用に失敗しました" };
   }
 }
+
+// ─────────────────────────────────────────────
+// テスト用裏アカウント
+// ─────────────────────────────────────────────
+
+/** テストユーザーが存在しなければ作成し、id を返す */
+export async function getOrCreateTestUser(): Promise<{ id: string; name: string; coinBalance: number }> {
+  const existing = await prisma.user.findFirst({ where: { isTest: true } });
+  if (existing) {
+    return { id: existing.id, name: existing.name, coinBalance: existing.coinBalance };
+  }
+  const created = await prisma.user.create({
+    data: {
+      name: "🧪 テスト",
+      birthDate: new Date("2000-01-01"),
+      role: "CHILD",
+      coinBalance: 99999,
+      isTest: true,
+    },
+  });
+  return { id: created.id, name: created.name, coinBalance: created.coinBalance };
+}
+
+/** テストユーザーのコインを 99999 にリセット */
+export async function resetTestUser(): Promise<{ success: boolean }> {
+  try {
+    await prisma.user.updateMany({
+      where: { isTest: true },
+      data: { coinBalance: 99999, dailyHuntCount: 0 },
+    });
+    revalidatePath("/bank");
+    return { success: true };
+  } catch (e) {
+    console.error("resetTestUser failed:", e);
+    return { success: false };
+  }
+}

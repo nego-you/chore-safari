@@ -25,7 +25,7 @@ export default async function BankPage() {
 
   const [children, pendingSubmissions, penalties, todaySubmissions] = await Promise.all([
     prisma.user.findMany({
-      where: { role: "CHILD", isTest: false },
+      where: { role: "CHILD" },
       orderBy: { birthDate: "asc" },
     }),
     prisma.questSubmission.findMany({
@@ -57,7 +57,10 @@ export default async function BankPage() {
     todayMap.get(key)!.push(s.id);
   }
 
-  const childrenData = children.map((c) => ({
+  // テストユーザーは残高一覧から除外（マイグレーション後 isTest が使える）
+  const realChildren = children.filter((c) => !(c as any).isTest);
+
+  const childrenData = realChildren.map((c) => ({
     id: c.id,
     name: c.name,
     age: calculateAge(c.birthDate),
@@ -74,7 +77,7 @@ export default async function BankPage() {
     targetUserIds: p.targetUsers.map((u) => u.id),
   }));
 
-  const totalBalance = children.reduce((sum, c) => sum + c.coinBalance, 0);
+  const totalBalance = realChildren.reduce((sum, c) => sum + c.coinBalance, 0);
 
   const reviewItems = pendingSubmissions.map((s) => {
     const key = `${s.userId}::${s.questId}`;
