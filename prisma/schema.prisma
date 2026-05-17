@@ -104,6 +104,8 @@ model User {
   // 起動時に lastHuntDate と「今日」が違えば dailyHuntCount を 0 リセットする。
   dailyHuntCount    Int                @default(0) @map("daily_hunt_count")
   lastHuntDate      DateTime?          @map("last_hunt_date")
+  // テスト用フラグ：true の場合、コイン・回数制限をすべてバイパスする
+  isTest            Boolean            @default(false) @map("is_test")
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")
   transactions       CoinTransaction[]

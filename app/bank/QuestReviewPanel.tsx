@@ -15,6 +15,8 @@ type Submission = {
   userId: string;
   userName: string;
   submittedAt: string; // ISO
+  todayNth: number;   // 今日この子がこのクエストを何回申請したか（この申請の順番）
+  todayTotal: number; // 今日の同クエスト申請総数
 };
 
 type Props = {
@@ -113,8 +115,24 @@ export function QuestReviewPanel({ submissions: initial }: Props) {
                 <tr key={s.id} className="align-top">
                   <td className="px-3 py-3 font-bold">{s.userName}</td>
                   <td className="px-3 py-3">
-                    <span className="mr-1" aria-hidden>{s.questEmoji}</span>
-                    {s.questTitle}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span aria-hidden>{s.questEmoji}</span>
+                      <span>{s.questTitle}</span>
+                      {/* 今日N回目バッジ：2回目以降は目立つ色で警告 */}
+                      {s.todayNth >= 1 && (
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                            s.todayNth === 1
+                              ? "bg-sky-500/20 text-sky-200 border border-sky-400/30"
+                              : s.todayNth === 2
+                                ? "bg-amber-500/20 text-amber-200 border border-amber-400/40"
+                                : "bg-rose-500/25 text-rose-200 border border-rose-400/50"
+                          }`}
+                        >
+                          今日{s.todayNth}回目
+                        </span>
+                      )}
+                    </div>
                     {errorById[s.id] && (
                       <p className="mt-1 text-xs text-rose-300">
                         {errorById[s.id]}

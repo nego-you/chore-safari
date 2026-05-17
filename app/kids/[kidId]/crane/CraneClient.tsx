@@ -97,13 +97,13 @@ function wait(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms));
 }
 
-// (x, z) ∈ [0,100]² を擬似 3D 投影（クレーンの平面位置だけに使う）
+// (x, z) ∈ [0,100]² をクレーン位置に変換。
+// X はリニアマッピングのみ（Z移動で水平ずれが起きないようにシンプル化）。
+// scale だけ Z に連動して奥行き感を出す。
 function projectCrane(x: number, z: number) {
   const t = z / 100;
-  const leftEdge = 0.08 + 0.22 * t;
-  const rightEdge = 0.92 - 0.22 * t;
-  const xRatio = leftEdge + (x / 100) * (rightEdge - leftEdge);
-  const scale = 1.0 - 0.35 * t;
+  const scale = 1.0 - 0.25 * t;
+  const xRatio = 0.08 + (x / 100) * 0.84;
   return { xRatio, scale };
 }
 
@@ -120,9 +120,9 @@ type HeapItem = {
 };
 
 function buildHeap(seed: number): HeapItem[] {
-  // 12〜16 個ほど積む。ITEM_EMOJI からランダム選択。
+  // 30個ほどぎっしり積む。ITEM_EMOJI からランダム選択。
   const keys = Object.keys(ITEM_EMOJI);
-  const count = 14;
+  const count = 30;
   const items: HeapItem[] = [];
   // 疑似乱数（seed を変えるごとに違う配置に）
   let s = seed;
@@ -135,11 +135,11 @@ function buildHeap(seed: number): HeapItem[] {
     items.push({
       key: `${seed}-${i}`,
       emoji: ITEM_EMOJI[itemId] ?? "❓",
-      // 横はまんべんなく、縦は下に行くほど詰まる感じに
-      dx: (rand() - 0.5) * 130,
-      dy: -rand() * 60,
-      rot: (rand() - 0.5) * 40,
-      size: 2.6 + rand() * 1.0,
+      // 横はまんべんなく広げて満パン感を出す
+      dx: (rand() - 0.5) * 220,
+      dy: -rand() * 90,
+      rot: (rand() - 0.5) * 50,
+      size: 2.2 + rand() * 1.4,
       z: i,
     });
   }
@@ -608,15 +608,14 @@ function PlayArea({
         }}
       />
 
-      {/* アーム本体（ツメ＋掴んだアイテム）。translateY で確実に降下。 */}
+      {/* アーム本体（ツメ＋掴んだアイテム）。本体は上部固定、ケーブルだけ伸縮。 */}
       <div
         className="pointer-events-none absolute"
         style={{
           left: `${cranePos.xRatio * 100}%`,
           top: `${CABLE_TOP_PERCENT}%`,
-          // X方向は中央寄せ、Y方向は armDescent ぶんだけ降ろす。
-          transform: `translate(-50%, 0) translateY(${armDescent})`,
-          transition: armVerticalTransition,
+          transform: `translate(-50%, 0)`,
+          transition: `left ${T.move}ms cubic-bezier(.4,0,.2,1)`,
           zIndex: 30,
         }}
       >
@@ -697,7 +696,7 @@ function PlayArea({
         </div>
       </div>
 
-      {/* 落下中アイテム：アームの位置から床へ。複数あればそれぞれ少しずつずれて落ちる。 */}
+      {/* 落下中アイテム：アーム上部から床へ落ちる演出。 */}
       {falling && carriedEmojis.length > 0 && (
         <div
           aria-hidden
@@ -705,7 +704,7 @@ function PlayArea({
           style={{
             left: `${cranePos.xRatio * 100}%`,
             top: `${CABLE_TOP_PERCENT}%`,
-            transform: `translate(-50%, 0) translateY(${armDescent})`,
+            transform: `translate(-50%, 0)`,
           }}
         >
           {carriedEmojis.map((emoji, i) => {

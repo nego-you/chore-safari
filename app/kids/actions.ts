@@ -56,13 +56,14 @@ export async function playGacha(userId: string): Promise<GachaResult> {
   // 事前チェック（不正な userId / 残高不足はトランザクションに入らずに弾く）。
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, role: true, coinBalance: true },
+    select: { id: true, role: true, coinBalance: true, isTest: true },
   });
 
   if (!user || user.role !== "CHILD") {
     return { success: false, error: "ユーザーが見つかりません" };
   }
-  if (user.coinBalance < GACHA_COST) {
+  // テストユーザーはコイン無制限（チェックをスキップ）
+  if (!user.isTest && user.coinBalance < GACHA_COST) {
     return {
       success: false,
       error: `コインが足りません（${GACHA_COST} ひつよう / いま ${user.coinBalance}）`,
@@ -72,15 +73,16 @@ export async function playGacha(userId: string): Promise<GachaResult> {
   const prize = drawItem();
 
   try {
-    // 同時押し対策：「coinBalance >= GACHA_COST」を更新条件に入れて、
-    // 競合した場合は updateMany の count==0 で検出して abort する。
     const result = await prisma.$transaction(async (tx) => {
-      const updated = await tx.user.updateMany({
-        where: { id: userId, coinBalance: { gte: GACHA_COST } },
-        data: { coinBalance: { decrement: GACHA_COST } },
-      });
-      if (updated.count !== 1) {
-        throw new Error("INSUFFICIENT_FUNDS");
+      // テストユーザーはコイン消費なし
+      if (!user.isTest) {
+        const updated = await tx.user.updateMany({
+          where: { id: userId, coinBalance: { gte: GACHA_COST } },
+          data: { coinBalance: { decrement: GACHA_COST } },
+        });
+        if (updated.count !== 1) {
+          throw new Error("INSUFFICIENT_FUNDS");
+        }
       }
 
       const fresh = await tx.user.findUniqueOrThrow({
@@ -156,9 +158,9 @@ export async function playGacha(userId: string): Promise<GachaResult> {
 
 // rarity ごとの出現重み（数値が大きいほど出やすい）。通常エサ使用時。
 const RARITY_WEIGHT: Record<"COMMON" | "RARE" | "EPIC" | "LEGENDARY", number> = {
-  COMMON: 55,
-  RARE: 28,
-  EPIC: 13,
+  COMMON: 62,
+  RARE: 22,
+  EPIC: 12,
   LEGENDARY: 4,
 };
 
@@ -627,15 +629,15 @@ export async function startActiveHunt(
 ): Promise<StartActiveHuntResult> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, role: true },
+    select: { id: true, role: true, isTest: true },
   });
   if (!user || user.role !== "CHILD") {
     return { success: false, error: "ユーザーが みつかりません" };
   }
 
-  // 1日3回制限：先に日付リセット → 残り回数チェック
+  // 1日3回制限：先に日付リセット → 残り回数チェック（テストユーザーはスキップ）
   const staminaBefore = await _readStaminaWithReset(userId);
-  if (staminaBefore.remaining <= 0) {
+  if (!user.isTest && staminaBefore.remaining <= 0) {
     return {
       success: false,
       error: `きょうの かりは もう おわり！ あしたまた チャレンジしてね`,
@@ -679,18 +681,20 @@ export async function startActiveHunt(
   const now = new Date();
   try {
     const created = await prisma.$transaction(async (tx) => {
-      // スタミナを 1 消費（並列リクエストでも超過しないよう条件付き update）
-      const staUpd = await tx.user.updateMany({
-        where: {
-          id: userId,
-          dailyHuntCount: { lt: HUNT_DAILY_LIMIT },
-        },
-        data: {
-          dailyHuntCount: { increment: 1 },
-          lastHuntDate: now,
-        },
-      });
-      if (staUpd.count !== 1) throw new Error("OUT_OF_STAMINA");
+      // スタミナを 1 消費（テストユーザーは消費しない）
+      if (!user.isTest) {
+        const staUpd = await tx.user.updateMany({
+          where: {
+            id: userId,
+            dailyHuntCount: { lt: HUNT_DAILY_LIMIT },
+          },
+          data: {
+            dailyHuntCount: { increment: 1 },
+            lastHuntDate: now,
+          },
+        });
+        if (staUpd.count !== 1) throw new Error("OUT_OF_STAMINA");
+      }
 
       if (inventoryRow) {
         const upd = await tx.sharedInventoryItem.updateMany({
@@ -1075,13 +1079,14 @@ export async function playCraneGame(
 ): Promise<CraneResult> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, role: true, coinBalance: true },
+    select: { id: true, role: true, coinBalance: true, isTest: true },
   });
 
   if (!user || user.role !== "CHILD") {
     return { success: false, error: "ユーザーが見つかりません" };
   }
-  if (user.coinBalance < CRANE_COST) {
+  // テストユーザーはコイン無制限
+  if (!user.isTest && user.coinBalance < CRANE_COST) {
     return {
       success: false,
       error: `コインが足りません（${CRANE_COST} ひつよう / いま ${user.coinBalance}）`,
@@ -1109,12 +1114,14 @@ export async function playCraneGame(
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      // コインは必ず引く（リアルなクレーンゲーム仕様）。
-      const updated = await tx.user.updateMany({
-        where: { id: userId, coinBalance: { gte: CRANE_COST } },
-        data: { coinBalance: { decrement: CRANE_COST } },
-      });
-      if (updated.count !== 1) throw new Error("INSUFFICIENT_FUNDS");
+      // テストユーザーはコイン消費なし
+      if (!user.isTest) {
+        const updated = await tx.user.updateMany({
+          where: { id: userId, coinBalance: { gte: CRANE_COST } },
+          data: { coinBalance: { decrement: CRANE_COST } },
+        });
+        if (updated.count !== 1) throw new Error("INSUFFICIENT_FUNDS");
+      }
 
       const fresh = await tx.user.findUniqueOrThrow({
         where: { id: userId },
