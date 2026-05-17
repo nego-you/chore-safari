@@ -39,7 +39,7 @@ type Scenario = {
 };
 
 type Phase = "idle" | "loading" | "running" | "finished";
-type EffectState = "normal" | "pause" | "speed_up" | "speed_down" | "chaotic";
+type EffectState = "normal" | "pause" | "speed_up" | "speed_down" | "chaotic" | "finish";
 
 // ─── 定数 ─────────────────────────────────────────────────────
 

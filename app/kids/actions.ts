@@ -416,8 +416,7 @@ export async function checkTrap(trapId: string): Promise<CheckTrapResult> {
     const fresh = await prisma.hunt.findUnique({ where: { id: trapId } });
     return {
       success: true,
-      status: (fresh?.status ?? trap.status) as CheckTrapResult["status"] &
-        string,
+      status: (fresh?.status ?? trap.status) as "PLACED" | "APPEARED" | "CAUGHT" | "ESCAPED",
       appearsAt: trap.appearsAt.toISOString(),
     };
   }
@@ -533,7 +532,7 @@ export async function resolveTrap(
 // ─────────────────────────────────────────────
 
 // 1日の上限回数。子供が「絶対に逃したくない」と感じるようにあえて少なめ。
-export const HUNT_DAILY_LIMIT = 3;
+const HUNT_DAILY_LIMIT = 3;
 
 // JST（Asia/Tokyo）で今日の日付文字列 (YYYY-MM-DD) を返す。
 // 深夜0時のリセット判定は「サーバ時刻」ではなく「JSTでの日付」を使う。

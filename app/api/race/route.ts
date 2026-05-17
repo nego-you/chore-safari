@@ -119,13 +119,7 @@ export async function POST(req: Request) {
 
     // ストリーム中にエラーが起きた場合、既定では body から消えてしまうので
     // クライアントが「サイレントに空」にならないよう、エラーをテキスト化して流す。
-    return result.toTextStreamResponse({
-      getErrorMessage: (error) => {
-        const msg = error instanceof Error ? error.message : String(error);
-        console.error("[/api/race] stream getErrorMessage:", msg);
-        return `\n[実況エラー] ${msg}\n（モデル名や API キーを見直してください）`;
-      },
-    });
+    return result.toTextStreamResponse();
   } catch (err) {
     console.error("[/api/race] failed to start streamText:", err);
     const msg = err instanceof Error ? err.message : String(err);

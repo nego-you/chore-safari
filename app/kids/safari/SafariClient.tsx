@@ -435,11 +435,14 @@ export function SafariClient({
             id: "secret",
             animalId: "secret",
             name: "？？？",
+            genericName: "？？？",
+            specificName: "？？？",
             emoji: "❓",
             // 難易度ヒント用に「ホンモノのレアリティ」を保持する
             rarity: r.trap.targetRarity,
             description: "なにか やってくるかも？",
             imageUrl: null,
+            isExtinct: false,
           },
         },
       ]);
