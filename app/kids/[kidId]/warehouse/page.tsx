@@ -31,8 +31,8 @@ export default async function WarehousePage({ params }: { params: Params }) {
         genericName: true,
       },
     }),
+    // 🌟 家族全員ぶんの捕獲履歴（家族共通図鑑のため）
     prisma.caughtAnimal.findMany({
-      where: { caughtByUserId: kidId },
       select: { animalId: true },
       distinct: ["animalId"],
     }),

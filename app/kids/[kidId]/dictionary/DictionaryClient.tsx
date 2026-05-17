@@ -9,6 +9,12 @@ import { useMemo, useState } from "react";
 
 type Rarity = "COMMON" | "RARE" | "EPIC" | "LEGENDARY";
 
+type CaptureStat = {
+  userId: string;
+  userName: string;
+  count: number;
+};
+
 type AnimalEntry = {
   id: string;
   animalId: string;
@@ -20,13 +26,20 @@ type AnimalEntry = {
   description: string;
   imageUrl: string | null;
   isExtinct: boolean;
+  habitat?: string;
+  // 家族の誰か1人でも捕まえていれば true（家族共通図鑑）
   caught: boolean;
+  // 子供ごとの捕獲回数（年上から）
+  captureStats: CaptureStat[];
+  // 家族全体での累計捕獲回数
+  totalCount: number;
 };
 
 type Props = {
   kidId: string;
   kidName: string;
   animals: AnimalEntry[];
+  familySize: number;
 };
 
 const RARITY_ORDER: Record<Rarity, number> = {
@@ -121,6 +134,60 @@ function AnimalDetailModal({
             {animal.description}
           </p>
 
+          {animal.habitat && (
+            <p className="mt-2 text-[11px] text-slate-400 text-left">
+              <span className="font-bold text-slate-300">🌍 すみか：</span>
+              {animal.habitat}
+            </p>
+          )}
+
+          {/* 🌟 家族の捕獲スタッツ */}
+          <div className="mt-4 rounded-2xl bg-white/5 p-3 ring-1 ring-white/10 text-left">
+            <p className="text-[10px] font-extrabold tracking-widest text-slate-400">
+              👨‍👩‍👧‍👦 だれが つかまえた？
+            </p>
+            <p className="mt-0.5 text-[10px] text-slate-500">
+              かぞく ごうけい {animal.totalCount} かい
+            </p>
+            <div className="mt-2 space-y-1.5">
+              {animal.captureStats.map((s) => {
+                const yomi = NAME_READING[s.userName] ?? s.userName;
+                const hasCount = s.count > 0;
+                return (
+                  <div
+                    key={s.userId}
+                    className={`flex items-center gap-2 ${
+                      hasCount ? "" : "opacity-40"
+                    }`}
+                  >
+                    <span className="text-xs font-bold text-slate-300 min-w-[5rem]">
+                      {yomi}
+                    </span>
+                    <div className="flex-1 h-2 rounded-full bg-slate-700 overflow-hidden">
+                      <div
+                        className={`h-full ${
+                          hasCount
+                            ? "bg-gradient-to-r from-amber-400 to-rose-400"
+                            : "bg-slate-600"
+                        }`}
+                        style={{
+                          width: `${Math.min(100, s.count * 25)}%`,
+                        }}
+                      />
+                    </div>
+                    <span
+                      className={`text-xs font-extrabold tabular-nums min-w-[3rem] text-right ${
+                        hasCount ? "text-amber-300" : "text-slate-500"
+                      }`}
+                    >
+                      {s.count} かい
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           <button
             type="button"
             onClick={onClose}
@@ -170,7 +237,7 @@ function AnimalCard({
     <button
       type="button"
       onClick={onClick}
-      className={`group flex flex-col items-center gap-1 rounded-2xl p-3 ring-1 text-left transition hover:scale-105 active:scale-95 ${
+      className={`group relative flex flex-col items-center gap-1 rounded-2xl p-3 ring-1 text-left transition hover:scale-105 active:scale-95 ${
         isSSR
           ? "ring-amber-500 shadow-lg shadow-amber-900/50"
           : `bg-gradient-to-br ${RARITY_BG[animal.rarity]}`
@@ -229,6 +296,13 @@ function AnimalCard({
           </span>
         )}
       </div>
+
+      {/* 🌟 家族の累計捕獲回数 */}
+      {animal.totalCount > 0 && (
+        <span className="absolute -top-1 -right-1 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-amber-400 px-1 text-[9px] font-black text-amber-900 shadow ring-2 ring-slate-900">
+          ×{animal.totalCount}
+        </span>
+      )}
     </button>
   );
 }

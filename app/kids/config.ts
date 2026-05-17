@@ -5,4 +5,4 @@
 export const GACHA_COST = 100;
 
 // クレーンゲームの料金。ガチャより高め＝高級アイテムが出る仕組み。
-export const CRANE_COST = 200;
+export const CRANE_COST = 100;

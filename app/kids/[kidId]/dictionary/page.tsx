@@ -1,7 +1,7 @@
-// /kids/[kidId]/dictionary — 本格博物学図鑑ページ。
-// 全動物をグリッド表示。未捕獲=シルエット+「？？？」、捕獲済み=カラー+詳細。
+// /kids/[kidId]/dictionary — 家族共通の博物学図鑑ページ。
+// 家族の誰か1人でも捕まえた動物は「カラー＋詳細」、誰も未捕獲は「シルエット＋？？？」。
+// 詳細モーダルには「だれが何回捕まえたか」のスタッツを表示。
 
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { DictionaryClient } from "./DictionaryClient";
@@ -13,7 +13,7 @@ type Params = Promise<{ kidId: string }>;
 export default async function DictionaryPage({ params }: { params: Params }) {
   const { kidId } = await params;
 
-  const [kid, allAnimals, caughtAnimals] = await Promise.all([
+  const [kid, allAnimals, allCaught, allChildren] = await Promise.all([
     prisma.user.findFirst({
       where: { id: kidId, role: "CHILD" },
       select: { id: true, name: true },
@@ -32,31 +32,60 @@ export default async function DictionaryPage({ params }: { params: Params }) {
         description: true,
         imageUrl: true,
         isExtinct: true,
+        habitat: true,
       },
     }),
-    // この子が捕まえた動物の animalId 一覧（重複なし）
+    // 🌟 家族全員ぶんの捕獲履歴を取得（個別ではなく、システム全体）
     prisma.caughtAnimal.findMany({
-      where: { caughtByUserId: kidId },
-      select: { animalId: true },
-      distinct: ["animalId"],
+      select: {
+        animalId: true,
+        caughtByUserId: true,
+        caughtBy: { select: { id: true, name: true } },
+      },
+    }),
+    prisma.user.findMany({
+      where: { role: "CHILD" },
+      orderBy: { birthDate: "asc" },
+      select: { id: true, name: true },
     }),
   ]);
 
   if (!kid) notFound();
 
-  // 捕獲済み animalId の Set（Animal.id 基準）
-  const caughtSet = new Set(caughtAnimals.map((c) => c.animalId));
+  // animalId → {childId → count} の集計表
+  const statsByAnimal = new Map<string, Map<string, number>>();
+  for (const c of allCaught) {
+    const inner =
+      statsByAnimal.get(c.animalId) ?? new Map<string, number>();
+    inner.set(c.caughtByUserId, (inner.get(c.caughtByUserId) ?? 0) + 1);
+    statsByAnimal.set(c.animalId, inner);
+  }
 
-  const animals = allAnimals.map((a) => ({
-    ...a,
-    caught: caughtSet.has(a.id),
-  }));
+  const animals = allAnimals.map((a) => {
+    const inner = statsByAnimal.get(a.id);
+    const familyCaught = inner !== undefined && inner.size > 0;
+    // 家族メンバーの並びは年上から（allChildren の順）
+    const captureStats = allChildren.map((ch) => ({
+      userId: ch.id,
+      userName: ch.name,
+      count: inner?.get(ch.id) ?? 0,
+    }));
+    const totalCount = captureStats.reduce((s, x) => s + x.count, 0);
+    return {
+      ...a,
+      // 家族全体での捕獲済みフラグ（誰か1人でも捕まえていれば true）
+      caught: familyCaught,
+      captureStats,
+      totalCount,
+    };
+  });
 
   return (
     <DictionaryClient
       kidId={kid.id}
       kidName={kid.name}
       animals={animals}
+      familySize={allChildren.length}
     />
   );
 }
