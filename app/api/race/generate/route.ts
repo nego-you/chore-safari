@@ -10,16 +10,6 @@ const OLLAMA_URL =
   process.env.OLLAMA_URL ?? "http://localhost:11434/api/generate";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "llama3";
 
-// ─── Ollamaに渡すプロンプト ───────────────────────────────────
-const SYSTEM_PROMPT = `みこと、ゆきと、かなたの3人が参加する30秒間のサバイバル動物レースの台本を作成して。
-「相手を丸呑みするが吐き出される」「途中で昼寝する」「UFOに攫われる」「隕石が降ってくる」「タイムスリップする」「巨大化する」「縮小する」「テレポートする」などのカオスなイレギュラー展開を必ず3つ以上含めること。
-勝者は毎回ランダムに変わること。同じシナリオを繰り返さないこと。
-出力は必ず以下のJSONフォーマットのみとすること。日本語で書くこと。余計な説明文・コードブロック・マークダウン記法は一切書かないこと。
-
-{"winner":"名前","events":[{"time":秒数,"character":"対象者名またはall","action":"pause|speed_up|speed_down|chaotic|finish","message":"実況テキスト"}]}
-
-eventsは8〜12件含めること。timeは0〜30の整数。最後のイベントはtime:30でaction:finishとすること。`;
-
 // ─── フォールバック（Ollamaが落ちている場合） ────────────────
 
 const FALLBACK_POOL = [
@@ -76,8 +66,31 @@ function pickFallback() {
 
 // ─── API ─────────────────────────────────────────────────────
 
-export async function POST() {
+export async function POST(req: Request) {
   try {
+    let names = ["みこと", "ゆきと", "かなた"];
+    try {
+      const body = await req.json();
+      if (Array.isArray(body.names) && body.names.length === 3) {
+        names = body.names;
+      }
+    } catch (e) {
+      // JSON parse error or no body, fallback to default names
+    }
+
+    const n1 = names[0];
+    const n2 = names[1];
+    const n3 = names[2];
+
+    const SYSTEM_PROMPT = `${n1}、${n2}、${n3}の3匹が参加する30秒間のサバイバル動物レースの台本を作成して。
+「相手を丸呑みするが吐き出される」「途中で昼寝する」「UFOに攫われる」「隕石が降ってくる」「タイムスリップする」「巨大化する」「縮小する」「テレポートする」などのカオスなイレギュラー展開を必ず3つ以上含めること。
+勝者は毎回ランダムに変わること。同じシナリオを繰り返さないこと。
+出力は必ず以下のJSONフォーマットのみとすること。日本語で書くこと。余計な説明文・コードブロック・マークダウン記法は一切書かないこと。
+
+{"winner":"名前","events":[{"time":秒数,"character":"対象者名またはall","action":"pause|speed_up|speed_down|chaotic|finish","message":"実況テキスト"}]}
+
+eventsは8〜12件含めること。timeは0〜30の整数。最後のイベントはtime:30でaction:finishとすること。`;
+
     const res = await fetch(OLLAMA_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

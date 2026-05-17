@@ -1,22 +1,34 @@
 "use client";
 
 // 30秒カオスレースプレイヤー。
+// 捕まえた動物から3匹選んでレースする。
 // Ollamaが生成したシナリオに従いキャラクターが走り、実況テロップが流れる。
 // Framer Motion でアバターアニメーション制御、canvas-confetti でゴール演出。
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion, useAnimation } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import confetti from "canvas-confetti";
 
 // ─── 型定義 ───────────────────────────────────────────────────
 
+type Rarity = "COMMON" | "RARE" | "EPIC" | "LEGENDARY";
+
+type AnimalOption = {
+  animalId: string;
+  name: string;
+  emoji: string;
+  rarity: Rarity;
+  description: string;
+  count: number;
+};
+
 type Action = "pause" | "speed_up" | "speed_down" | "chaotic" | "finish";
-type CharKey = "みこと" | "ゆきと" | "かなた";
+type CharKey = "lane1" | "lane2" | "lane3";
 
 type RaceEvent = {
   time: number;
-  character: string; // CharKey | "all"
+  character: string; // 名前 | "all"
   action: Action;
   message: string;
 };
@@ -32,38 +44,15 @@ type EffectState = "normal" | "pause" | "speed_up" | "speed_down" | "chaotic";
 // ─── 定数 ─────────────────────────────────────────────────────
 
 const RACE_DURATION = 30; // 秒
-const TICK_MS = 80; // ms（滑らか表示のため小さめ）
+const TICK_MS = 80; // ms
 const BASE_SPEED = 100 / RACE_DURATION; // %/秒 ≒ 3.33
 
-const CHARACTERS: Array<{
-  key: CharKey;
-  emoji: string;
-  trackGrad: string; // レーン背景
-  avatarGrad: string; // アバターバブル背景
-  label: string; // ルビ付き表示名
-}> = [
-  {
-    key: "みこと",
-    emoji: "🦭",
-    trackGrad: "from-sky-200/60 to-cyan-100/60",
-    avatarGrad: "from-sky-400 to-cyan-500",
-    label: "みこと",
-  },
-  {
-    key: "ゆきと",
-    emoji: "🐹",
-    trackGrad: "from-yellow-200/60 to-pink-100/60",
-    avatarGrad: "from-yellow-400 to-pink-400",
-    label: "ゆきと",
-  },
-  {
-    key: "かなた",
-    emoji: "🦦",
-    trackGrad: "from-teal-200/60 to-emerald-100/60",
-    avatarGrad: "from-teal-400 to-emerald-500",
-    label: "かなた",
-  },
-];
+const RARITY_LABEL: Record<Rarity, string> = {
+  COMMON: "ふつう",
+  RARE: "レア",
+  EPIC: "すごレア",
+  LEGENDARY: "でんせつ",
+};
 
 // speed_up 時のカーソル倍率など
 const SPEED_MULT: Record<Action, number> = {
@@ -103,178 +92,182 @@ function fireConfetti() {
 
 // ─── メインコンポーネント ─────────────────────────────────────
 
-type Props = { kidId: string };
+type Props = { kidId: string; animals: AnimalOption[] };
 
-export function RacePlayer({ kidId }: Props) {
+export function RacePlayer({ kidId, animals }: Props) {
   const portalHref = `/kids/${kidId}`;
+
+  // 選択された動物ID
+  const [lane1Id, setLane1Id] = useState<string>(animals[0]?.animalId ?? "");
+  const [lane2Id, setLane2Id] = useState<string>(animals[1]?.animalId ?? animals[0]?.animalId ?? "");
+  const [lane3Id, setLane3Id] = useState<string>(animals[2]?.animalId ?? animals[0]?.animalId ?? "");
+
+  const lane1Animal = animals.find(a => a.animalId === lane1Id) || animals[0];
+  const lane2Animal = animals.find(a => a.animalId === lane2Id) || animals[0];
+  const lane3Animal = animals.find(a => a.animalId === lane3Id) || animals[0];
+
+  const CHARACTERS: Array<{
+    key: CharKey;
+    emoji: string;
+    trackGrad: string;
+    avatarGrad: string;
+    label: string;
+    name: string;
+  }> = [
+    {
+      key: "lane1",
+      name: lane1Animal?.name || "1ごう",
+      emoji: lane1Animal?.emoji || "❓",
+      trackGrad: "from-sky-200/60 to-cyan-100/60",
+      avatarGrad: "from-sky-400 to-cyan-500",
+      label: "1レーン",
+    },
+    {
+      key: "lane2",
+      name: lane2Animal?.name || "2ごう",
+      emoji: lane2Animal?.emoji || "❓",
+      trackGrad: "from-yellow-200/60 to-pink-100/60",
+      avatarGrad: "from-yellow-400 to-pink-400",
+      label: "2レーン",
+    },
+    {
+      key: "lane3",
+      name: lane3Animal?.name || "3ごう",
+      emoji: lane3Animal?.emoji || "❓",
+      trackGrad: "from-teal-200/60 to-emerald-100/60",
+      avatarGrad: "from-teal-400 to-emerald-500",
+      label: "3レーン",
+    },
+  ];
 
   // ── フェーズ＆表示 state ──────────────────────────────────
   const [phase, setPhase] = useState<Phase>("idle");
-  const [commentary, setCommentary] = useState("🎙️ レーススタートを待っています…");
+  const [commentary, setCommentary] = useState("🎙️ 参加する動物を選んでスタートを押してね！");
   const [displayTimer, setDisplayTimer] = useState(0);
   const [winner, setWinner] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // レンダリング用ポジション（0–100）
   const [positions, setPositions] = useState<Record<CharKey, number>>({
-    みこと: 0, ゆきと: 0, かなた: 0,
+    lane1: 0, lane2: 0, lane3: 0,
   });
-  // エフェクト状態（アイコン上の視覚演出）
   const [effects, setEffects] = useState<Record<CharKey, EffectState>>({
-    みこと: "normal", ゆきと: "normal", かなた: "normal",
+    lane1: "normal", lane2: "normal", lane3: "normal",
   });
 
-  // ── Framer Motion アニメーションコントロール ──────────────
-  // ※ キャラクターの水平移動はモーションdivのstyleで直接管理し、
-  //   shake/pulse など特殊エフェクトだけをcontrols経由で制御する。
-  const ctrlMikoto = useAnimation();
-  const ctrlYukito = useAnimation();
-  const ctrlKanata = useAnimation();
-  const controls: Record<CharKey, ReturnType<typeof useAnimation>> = {
-    みこと: ctrlMikoto, ゆきと: ctrlYukito, かなた: ctrlKanata,
-  };
-
-  // ── 内部ミュータブルRef（setInterval内のstale closure回避） ──
-  const posRef = useRef<Record<CharKey, number>>({ みこと: 0, ゆきと: 0, かなた: 0 });
-  const multRef = useRef<Record<CharKey, number>>({ みこと: 1, ゆきと: 1, かなた: 1 });
-  const elapsedRef = useRef(0); // 秒（小数）
+  const posRef = useRef<Record<CharKey, number>>({ lane1: 0, lane2: 0, lane3: 0 });
+  const multRef = useRef<Record<CharKey, number>>({ lane1: 1, lane2: 1, lane3: 1 });
+  const elapsedRef = useRef(0);
   const scenarioRef = useRef<Scenario | null>(null);
-  const processedRef = useRef<Set<string>>(new Set()); // 処理済みeventキーセット（重複防止）
+  const processedRef = useRef<Set<string>>(new Set());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const phaseRef = useRef<Phase>("idle");
 
-  // phaseRefをphaseと同期
+  // 名前からレーンを引けるようにする
+  const namesMapRef = useRef<Record<string, CharKey>>({});
+  useEffect(() => {
+    namesMapRef.current = {
+      [lane1Animal?.name || "1ごう"]: "lane1",
+      [lane2Animal?.name || "2ごう"]: "lane2",
+      [lane3Animal?.name || "3ごう"]: "lane3",
+    };
+  }, [lane1Animal, lane2Animal, lane3Animal]);
+
   useEffect(() => { phaseRef.current = phase; }, [phase]);
 
-  // ── エフェクト適用（controls + effects state） ───────────
   const applyEffect = useCallback((charKey: CharKey, action: Action) => {
-    const ctrl = controls[charKey];
     setEffects(prev => ({ ...prev, [charKey]: action as EffectState }));
-    switch (action) {
-      case "chaotic":
-        ctrl.start(shakeAnim);
-        break;
-      case "speed_up":
-        ctrl.start(pulseAnim);
-        break;
-      case "pause":
-        ctrl.start(pauseAnim);
-        break;
-      case "speed_down":
-        ctrl.start({ scale: 0.9, transition: { duration: 0.3 } });
-        break;
-      case "finish":
-        ctrl.start({ scale: [1, 1.4, 1], rotate: [0, 360], transition: { duration: 0.8 } });
-        break;
-      default:
-        ctrl.start({ x: 0, y: 0, rotate: 0, scale: 1, transition: { duration: 0.3 } });
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
-  // ── イベント処理 ─────────────────────────────────────────
   const processEvents = useCallback((elapsed: number) => {
     const sc = scenarioRef.current;
     if (!sc) return;
 
     for (const ev of sc.events) {
-      // まだ到達していないイベントはスキップ
       if (elapsed < ev.time) continue;
-      // 処理済みならスキップ（同一timeが複数ある場合はindexも使えるが、timeで代用）
       const evKey = `${ev.time}:${ev.character}:${ev.action}`;
       if (processedRef.current.has(evKey)) continue;
       processedRef.current.add(evKey);
 
-      // 実況テロップ更新
       setCommentary(ev.message);
 
-      const targets: CharKey[] =
-        ev.character === "all"
-          ? ["みこと", "ゆきと", "かなた"]
-          : (["みこと", "ゆきと", "かなた"] as CharKey[]).filter(k => k === ev.character);
+      let targets: CharKey[] = [];
+      if (ev.character === "all") {
+        targets = ["lane1", "lane2", "lane3"];
+      } else {
+        const key = namesMapRef.current[ev.character];
+        if (key) targets.push(key);
+      }
 
       for (const charKey of targets) {
-        if (ev.action === "finish") {
-          // ゴール処理は別途
-          continue;
-        }
-        // スピード倍率を更新
+        if (ev.action === "finish") continue;
         multRef.current[charKey] = SPEED_MULT[ev.action] ?? 1;
-        // Framer Motionエフェクト
         applyEffect(charKey, ev.action);
       }
     }
   }, [applyEffect]);
 
-  // ── レース終了処理 ───────────────────────────────────────
   const finishRace = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     const sc = scenarioRef.current;
     const winnerName = sc?.winner ?? "";
 
-    // 全員をゴール位置まで移動
-    const finalPos: Record<CharKey, number> = { みこと: 100, ゆきと: 100, かなた: 100 };
+    const finalPos: Record<CharKey, number> = { lane1: 100, lane2: 100, lane3: 100 };
     setPositions(finalPos);
     setDisplayTimer(RACE_DURATION);
     setWinner(winnerName);
     setPhase("finished");
     setCommentary(`🏆 本日の勝者は ${winnerName}！！`);
 
-    // 紙吹雪
     fireConfetti();
     setTimeout(fireConfetti, 800);
   }, []);
 
-  // ── タイマーループ ───────────────────────────────────────
   const startInterval = useCallback(() => {
     elapsedRef.current = 0;
-    posRef.current = { みこと: 0, ゆきと: 0, かなた: 0 };
-    multRef.current = { みこと: 1, ゆきと: 1, かなた: 1 };
+    posRef.current = { lane1: 0, lane2: 0, lane3: 0 };
+    multRef.current = { lane1: 1, lane2: 1, lane3: 1 };
     processedRef.current = new Set();
 
     intervalRef.current = setInterval(() => {
-      const dt = TICK_MS / 1000; // 秒
+      const dt = TICK_MS / 1000;
       elapsedRef.current += dt;
       const elapsed = elapsedRef.current;
 
-      // 各キャラクターのポジション更新
       const newPos = { ...posRef.current };
-      for (const char of ["みこと", "ゆきと", "かなた"] as CharKey[]) {
+      for (const char of ["lane1", "lane2", "lane3"] as CharKey[]) {
         const delta = BASE_SPEED * multRef.current[char] * dt;
         newPos[char] = Math.min(100, newPos[char] + delta);
       }
       posRef.current = newPos;
 
-      // イベント処理
       processEvents(elapsed);
 
-      // React stateを更新（レンダリング用）
       setPositions({ ...newPos });
       setDisplayTimer(Math.min(RACE_DURATION, Math.floor(elapsed)));
 
-      // 終了判定
       if (elapsed >= RACE_DURATION) {
         finishRace();
       }
     }, TICK_MS);
   }, [processEvents, finishRace]);
 
-  // ── シナリオ取得 → レース開始 ────────────────────────────
   const handleStart = useCallback(async () => {
+    if (!lane1Animal || !lane2Animal || !lane3Animal) return;
+
     setPhase("loading");
     setErrorMsg(null);
     setCommentary("🎲 シナリオを生成中…");
-    setPositions({ みこと: 0, ゆきと: 0, かなた: 0 });
-    setEffects({ みこと: "normal", ゆきと: "normal", かなた: "normal" });
+    setPositions({ lane1: 0, lane2: 0, lane3: 0 });
+    setEffects({ lane1: "normal", lane2: "normal", lane3: "normal" });
     setDisplayTimer(0);
     setWinner("");
 
-    // コントロールをリセット
-    for (const ctrl of Object.values(controls)) {
-      ctrl.start({ x: 0, y: 0, rotate: 0, scale: 1, transition: { duration: 0 } });
-    }
-
     try {
-      const res = await fetch("/api/race/generate", { method: "POST" });
+      const res = await fetch("/api/race/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ names: [lane1Animal.name, lane2Animal.name, lane3Animal.name] })
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const scenario = (await res.json()) as Scenario;
       scenarioRef.current = scenario;
@@ -286,18 +279,34 @@ export function RacePlayer({ kidId }: Props) {
       setErrorMsg("シナリオ生成に失敗しました。もう一度お試しください。");
       setPhase("idle");
     }
-  }, [controls, startInterval]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lane1Animal, lane2Animal, lane3Animal, startInterval]);
 
-  // クリーンアップ
   useEffect(() => {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, []);
 
-  // ── タイマー表示フォーマット ──────────────────────────────
   const timerLabel = `${displayTimer.toString().padStart(2, "0")}`;
   const timerPct = (displayTimer / RACE_DURATION) * 100;
+
+  if (!animals || animals.length < 3) {
+    return (
+      <main className="min-h-screen bg-gradient-to-b from-rose-100 via-orange-100 to-amber-100 px-4 py-10">
+        <div className="mx-auto max-w-3xl space-y-4 text-center">
+          <p className="text-5xl">🔥🏟️🔥</p>
+          <h1 className="text-2xl font-extrabold text-rose-700">レース きじょうへ ようこそ！</h1>
+          <p className="rounded-3xl bg-white/80 p-6 text-sm text-rose-700 shadow ring-1 ring-rose-200">
+            出走させる どうぶつが まだ たりません。<br />
+            さきに <Link className="font-bold underline" href={`/kids/${kidId}/safari`}>サファリ</Link> で 3ひき いじょう つかまえてきてね！
+          </p>
+          <Link href={portalHref} className="inline-block rounded-full bg-white/90 px-5 py-2 text-sm font-bold text-rose-700 shadow ring-1 ring-rose-200">
+            ← ポータルへ もどる
+          </Link>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="h-screen overflow-hidden flex flex-col bg-gradient-to-b from-amber-900 via-orange-800 to-yellow-700 relative">
@@ -309,7 +318,6 @@ export function RacePlayer({ kidId }: Props) {
         <span className="absolute top-12 right-1/3 text-5xl opacity-10">🌴</span>
         <span className="absolute bottom-24 left-6 text-4xl opacity-15">🌿</span>
         <span className="absolute bottom-20 right-4 text-5xl opacity-15">🦒</span>
-        {/* 地平線 */}
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-yellow-900/40" />
       </div>
 
@@ -346,63 +354,51 @@ export function RacePlayer({ kidId }: Props) {
         {CHARACTERS.map((char) => {
           const pos = positions[char.key];
           const eff = effects[char.key];
-          // アバターのX位置: 0→0%, 100→82% (右端に余白を残す)
-          const leftPct = pos * 0.82;
-
+          
           return (
             <div
               key={char.key}
               className={`relative rounded-2xl bg-gradient-to-r ${char.trackGrad} backdrop-blur border border-white/30 overflow-hidden`}
               style={{ height: "5.5rem" }}
             >
-              {/* 草の模様 */}
               <div className="absolute inset-0 opacity-20 pointer-events-none" aria-hidden>
                 <span className="absolute bottom-1 left-1/4 text-xl">🌱</span>
                 <span className="absolute bottom-1 left-1/2 text-lg">🌿</span>
                 <span className="absolute bottom-1 right-1/4 text-xl">🌱</span>
               </div>
 
-              {/* レーンライン（点線） */}
               <div className="absolute top-1/2 left-20 right-4 h-0.5 -translate-y-1/2 border-t-2 border-dashed border-white/30 pointer-events-none" />
-
-              {/* スタートフラグ */}
               <div className="absolute left-14 top-0 bottom-0 w-0.5 bg-white/40" />
-
-              {/* ゴールフラグ */}
               <span className="absolute right-2 top-1/2 -translate-y-1/2 text-2xl pointer-events-none" aria-hidden>🏁</span>
 
-              {/* キャラクター名ラベル */}
               <div className="absolute left-1 top-1/2 -translate-y-1/2 flex flex-col items-center w-12 z-10">
-                <span className="text-xs font-black text-white/90 drop-shadow leading-tight">{char.label}</span>
+                <span className="text-[10px] font-black text-white/90 drop-shadow leading-tight text-center truncate w-12">{char.name}</span>
               </div>
 
-              {/* 動くアバター */}
               <motion.div
                 className="absolute top-1/2 -translate-y-1/2 z-20"
                 style={{
-                  left: `calc(${leftPct}% + 3.5rem)`,
+                  left: `calc(3.5rem + (100% - 7rem) * (${pos} / 100))`,
                   transition: `left ${TICK_MS / 1000}s linear`,
                 }}
               >
                 <motion.div
-                  animate={controls[char.key]}
+                  animate={
+                    eff === "chaotic" ? shakeAnim :
+                    eff === "speed_up" ? pulseAnim :
+                    eff === "pause" ? pauseAnim :
+                    eff === "speed_down" ? { scale: 0.9, transition: { duration: 0.3 } } :
+                    eff === "finish" ? { scale: [1, 1.4, 1], rotate: [0, 360], transition: { duration: 0.8 } } :
+                    { x: 0, y: 0, rotate: 0, scale: 1, transition: { duration: 0.3 } }
+                  }
                   className={`relative flex items-center justify-center w-14 h-14 rounded-full bg-gradient-to-br ${char.avatarGrad} shadow-lg ring-4 ring-white/60`}
                 >
                   <span className="text-3xl leading-none" aria-hidden>{char.emoji}</span>
 
-                  {/* エフェクトオーバーレイ */}
-                  {eff === "speed_up" && (
-                    <span className="absolute -right-2 -top-2 text-xl animate-bounce" aria-hidden>🔥</span>
-                  )}
-                  {eff === "pause" && (
-                    <span className="absolute -right-2 -top-2 text-xl" aria-hidden>💤</span>
-                  )}
-                  {eff === "chaotic" && (
-                    <span className="absolute -right-2 -top-2 text-xl animate-spin" aria-hidden>🌀</span>
-                  )}
-                  {eff === "speed_down" && (
-                    <span className="absolute -right-2 -top-2 text-lg" aria-hidden>🐢</span>
-                  )}
+                  {eff === "speed_up" && <span className="absolute -right-2 -top-2 text-xl animate-bounce" aria-hidden>🔥</span>}
+                  {eff === "pause" && <span className="absolute -right-2 -top-2 text-xl" aria-hidden>💤</span>}
+                  {eff === "chaotic" && <span className="absolute -right-2 -top-2 text-xl animate-spin" aria-hidden>🌀</span>}
+                  {eff === "speed_down" && <span className="absolute -right-2 -top-2 text-lg" aria-hidden>🐢</span>}
                 </motion.div>
               </motion.div>
             </div>
@@ -439,9 +435,23 @@ export function RacePlayer({ kidId }: Props) {
         </div>
       </div>
 
-      {/* ── スタートボタン ── */}
+      {/* ── スタート前: 動物選択 ── */}
       {(phase === "idle" || phase === "finished") && (
-        <div className="shrink-0 px-4 pb-4 z-10">
+        <div className="shrink-0 px-4 pb-4 z-10 space-y-3">
+          {phase === "idle" && (
+            <div className="grid grid-cols-3 gap-2">
+              <select className="bg-white/90 rounded-lg p-1 text-xs font-bold text-slate-800" value={lane1Id} onChange={e => setLane1Id(e.target.value)}>
+                {animals.map(a => <option key={a.animalId} value={a.animalId}>{a.emoji} {a.name}</option>)}
+              </select>
+              <select className="bg-white/90 rounded-lg p-1 text-xs font-bold text-slate-800" value={lane2Id} onChange={e => setLane2Id(e.target.value)}>
+                {animals.map(a => <option key={a.animalId} value={a.animalId}>{a.emoji} {a.name}</option>)}
+              </select>
+              <select className="bg-white/90 rounded-lg p-1 text-xs font-bold text-slate-800" value={lane3Id} onChange={e => setLane3Id(e.target.value)}>
+                {animals.map(a => <option key={a.animalId} value={a.animalId}>{a.emoji} {a.name}</option>)}
+              </select>
+            </div>
+          )}
+
           <button
             type="button"
             onClick={handleStart}
