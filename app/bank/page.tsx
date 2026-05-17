@@ -1,5 +1,5 @@
 // 親用の管理画面 (/bank)
-// Server Component で DB から子供一覧を取得し、各操作 UI を組み立てる。
+// Server Component で DB から子供一覧を取得し、BankPortal に渡す。
 
 import { prisma } from "@/lib/prisma";
 import { calculateAge, formatBirthDate } from "@/lib/age";

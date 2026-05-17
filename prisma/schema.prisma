@@ -98,6 +98,12 @@ model User {
   birthDate         DateTime           @map("birth_date") @db.Date
   role              UserRole           @default(CHILD)
   coinBalance       Int                @default(0) @map("coin_balance")
+  // 1日のアクティブ狩り（BOW/SPEAR）回数制限管理。
+  //   dailyHuntCount: 「今日 既に消費した」回数。0〜HUNT_DAILY_LIMIT。
+  //   lastHuntDate  : 最後にカウンタを増やした日（深夜0時で繰り越し判定）。
+  // 起動時に lastHuntDate と「今日」が違えば dailyHuntCount を 0 リセットする。
+  dailyHuntCount    Int                @default(0) @map("daily_hunt_count")
+  lastHuntDate      DateTime?          @map("last_hunt_date")
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")
   transactions       CoinTransaction[]

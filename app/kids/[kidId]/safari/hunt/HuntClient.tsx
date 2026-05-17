@@ -1,15 +1,17 @@
 "use client";
 
-// アクティブ狩りのクライアント。
-// フロー:
-//   1) ステージを選ぶ
-//   2) 道具（弓 / 投槍器）を選ぶ
-//   3) ゲージ式タイミングミニゲームで命中判定
-//   4) 結果（捕獲成功 or 逃げられた）を表示。歴史的背景も合わせて出す。
+// アクティブ狩り（投槍器・複合弓）のクライアント。
+// フロー（state machine）:
+//   idle        : ステージと道具を選ぶ。残り回数を大きく表示。
+//   encounter   : 「〇〇が あらわれた！」道具に応じた行動選択 (2-3択)
+//   captured    : 行動正解 → 「つかまえた！どんな どうぶつか よんでみよう」
+//                 説明文を読ませながら裏で /api/quiz/generate を叩く
+//   readingQuiz : 読解クイズ (Ollama 3択)
+//   result      : 結果モーダル（だいせいかい / ざんねん）
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { startActiveHunt, resolveActiveHunt } from "../../../actions";
+import { startActiveHunt, resolveActiveHunt, getHuntStamina } from "../../../actions";
 
 type ToolEntry = {
   id: string;
@@ -48,13 +50,19 @@ type AnimalLite = {
   isExtinct: boolean;
 };
 
+type StaminaInfo = {
+  used: number;
+  remaining: number;
+  limit: number;
+  lastHuntDate: string | null;
+};
+
 type ActiveHunt = {
   id: string;
   huntType: "BOW" | "SPEAR";
   toolName: string;
   toolEmoji: string;
   targetAnimal: AnimalLite;
-  sweetSpotWidth: number; // 0〜1
 };
 
 type Props = {
@@ -64,6 +72,7 @@ type Props = {
   stages: StageEntry[];
   inventory: InventoryRow[];
   noTools: boolean;
+  initialStamina: StaminaInfo;
 };
 
 const NAME_READING: Record<string, string> = {
@@ -86,81 +95,227 @@ const RARITY_TONE: Record<AnimalLite["rarity"], string> = {
   LEGENDARY: "from-amber-200 via-yellow-300 to-orange-300 text-amber-900",
 };
 
-export function HuntClient({ kidId, kidName, tools, stages, inventory, noTools }: Props) {
+// ─────────────────────────────────────────────
+// 道具ごとの「状況判断」クイズ（行動選択）
+// 子供向けに簡潔・教育的な選択肢を用意。
+// ─────────────────────────────────────────────
+type ActionChoice = { label: string; correct: boolean; emoji: string };
+type ActionQuiz = { question: string; choices: ActionChoice[] };
+
+const TOOL_ACTION_QUIZ: Record<string, ActionQuiz> = {
+  atlatl: {
+    question: "アトラトル（投槍器）で どう ねらう？",
+    choices: [
+      { emoji: "🤫", label: "こっそり ちかづいて なげる", correct: true },
+      { emoji: "📢", label: "おおごえを だして はしる", correct: false },
+      { emoji: "🎯", label: "とおくから やみくもに なげまくる", correct: false },
+    ],
+  },
+  harpoon: {
+    question: "もり で どう ねらう？",
+    choices: [
+      { emoji: "🌊", label: "みずの ちかくで しずかに かまえる", correct: true },
+      { emoji: "🏃", label: "おおあわてで はしりよる", correct: false },
+    ],
+  },
+  compound_bow: {
+    question: "複合弓 で どう ねらう？",
+    choices: [
+      { emoji: "🌬️", label: "かぜを よんで しずかに ねらう", correct: true },
+      { emoji: "🎉", label: "おおさわぎして ちゅういを ひく", correct: false },
+      { emoji: "🏹", label: "とりあえず ぜんぶ うちまくる", correct: false },
+    ],
+  },
+  longbow: {
+    question: "長弓 で どう ねらう？",
+    choices: [
+      { emoji: "🌳", label: "きのかげに かくれて ねらう", correct: true },
+      { emoji: "🚪", label: "ひらけた ばしょで まっすぐ あるく", correct: false },
+    ],
+  },
+};
+
+// デフォルト（未知の道具用）
+const DEFAULT_ACTION_QUIZ: ActionQuiz = {
+  question: "どう ねらう？",
+  choices: [
+    { emoji: "🤫", label: "そっと ちかづいて ねらう", correct: true },
+    { emoji: "📢", label: "おおごえで おどかす", correct: false },
+  ],
+};
+
+type Phase =
+  | { kind: "idle" }
+  | { kind: "encounter"; hunt: ActiveHunt; tool: ToolEntry }
+  | { kind: "captured"; hunt: ActiveHunt; tool: ToolEntry }
+  | { kind: "readingQuiz"; hunt: ActiveHunt; tool: ToolEntry; quiz: GeneratedQuiz }
+  | { kind: "result"; outcome: "caught" | "escaped"; animal: AnimalLite; tool: ToolEntry; reason: string };
+
+type GeneratedQuiz = {
+  question: string;
+  options: string[];
+  answer: string;
+  source: "ollama" | "fallback";
+};
+
+export function HuntClient({
+  kidId,
+  kidName,
+  tools,
+  stages,
+  inventory: _inventory,
+  noTools,
+  initialStamina,
+}: Props) {
   const reading = NAME_READING[kidName] ?? kidName;
 
   const [selectedStage, setSelectedStage] = useState<StageEntry | null>(
     stages[0] ?? null,
   );
-  const [selectedTool, setSelectedTool] = useState<ToolEntry | null>(null);
-  const [activeHunt, setActiveHunt] = useState<ActiveHunt | null>(null);
-  const [result, setResult] = useState<
-    | { kind: "caught"; animal: AnimalLite; tool: { name: string; historicalContext: string } }
-    | { kind: "escaped"; animal: AnimalLite }
-    | null
-  >(null);
+  const [stamina, setStamina] = useState<StaminaInfo>(initialStamina);
+  const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
+  const [isLoadingQuiz, setIsLoadingQuiz] = useState(false);
 
-  // 道具を選んで「狩る」を押した時の流れ
+  // 起動から少し経過していたら最新のスタミナを取り直す（日付変わりに対応）
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const fresh = await getHuntStamina(kidId);
+      if (!cancelled) setStamina(fresh);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [kidId]);
+
   const handleStartHunt = (tool: ToolEntry) => {
     if (!selectedStage) {
       setErrorMsg("ステージを えらんでね");
       return;
     }
+    if (stamina.remaining <= 0) {
+      setErrorMsg("きょうの かりは おわり！あしたまた チャレンジしよう");
+      return;
+    }
     setErrorMsg(null);
-    setSelectedTool(tool);
     startTransition(async () => {
       const r = await startActiveHunt(kidId, tool.id, selectedStage.id);
       if (!r.success) {
         setErrorMsg(r.error);
-        setSelectedTool(null);
+        if (r.stamina) setStamina(r.stamina);
         return;
       }
-      setActiveHunt({
-        id: r.hunt.id,
-        huntType: r.hunt.huntType,
-        toolName: r.hunt.toolName,
-        toolEmoji: r.hunt.toolEmoji,
-        targetAnimal: r.hunt.targetAnimal,
-        sweetSpotWidth: r.hunt.sweetSpotWidth,
+      setStamina(r.stamina);
+      setPhase({
+        kind: "encounter",
+        tool,
+        hunt: {
+          id: r.hunt.id,
+          huntType: r.hunt.huntType,
+          toolName: r.hunt.toolName,
+          toolEmoji: r.hunt.toolEmoji,
+          targetAnimal: r.hunt.targetAnimal,
+        },
       });
     });
   };
 
-  const handleResolve = useCallback(
-    (precision: number) => {
-      if (!activeHunt) return;
-      const hunt = activeHunt;
-      setActiveHunt(null);
-      startTransition(async () => {
-        const r = await resolveActiveHunt(hunt.id, precision);
-        if (!r.success) {
-          setErrorMsg(r.error);
-          setSelectedTool(null);
-          return;
-        }
-        if (r.caught) {
-          setResult({
-            kind: "caught",
-            animal: r.animal,
-            tool: {
-              name: selectedTool?.name ?? hunt.toolName,
-              historicalContext: selectedTool?.historicalContext ?? "",
-            },
-          });
-        } else {
-          setResult({ kind: "escaped", animal: r.animal });
-        }
-        setSelectedTool(null);
+  // 行動選択で「不正解」を選んだ時：その場で逃げられた扱い
+  const handleActionFail = (hunt: ActiveHunt, tool: ToolEntry, reason: string) => {
+    setPhase({
+      kind: "result",
+      outcome: "escaped",
+      animal: hunt.targetAnimal,
+      tool,
+      reason,
+    });
+    // サーバ側にも結果を伝える（precision=0 → ESCAPED）
+    void resolveActiveHunt(hunt.id, 0);
+  };
+
+  // 行動選択で「正解」を選んだ時：一時捕獲 → 読解フェーズへ
+  const handleActionPass = (hunt: ActiveHunt, tool: ToolEntry) => {
+    setPhase({ kind: "captured", hunt, tool });
+    // 裏で Ollama にクイズを生成させる
+    setIsLoadingQuiz(true);
+    void (async () => {
+      try {
+        const res = await fetch("/api/quiz/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            specificName: hunt.targetAnimal.specificName,
+            description: hunt.targetAnimal.description,
+          }),
+        });
+        const json = (await res.json()) as GeneratedQuiz;
+        setIsLoadingQuiz(false);
+        setPhase((cur) => {
+          if (cur.kind !== "captured") return cur;
+          return { kind: "readingQuiz", hunt, tool, quiz: json };
+        });
+      } catch {
+        setIsLoadingQuiz(false);
+        // ネットワーク失敗時のフォールバック: 説明文の冒頭を使った簡易クイズ
+        const fb: GeneratedQuiz = {
+          question: `${hunt.targetAnimal.specificName} は どんな どうぶつ？`,
+          options: [
+            hunt.targetAnimal.description.split(/[。．]/)[0]?.slice(0, 40) ||
+              "せつめいに かいてある とおり",
+            "そらを とぶ きかい",
+            "あまい たべもの",
+          ],
+          answer:
+            hunt.targetAnimal.description.split(/[。．]/)[0]?.slice(0, 40) ||
+            "せつめいに かいてある とおり",
+          source: "fallback",
+        };
+        setPhase((cur) => {
+          if (cur.kind !== "captured") return cur;
+          return { kind: "readingQuiz", hunt, tool, quiz: fb };
+        });
+      }
+    })();
+  };
+
+  // 読解クイズの結果
+  const handleReadingAnswer = (
+    hunt: ActiveHunt,
+    tool: ToolEntry,
+    selectedOption: string,
+    quiz: GeneratedQuiz,
+  ) => {
+    const isCorrect = selectedOption.trim() === quiz.answer.trim();
+    if (isCorrect) {
+      // サーバに「捕獲成功」を確定
+      void resolveActiveHunt(hunt.id, 1.0);
+      setPhase({
+        kind: "result",
+        outcome: "caught",
+        animal: hunt.targetAnimal,
+        tool,
+        reason: "せつめいを よく よめたね！",
       });
-    },
-    [activeHunt, selectedTool],
-  );
+    } else {
+      void resolveActiveHunt(hunt.id, 0);
+      setPhase({
+        kind: "result",
+        outcome: "escaped",
+        animal: hunt.targetAnimal,
+        tool,
+        reason: "ちしきが たりなくて にげられちゃった…",
+      });
+    }
+  };
 
   const closeResult = () => {
-    setResult(null);
+    setPhase({ kind: "idle" });
   };
+
+  const remaining = stamina.remaining;
+  const dailyDisabled = remaining <= 0;
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-emerald-100 via-teal-100 to-sky-100 px-4 py-6">
@@ -178,15 +333,47 @@ export function HuntClient({ kidId, kidName, tools, stages, inventory, noTools }
           </p>
         </div>
 
-        {/* ヒーロー */}
-        <section className="rounded-[2rem] bg-gradient-to-br from-emerald-400 via-teal-400 to-cyan-400 p-1 shadow-xl ring-4 ring-white">
+        {/* スタミナヒーロー（あと ◯ かい） */}
+        <section
+          className={`rounded-[2rem] p-1 shadow-xl ring-4 ring-white ${
+            dailyDisabled
+              ? "bg-gradient-to-br from-slate-300 to-slate-400"
+              : "bg-gradient-to-br from-emerald-400 via-teal-400 to-cyan-400"
+          }`}
+        >
           <div className="rounded-[1.7rem] bg-white/95 px-6 py-5 text-center backdrop-blur">
-            <p className="text-4xl drop-shadow" aria-hidden>🏹🎯🐾</p>
-            <h1 className="mt-1 text-xl font-black text-emerald-800">
-              {reading} の 狩り
-            </h1>
-            <p className="mt-1 text-[11px] font-bold text-emerald-700/80">
-              ステージと 道具を えらんで、ゲージで タイミングを あわせよう
+            <p className="text-[10px] font-bold tracking-[0.4em] text-emerald-600">
+              きょうの かり
+            </p>
+            <p className="mt-1 font-mono text-6xl font-black tracking-tight text-emerald-800 leading-none sm:text-7xl">
+              あと <span className={dailyDisabled ? "text-rose-500" : ""}>{remaining}</span> <span className="text-3xl">かい</span>
+            </p>
+            {/* スタミナ・トークン */}
+            <div className="mt-3 flex justify-center gap-1.5">
+              {Array.from({ length: stamina.limit }).map((_, i) => {
+                const used = i < stamina.used;
+                return (
+                  <span
+                    key={i}
+                    aria-hidden
+                    className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs ring-2 ${
+                      used
+                        ? "bg-slate-200 text-slate-400 ring-slate-300"
+                        : "bg-gradient-to-br from-amber-300 to-orange-400 text-white ring-amber-500 shadow"
+                    }`}
+                  >
+                    {used ? "✗" : "🏹"}
+                  </span>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-[11px] font-bold text-emerald-700/80">
+              {reading}、しんちょうに ねらおう！
+              {dailyDisabled && (
+                <span className="block text-rose-500 mt-1">
+                  きょうは おしまい。あした 0:00 に リセット
+                </span>
+              )}
             </p>
           </div>
         </section>
@@ -246,12 +433,7 @@ export function HuntClient({ kidId, kidName, tools, stages, inventory, noTools }
           ) : (
             <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
               {tools.map((t) => {
-                const stockRow = t.inventoryItemId
-                  ? inventory.find((i) => i.itemId === t.inventoryItemId)
-                  : null;
-                const stock = stockRow?.quantity ?? null;
-                const disabled =
-                  (t.consumable && stock !== null && stock < 1) || activeHunt !== null;
+                const disabled = dailyDisabled || isPending;
                 return (
                   <button
                     key={t.id}
@@ -278,11 +460,6 @@ export function HuntClient({ kidId, kidName, tools, stages, inventory, noTools }
                         <p className="text-[10px] text-slate-500 mt-1 line-clamp-2">
                           {t.description}
                         </p>
-                        {t.consumable && stockRow && (
-                          <p className="text-[9px] text-amber-700 mt-1">
-                            素材: {stockRow.itemName} ×{stock}
-                          </p>
-                        )}
                       </div>
                     </div>
                   </button>
@@ -298,95 +475,105 @@ export function HuntClient({ kidId, kidName, tools, stages, inventory, noTools }
         </section>
 
         <p className="text-center text-[11px] font-bold text-emerald-600/70 tracking-widest">
-          🏹 タイミングが すべて 🏹
+          🏹 よく かんがえ、よく よむ。それが ハンター！ 🏹
         </p>
       </div>
 
-      {/* ゲージミニゲーム */}
-      {activeHunt && (
-        <GaugeMinigame
-          hunt={activeHunt}
-          onResolve={handleResolve}
+      {/* 行動選択モーダル */}
+      {phase.kind === "encounter" && (
+        <EncounterModal
+          hunt={phase.hunt}
+          tool={phase.tool}
+          onPass={handleActionPass}
+          onFail={(reason) => handleActionFail(phase.hunt, phase.tool, reason)}
         />
       )}
 
-      {/* 結果モーダル */}
-      {result && <ResultModal result={result} onClose={closeResult} />}
+      {/* 一時捕獲＋読解中（クイズ生成待ち） */}
+      {phase.kind === "captured" && (
+        <CapturedReadingModal
+          hunt={phase.hunt}
+          isLoadingQuiz={isLoadingQuiz}
+        />
+      )}
+
+      {/* 読解クイズ */}
+      {phase.kind === "readingQuiz" && (
+        <ReadingQuizModal
+          hunt={phase.hunt}
+          tool={phase.tool}
+          quiz={phase.quiz}
+          onAnswer={(opt) =>
+            handleReadingAnswer(phase.hunt, phase.tool, opt, phase.quiz)
+          }
+        />
+      )}
+
+      {/* 結果 */}
+      {phase.kind === "result" && (
+        <ResultModal
+          outcome={phase.outcome}
+          animal={phase.animal}
+          tool={phase.tool}
+          reason={phase.reason}
+          onClose={closeResult}
+        />
+      )}
+
+      <style jsx>{`
+        @keyframes box-shake {
+          0%, 100% { transform: rotate(0deg) translateX(0); }
+          15% { transform: rotate(-6deg) translateX(-3px); }
+          30% { transform: rotate(7deg) translateX(4px); }
+          45% { transform: rotate(-5deg) translateX(-3px); }
+          60% { transform: rotate(6deg) translateX(3px); }
+          75% { transform: rotate(-3deg) translateX(-2px); }
+        }
+        :global(.box-gatagata) {
+          animation: box-shake 0.45s ease-in-out infinite;
+          display: inline-block;
+        }
+        @keyframes burst-spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        :global(.burst-spin) {
+          animation: burst-spin 8s linear infinite;
+        }
+      `}</style>
     </main>
   );
 }
 
 // ─────────────────────────────────────────
-// ゲージ式タイミングミニゲーム
-//   横バー（0〜100%）の中央付近に「スイートスポット」（緑帯）があり、
-//   インジケータが左右に往復する。タップで停止 → スイートスポットからの
-//   距離で precision（0.0〜1.0）を計算して onResolve に渡す。
+// 行動選択モーダル（状況判断クイズ）
 // ─────────────────────────────────────────
-function GaugeMinigame({
+function EncounterModal({
   hunt,
-  onResolve,
+  tool,
+  onPass,
+  onFail,
 }: {
   hunt: ActiveHunt;
-  onResolve: (precision: number) => void;
+  tool: ToolEntry;
+  onPass: (hunt: ActiveHunt, tool: ToolEntry) => void;
+  onFail: (reason: string) => void;
 }) {
-  // sweetSpotWidth: 0.05〜0.45。中央(0.5)を中心に対称配置する。
-  const sweetHalf = hunt.sweetSpotWidth / 2;
-  const sweetMin = 0.5 - sweetHalf;
-  const sweetMax = 0.5 + sweetHalf;
+  const quiz = TOOL_ACTION_QUIZ[tool.toolId] ?? DEFAULT_ACTION_QUIZ;
+  const [picked, setPicked] = useState<number | null>(null);
 
-  // レアリティと huntType でゲージ速度を決定
-  const rarityMs: Record<AnimalLite["rarity"], number> = {
-    COMMON: 2400,
-    RARE: 1800,
-    EPIC: 1200,
-    LEGENDARY: 900,
+  const handlePick = (idx: number) => {
+    if (picked !== null) return;
+    setPicked(idx);
+    const c = quiz.choices[idx];
+    setTimeout(() => {
+      if (c.correct) {
+        onPass(hunt, tool);
+      } else {
+        onFail("おどろかせて にげられちゃった…");
+      }
+    }, 900);
   };
-  const cycleMs = rarityMs[hunt.targetAnimal.rarity];
-
-  const [indicator, setIndicator] = useState(0); // 0〜1
-  const [stopped, setStopped] = useState(false);
-  const rafRef = useRef<number | null>(null);
-  const startRef = useRef<number>(performance.now());
-
-  useEffect(() => {
-    const tick = (now: number) => {
-      if (stopped) return;
-      const elapsed = (now - startRef.current) % cycleMs;
-      const phase = (elapsed / cycleMs) * 2; // 0〜2
-      // 三角波: 0→1→0
-      const v = phase < 1 ? phase : 2 - phase;
-      setIndicator(v);
-      rafRef.current = requestAnimationFrame(tick);
-    };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
-  }, [cycleMs, stopped]);
-
-  const handleStop = () => {
-    if (stopped) return;
-    setStopped(true);
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-
-    // スイートスポット内なら高 precision
-    let precision: number;
-    if (indicator >= sweetMin && indicator <= sweetMax) {
-      // 中心(0.5) からの距離を 0〜1 にマップ → 1 - dist
-      const dist = Math.abs(indicator - 0.5) / sweetHalf; // 0〜1
-      precision = 1 - dist * 0.3; // 中心ぴったりで 1.0、端で 0.7
-    } else {
-      // 外れ。スイートスポット端からの距離で 0〜0.6
-      const distOut = indicator < sweetMin ? sweetMin - indicator : indicator - sweetMax;
-      precision = Math.max(0, 0.6 - distOut * 1.0);
-    }
-
-    // 800ms 後に親に渡す（演出の余韻）
-    setTimeout(() => onResolve(precision), 800);
-  };
-
-  // SPEAR と BOW でビジュアル差をつける
-  const isBow = hunt.huntType === "BOW";
 
   return (
     <div
@@ -396,76 +583,261 @@ function GaugeMinigame({
     >
       <div className="w-full max-w-md rounded-[2rem] bg-gradient-to-br from-emerald-300 via-teal-300 to-sky-300 p-1 shadow-2xl">
         <div className="rounded-[1.75rem] bg-slate-900 px-6 py-7 text-center text-white">
-          <p className="text-[10px] font-bold tracking-[0.3em] text-emerald-300">
-            {isBow ? "🏹 弓を 引け" : "🔱 投擲 用意"}
+          <p className="text-[10px] font-bold tracking-[0.4em] text-amber-300 animate-pulse">
+            ✨ そうぐう ✨
           </p>
-          <h3 className="mt-1 text-lg font-black text-white">
-            {hunt.toolEmoji} {hunt.toolName}
-          </h3>
 
-          {/* 動物の影 */}
-          <div className="mt-4 mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-emerald-900/50 ring-2 ring-emerald-400/30">
+          {/* 動物のシルエット */}
+          <div className="mt-3 relative mx-auto flex h-28 w-28 items-center justify-center rounded-full bg-emerald-900/60 ring-2 ring-emerald-400/40">
             <span
               aria-hidden
-              className="text-6xl"
-              style={{ filter: "brightness(0)", opacity: 0.85 }}
+              className="text-7xl"
+              style={{ filter: "brightness(0)", opacity: 0.9 }}
             >
               {hunt.targetAnimal.emoji}
             </span>
           </div>
-          <p className="mt-2 text-[11px] text-emerald-300/80">
-            ？？？ の けはい
-            <span className="ml-1 rounded-full bg-emerald-700/50 px-1.5 py-0 text-[9px] font-bold">
-              {RARITY_LABEL[hunt.targetAnimal.rarity]}
-            </span>
-          </p>
 
-          {/* ゲージ本体 */}
-          <div className="mt-6 relative h-10 rounded-full bg-slate-700 overflow-hidden ring-2 ring-slate-600">
-            {/* スイートスポット */}
-            <div
-              className="absolute top-0 bottom-0 bg-gradient-to-r from-emerald-400 to-teal-400 opacity-70"
-              style={{
-                left: `${sweetMin * 100}%`,
-                width: `${(sweetMax - sweetMin) * 100}%`,
-              }}
-            />
-            {/* 中心マーク */}
-            <div
-              className="absolute top-0 bottom-0 w-0.5 bg-white/80"
-              style={{ left: "50%" }}
-            />
-            {/* インジケータ */}
-            <div
-              className={`absolute top-0 bottom-0 w-1.5 rounded-full ${
-                stopped ? "bg-yellow-300 shadow-[0_0_12px_4px_rgba(250,204,21,0.6)]" : "bg-white shadow"
-              }`}
-              style={{
-                left: `calc(${indicator * 100}% - 3px)`,
-                transition: stopped ? "none" : undefined,
-              }}
-            />
+          <p className="mt-3 text-sm text-slate-300">
+            <span className="font-bold text-white">
+              {hunt.targetAnimal.genericName || "なにか"}
+            </span>
+            が あらわれた！
+          </p>
+          <span className="mt-1 inline-block rounded-full bg-emerald-700/40 px-2 py-0.5 text-[10px] font-bold text-emerald-100">
+            {RARITY_LABEL[hunt.targetAnimal.rarity]}
+          </span>
+
+          <div className="mt-5 rounded-2xl bg-emerald-950/60 p-4 ring-1 ring-emerald-600/30">
+            <p className="text-[11px] font-bold text-emerald-300">
+              {tool.emoji} {tool.name}
+            </p>
+            <p className="mt-1 text-sm font-extrabold text-white">{quiz.question}</p>
           </div>
 
-          {/* タップボタン */}
-          <button
-            type="button"
-            onClick={handleStop}
-            disabled={stopped}
-            className={`mt-6 w-full rounded-2xl px-5 py-5 text-xl font-black tracking-wide text-white shadow-lg transition active:scale-95 ${
-              stopped
-                ? "bg-slate-700 text-slate-400 cursor-not-allowed"
-                : isBow
-                  ? "bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:brightness-110"
-                  : "bg-gradient-to-r from-sky-500 via-indigo-500 to-violet-500 hover:brightness-110"
-            }`}
-          >
-            {stopped ? "判定中…" : isBow ? "🏹 射る！" : "🔱 投げる！"}
-          </button>
+          {/* 行動の選択肢 */}
+          <div className="mt-4 flex flex-col gap-2">
+            {quiz.choices.map((c, i) => {
+              const isPicked = picked === i;
+              const showResult = picked !== null;
+              const isCorrect = c.correct;
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  disabled={picked !== null}
+                  onClick={() => handlePick(i)}
+                  className={`w-full rounded-2xl px-4 py-3 text-left font-bold transition active:scale-95 ${
+                    showResult
+                      ? isPicked
+                        ? isCorrect
+                          ? "bg-emerald-500 text-white ring-4 ring-emerald-300"
+                          : "bg-rose-500 text-white ring-4 ring-rose-300"
+                        : "bg-slate-800 text-slate-400 opacity-50"
+                      : "bg-white text-slate-800 hover:bg-emerald-100 ring-2 ring-emerald-300"
+                  }`}
+                >
+                  <span className="text-2xl mr-2">{c.emoji}</span>
+                  <span className="text-sm">{c.label}</span>
+                  {showResult && isPicked && (
+                    <span className="ml-2 text-xs font-extrabold">
+                      {isCorrect ? "○ せいかい！" : "✗ ふせいかい"}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-          <p className="mt-3 text-[10px] text-emerald-300/70 leading-relaxed">
-            緑のゾーンで タップで 命中！中央に 近いほど 確実だよ
+// ─────────────────────────────────────────
+// 一時捕獲＋読解（クイズ生成中）
+// ─────────────────────────────────────────
+function CapturedReadingModal({
+  hunt,
+  isLoadingQuiz,
+}: {
+  hunt: ActiveHunt;
+  isLoadingQuiz: boolean;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4"
+    >
+      <div className="w-full max-w-md rounded-[2rem] bg-gradient-to-br from-amber-300 via-orange-300 to-rose-300 p-1 shadow-2xl">
+        <div className="rounded-[1.75rem] bg-white px-6 py-6 text-center">
+          <p className="text-[10px] font-bold tracking-[0.4em] text-amber-600">
+            ✨ いちじ ほかく ✨
           </p>
+          <h2 className="mt-2 text-2xl font-black text-slate-800 leading-tight">
+            つかまえた！
+          </h2>
+          <p className="mt-1 text-sm text-slate-700">
+            どんな どうぶつか よんでみよう
+          </p>
+
+          {/* 動物の正体 */}
+          <div className="mt-4 flex items-center justify-center">
+            {hunt.targetAnimal.imageUrl ? (
+              <img
+                src={hunt.targetAnimal.imageUrl}
+                alt={hunt.targetAnimal.specificName}
+                className="h-24 w-24 rounded-2xl object-cover shadow-lg ring-2 ring-white"
+              />
+            ) : (
+              <span className="text-7xl drop-shadow-lg">
+                {hunt.targetAnimal.emoji}
+              </span>
+            )}
+          </div>
+          <p className="mt-2 text-[11px] font-bold text-slate-500">
+            {hunt.targetAnimal.genericName}
+          </p>
+          <p className="text-lg font-black text-slate-800">
+            {hunt.targetAnimal.specificName}
+          </p>
+          {hunt.targetAnimal.isExtinct && (
+            <span className="mt-1 inline-block rounded-full bg-gray-800 px-2 py-0.5 text-[9px] font-bold text-gray-200">
+              💀 絶滅種
+            </span>
+          )}
+
+          {/* 説明文：100文字 */}
+          <div className="mt-4 rounded-2xl bg-amber-50 p-4 ring-1 ring-amber-200 text-left">
+            <p className="text-[10px] font-extrabold tracking-widest text-amber-700">
+              📖 ずかんの せつめい
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-slate-800">
+              {hunt.targetAnimal.description}
+            </p>
+          </div>
+
+          {/* ローディング演出：箱がガタガタ */}
+          <div className="mt-5 rounded-2xl bg-gradient-to-br from-violet-100 to-fuchsia-100 p-4 ring-1 ring-violet-200">
+            <div className="flex items-center justify-center gap-3">
+              <span className="text-5xl box-gatagata" aria-hidden>📦</span>
+              <div className="text-left">
+                <p className="text-xs font-extrabold text-violet-700">
+                  AI が クイズを つくっているよ…
+                </p>
+                <p className="text-[10px] text-violet-600 mt-0.5">
+                  はこが ガタガタ ゆれている！
+                </p>
+                <div className="mt-1 flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-violet-500 animate-bounce" style={{ animationDelay: "0ms" }} />
+                  <span className="h-1.5 w-1.5 rounded-full bg-violet-500 animate-bounce" style={{ animationDelay: "120ms" }} />
+                  <span className="h-1.5 w-1.5 rounded-full bg-violet-500 animate-bounce" style={{ animationDelay: "240ms" }} />
+                </div>
+              </div>
+            </div>
+            {!isLoadingQuiz && (
+              <p className="mt-2 text-[10px] text-violet-500">
+                よみおわった？クイズ いくよ！
+              </p>
+            )}
+          </div>
+
+          <p className="mt-4 text-[10px] text-slate-400">
+            ※ 説明文を よく よんで！クイズに ですよ！
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// 読解クイズ（Ollama 生成 3択）
+// ─────────────────────────────────────────
+function ReadingQuizModal({
+  hunt,
+  tool: _tool,
+  quiz,
+  onAnswer,
+}: {
+  hunt: ActiveHunt;
+  tool: ToolEntry;
+  quiz: GeneratedQuiz;
+  onAnswer: (opt: string) => void;
+}) {
+  const [picked, setPicked] = useState<string | null>(null);
+
+  const handlePick = (opt: string) => {
+    if (picked !== null) return;
+    setPicked(opt);
+    setTimeout(() => onAnswer(opt), 700);
+  };
+
+  const isCorrect = (opt: string) => opt.trim() === quiz.answer.trim();
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/85 backdrop-blur-sm p-4"
+    >
+      <div className="w-full max-w-md rounded-[2rem] bg-gradient-to-br from-violet-400 via-fuchsia-400 to-rose-400 p-1 shadow-2xl">
+        <div className="rounded-[1.75rem] bg-white px-6 py-6">
+          <p className="text-[10px] font-bold tracking-[0.4em] text-violet-600 text-center">
+            🧠 どっかい クイズ 🧠
+          </p>
+
+          <div className="mt-2 flex items-center justify-center gap-2">
+            <span className="text-3xl">{hunt.targetAnimal.emoji}</span>
+            <span className="text-sm font-extrabold text-slate-700">
+              {hunt.targetAnimal.specificName} クイズ
+            </span>
+          </div>
+
+          {quiz.source === "fallback" && (
+            <p className="mt-1 text-center text-[9px] text-amber-600">
+              ⚠️ AI が おやすみちゅう。かんたんクイズで チャレンジ
+            </p>
+          )}
+
+          <div className="mt-4 rounded-2xl bg-violet-50 p-4 ring-1 ring-violet-200">
+            <p className="text-sm font-extrabold text-slate-800 leading-relaxed">
+              {quiz.question}
+            </p>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-2">
+            {quiz.options.map((opt, i) => {
+              const isPicked = picked === opt;
+              const showResult = picked !== null;
+              const ok = isCorrect(opt);
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  disabled={picked !== null}
+                  onClick={() => handlePick(opt)}
+                  className={`w-full rounded-2xl px-4 py-3 text-left text-sm font-bold transition active:scale-95 ${
+                    showResult
+                      ? isPicked
+                        ? ok
+                          ? "bg-emerald-500 text-white ring-4 ring-emerald-300"
+                          : "bg-rose-500 text-white ring-4 ring-rose-300"
+                        : ok
+                          ? "bg-emerald-100 text-emerald-800 ring-2 ring-emerald-300"
+                          : "bg-slate-100 text-slate-500 opacity-60"
+                      : "bg-white text-slate-800 ring-2 ring-violet-300 hover:bg-violet-50"
+                  }`}
+                >
+                  <span className="font-mono mr-2 text-violet-500">
+                    {String.fromCharCode(65 + i)}.
+                  </span>
+                  {opt}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
@@ -476,52 +848,115 @@ function GaugeMinigame({
 // 結果モーダル
 // ─────────────────────────────────────────
 function ResultModal({
-  result,
+  outcome,
+  animal,
+  tool,
+  reason,
   onClose,
 }: {
-  result:
-    | { kind: "caught"; animal: AnimalLite; tool: { name: string; historicalContext: string } }
-    | { kind: "escaped"; animal: AnimalLite };
+  outcome: "caught" | "escaped";
+  animal: AnimalLite;
+  tool: ToolEntry;
+  reason: string;
   onClose: () => void;
 }) {
-  const isCaught = result.kind === "caught";
-  const animal = result.animal;
+  const isCaught = outcome === "caught";
+
+  // 捕獲成功時は派手な confetti
+  useEffect(() => {
+    if (!isCaught) return;
+    let cancelled = false;
+    (async () => {
+      const mod = await import("canvas-confetti");
+      const confetti = mod.default;
+      if (cancelled) return;
+      const palette = ["#fbbf24", "#f59e0b", "#a78bfa", "#34d399", "#f472b6"];
+      confetti({
+        particleCount: 200,
+        spread: 100,
+        origin: { x: 0.5, y: 0.4 },
+        colors: palette,
+        zIndex: 9999,
+      });
+      setTimeout(() => {
+        confetti({
+          particleCount: 120,
+          angle: 60,
+          spread: 70,
+          origin: { x: 0, y: 0.6 },
+          colors: palette,
+          zIndex: 9999,
+        });
+      }, 250);
+      setTimeout(() => {
+        confetti({
+          particleCount: 120,
+          angle: 120,
+          spread: 70,
+          origin: { x: 1, y: 0.6 },
+          colors: palette,
+          zIndex: 9999,
+        });
+      }, 420);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isCaught]);
 
   return (
     <div
       role="dialog"
       aria-modal="true"
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4"
+      className={`fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-md ${
+        isCaught
+          ? "bg-gradient-to-br from-amber-300/50 via-rose-300/40 to-fuchsia-300/50"
+          : "bg-black/70"
+      }`}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         className={`w-full max-w-sm rounded-[2rem] bg-gradient-to-br ${RARITY_TONE[animal.rarity]} p-1 shadow-2xl`}
       >
         <div className="rounded-[1.75rem] bg-white px-6 py-7 text-center">
-          <p className="text-[10px] font-bold tracking-[0.4em] text-slate-500">
-            {isCaught ? "✨ 命中 ✨" : "💨 のがした 💨"}
+          <p
+            className={`text-[10px] font-bold tracking-[0.4em] ${
+              isCaught ? "text-amber-600 animate-pulse" : "text-slate-500"
+            }`}
+          >
+            {isCaught ? "🎉 だいせいかい 🎉" : "💨 ざんねん 💨"}
           </p>
 
-          {isCaught ? (
-            <div className="mt-3 flex items-center justify-center">
-              <span className="text-7xl drop-shadow-lg">{animal.emoji}</span>
-            </div>
-          ) : (
-            <div className="mt-3 flex items-center justify-center">
+          <h2
+            className={`mt-2 text-2xl font-black leading-tight ${
+              isCaught
+                ? "bg-gradient-to-r from-amber-500 via-rose-500 to-fuchsia-500 bg-clip-text text-transparent"
+                : "text-slate-700"
+            }`}
+          >
+            {isCaught ? "ずかんに とうろく！" : "にげられた…"}
+          </h2>
+
+          <div className="mt-4 flex items-center justify-center">
+            {isCaught ? (
+              <span className="text-8xl drop-shadow-lg animate-bounce">
+                {animal.emoji}
+              </span>
+            ) : (
               <span
-                className="text-7xl"
+                className="text-8xl"
                 style={{ filter: "brightness(0)", opacity: 0.6 }}
               >
                 {animal.emoji}
               </span>
-            </div>
-          )}
+            )}
+          </div>
 
           <p className="mt-2 text-[11px] font-bold text-slate-500">
             {animal.genericName}
           </p>
-          <p className="text-xl font-black text-slate-800 leading-tight">
+          <p className="text-lg font-black text-slate-800">
             {isCaught ? animal.specificName : "？？？"}
           </p>
 
@@ -536,34 +971,31 @@ function ResultModal({
             )}
           </div>
 
-          {isCaught ? (
-            <>
-              <p className="mt-4 text-sm text-slate-700 leading-relaxed text-left">
-                {animal.description}
+          <p className={`mt-4 text-sm leading-relaxed ${isCaught ? "text-emerald-700" : "text-rose-600"} font-bold`}>
+            {reason}
+          </p>
+
+          {isCaught && (
+            <div className="mt-3 rounded-2xl bg-amber-50 p-3 ring-1 ring-amber-200 text-left">
+              <p className="text-[10px] font-extrabold text-amber-700 tracking-widest">
+                📜 {tool.name} の 歴史
               </p>
-              {result.tool.historicalContext && (
-                <div className="mt-3 rounded-xl bg-amber-50 p-3 ring-1 ring-amber-200 text-left">
-                  <p className="text-[10px] font-extrabold text-amber-700 tracking-widest">
-                    📜 {result.tool.name} の 歴史
-                  </p>
-                  <p className="mt-1 text-[11px] text-amber-900 leading-relaxed">
-                    {result.tool.historicalContext}
-                  </p>
-                </div>
-              )}
-            </>
-          ) : (
-            <p className="mt-4 text-sm text-slate-500">
-              タイミングが ずれて 逃げられた…！もういちど ちょうせん！
-            </p>
+              <p className="mt-1 text-[11px] text-amber-900 leading-relaxed">
+                {tool.historicalContext}
+              </p>
+            </div>
           )}
 
           <button
             type="button"
             onClick={onClose}
-            className="mt-6 w-full rounded-full bg-slate-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-slate-700 active:scale-95"
+            className={`mt-6 w-full rounded-full px-6 py-3 text-sm font-extrabold text-white transition active:scale-95 ${
+              isCaught
+                ? "bg-gradient-to-r from-amber-500 via-rose-500 to-fuchsia-500 hover:brightness-110"
+                : "bg-slate-700 hover:bg-slate-600"
+            }`}
           >
-            {isCaught ? "やったー！" : "つぎは 当てる"}
+            {isCaught ? "やったー！" : "つぎは ぜったい よむ"}
           </button>
         </div>
       </div>

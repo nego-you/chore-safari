@@ -2,6 +2,7 @@
 // 即時抽選 (旧 exploreSafari) は廃止。setTrap → 待機 → checkTrap → resolveTrap の流れ。
 
 import { prisma } from "@/lib/prisma";
+import { getHuntStamina } from "../../actions";
 import { SafariClient } from "./SafariClient";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +50,9 @@ export default async function SafariPage({
 
   const initialKid =
     kidParam && kids.some((k) => k.id === kidParam) ? kidParam : null;
+
+  // アクティブ狩り（BOW/SPEAR）用の本日残り回数。罠スタイル自体は制限なし。
+  const huntStamina = initialKid ? await getHuntStamina(initialKid) : null;
 
   const traps = activeTraps.map((t) => ({
     id: t.id,
@@ -104,6 +108,8 @@ export default async function SafariPage({
       inventory={inventory}
       activeTraps={traps}
       catches={catches}
+      huntStaminaRemaining={huntStamina?.remaining ?? null}
+      huntStaminaLimit={huntStamina?.limit ?? 3}
     />
   );
 }

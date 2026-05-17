@@ -1,9 +1,9 @@
 // /kids/[kidId]/safari/hunt — アクティブ狩り（投槍器・複合弓）専用ページ。
 // 罠スタイル（/safari）と並ぶ、ゲージ式タイミングで即決着するモード。
 
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { getHuntStamina } from "../../../actions";
 import { HuntClient } from "./HuntClient";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +13,7 @@ type Params = Promise<{ kidId: string }>;
 export default async function HuntPage({ params }: { params: Params }) {
   const { kidId } = await params;
 
-  const [kid, tools, stages, inventory] = await Promise.all([
+  const [kid, tools, stages, inventory, stamina] = await Promise.all([
     prisma.user.findFirst({
       where: { id: kidId, role: "CHILD" },
       select: { id: true, name: true, coinBalance: true },
@@ -41,6 +41,7 @@ export default async function HuntPage({ params }: { params: Params }) {
     prisma.sharedInventoryItem.findMany({
       select: { itemId: true, quantity: true, itemName: true },
     }),
+    getHuntStamina(kidId),
   ]);
 
   if (!kid) notFound();
@@ -76,6 +77,7 @@ export default async function HuntPage({ params }: { params: Params }) {
         }))}
       inventory={inventory}
       noTools={noTools}
+      initialStamina={stamina}
     />
   );
 }

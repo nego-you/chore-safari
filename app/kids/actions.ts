@@ -525,10 +525,75 @@ export async function resolveTrap(
 }
 
 // ─────────────────────────────────────────────
-// アクティブ狩り（投槍器・複合弓）：ゲージ式タイミングで即時決着するモード。
-//   startActiveHunt : 道具(Tool)を選んで開始。獲物事前抽選 → Hunt(huntType=BOW/SPEAR)を APPEARED 状態で生成し即返却。
-//   resolveActiveHunt : ゲージタイミングの結果 (0.0〜1.0 の命中精度) で CAUGHT/ESCAPED を決定。
+// アクティブ狩り（投槍器・複合弓）：状況判断 → 読解クイズで決着するモード。
+//   getHuntStamina : 今日のアクティブ狩り残り回数を取得（深夜0時リセット込み）。
+//   startActiveHunt : 1日3回までのスタミナを消費し、Hunt(APPEARED) を即作成。
+//   resolveActiveHunt : 行動選択/読解クイズの正否を渡して CAUGHT/ESCAPED を確定。
 // 既存の TRAP モード (setTrap/checkTrap/resolveTrap) との二刀流。
+// ─────────────────────────────────────────────
+
+// 1日の上限回数。子供が「絶対に逃したくない」と感じるようにあえて少なめ。
+export const HUNT_DAILY_LIMIT = 3;
+
+// JST（Asia/Tokyo）で今日の日付文字列 (YYYY-MM-DD) を返す。
+// 深夜0時のリセット判定は「サーバ時刻」ではなく「JSTでの日付」を使う。
+function todayJstString(d: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+export type HuntStaminaInfo = {
+  used: number;
+  remaining: number;
+  limit: number;
+  lastHuntDate: string | null; // ISO
+};
+
+// User の lastHuntDate と現在 JST 日を比較し、日付が変わっていれば dailyHuntCount を 0 に戻す。
+// すでに同日なら何もしない。返り値は最新の {used, remaining}。
+async function _readStaminaWithReset(userId: string): Promise<HuntStaminaInfo> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { dailyHuntCount: true, lastHuntDate: true },
+  });
+  if (!user) {
+    return { used: 0, remaining: 0, limit: HUNT_DAILY_LIMIT, lastHuntDate: null };
+  }
+  const today = todayJstString();
+  const lastDate = user.lastHuntDate ? todayJstString(user.lastHuntDate) : null;
+
+  if (lastDate !== today && user.dailyHuntCount > 0) {
+    // 日付が変わっている → リセット。並列リクエストでも安全なように条件付き update。
+    await prisma.user.updateMany({
+      where: { id: userId, dailyHuntCount: { gt: 0 } },
+      data: { dailyHuntCount: 0 },
+    });
+    return {
+      used: 0,
+      remaining: HUNT_DAILY_LIMIT,
+      limit: HUNT_DAILY_LIMIT,
+      lastHuntDate: user.lastHuntDate?.toISOString() ?? null,
+    };
+  }
+  const used = Math.min(user.dailyHuntCount, HUNT_DAILY_LIMIT);
+  return {
+    used,
+    remaining: Math.max(0, HUNT_DAILY_LIMIT - used),
+    limit: HUNT_DAILY_LIMIT,
+    lastHuntDate: user.lastHuntDate?.toISOString() ?? null,
+  };
+}
+
+export async function getHuntStamina(userId: string): Promise<HuntStaminaInfo> {
+  return _readStaminaWithReset(userId);
+}
+
+// ─────────────────────────────────────────────
+// アクティブ狩り：内部実装
 // ─────────────────────────────────────────────
 
 export type StartActiveHuntResult =
@@ -546,13 +611,15 @@ export type StartActiveHuntResult =
         appearsAt: string;
         // 演出に必要な範囲で動物の情報を返す
         targetAnimal: AnimalLite;
-        // 命中ゲージのスイートスポット幅（0〜1、道具で広がる）
+        // 命中ゲージのスイートスポット幅（0〜1、道具で広がる）— 旧UI互換
         sweetSpotWidth: number;
       };
       // 道具が消費型なら倉庫が更新される
       updatedInventory?: Array<{ itemId: string; quantity: number }>;
+      // 消費後のスタミナ
+      stamina: HuntStaminaInfo;
     }
-  | { success: false; error: string };
+  | { success: false; error: string; stamina?: HuntStaminaInfo };
 
 export async function startActiveHunt(
   userId: string,
@@ -565,6 +632,16 @@ export async function startActiveHunt(
   });
   if (!user || user.role !== "CHILD") {
     return { success: false, error: "ユーザーが みつかりません" };
+  }
+
+  // 1日3回制限：先に日付リセット → 残り回数チェック
+  const staminaBefore = await _readStaminaWithReset(userId);
+  if (staminaBefore.remaining <= 0) {
+    return {
+      success: false,
+      error: `きょうの かりは もう おわり！ あしたまた チャレンジしてね`,
+      stamina: staminaBefore,
+    };
   }
 
   const tool = await prisma.tool.findUnique({ where: { id: toolDbId } });
@@ -603,6 +680,19 @@ export async function startActiveHunt(
   const now = new Date();
   try {
     const created = await prisma.$transaction(async (tx) => {
+      // スタミナを 1 消費（並列リクエストでも超過しないよう条件付き update）
+      const staUpd = await tx.user.updateMany({
+        where: {
+          id: userId,
+          dailyHuntCount: { lt: HUNT_DAILY_LIMIT },
+        },
+        data: {
+          dailyHuntCount: { increment: 1 },
+          lastHuntDate: now,
+        },
+      });
+      if (staUpd.count !== 1) throw new Error("OUT_OF_STAMINA");
+
       if (inventoryRow) {
         const upd = await tx.sharedInventoryItem.updateMany({
           where: { itemId: inventoryRow.itemId, quantity: { gte: 1 } },
@@ -662,8 +752,18 @@ export async function startActiveHunt(
       updatedInventory: inventoryRow
         ? [{ itemId: inventoryRow.itemId, quantity: inventoryRow.quantity - 1 }]
         : undefined,
+      stamina: {
+        used: staminaBefore.used + 1,
+        remaining: Math.max(0, staminaBefore.remaining - 1),
+        limit: HUNT_DAILY_LIMIT,
+        lastHuntDate: now.toISOString(),
+      },
     };
   } catch (err) {
+    if (err instanceof Error && err.message === "OUT_OF_STAMINA") {
+      const fresh = await _readStaminaWithReset(userId);
+      return { success: false, error: "きょうの かりは もう おわり！", stamina: fresh };
+    }
     if (err instanceof Error && err.message === "OUT_OF_MATERIAL") {
       return { success: false, error: "素材が たりません" };
     }

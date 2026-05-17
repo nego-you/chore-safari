@@ -78,6 +78,9 @@ type Props = {
   inventory: Inv[];
   activeTraps: TrapDTO[];
   catches: CatchEntry[];
+  // アクティブ狩り（BOW/SPEAR）の本日残り回数。罠スタイル自体は無制限なので nullable。
+  huntStaminaRemaining?: number | null;
+  huntStaminaLimit?: number;
 };
 
 const NAME_READING: Record<string, string> = {
@@ -322,6 +325,8 @@ export function SafariClient({
   inventory,
   activeTraps: initialTraps,
   catches: initialCatches,
+  huntStaminaRemaining = null,
+  huntStaminaLimit = 3,
 }: Props) {
   const [kidId, setKidId] = useState<string | null>(initialKidId);
   const [inv, setInv] = useState<Inv[]>(inventory);
@@ -546,16 +551,36 @@ export function SafariClient({
           </div>
           <Link
             href={`/kids/${selectedKid.id}/safari/hunt`}
-            className="flex-1 rounded-2xl bg-gradient-to-br from-emerald-300 to-teal-300 p-1 ring-2 ring-emerald-200 shadow transition active:scale-95 hover:brightness-105"
+            className={`flex-1 rounded-2xl p-1 ring-2 shadow transition active:scale-95 hover:brightness-105 ${
+              huntStaminaRemaining !== null && huntStaminaRemaining <= 0
+                ? "bg-gradient-to-br from-slate-300 to-slate-400 ring-slate-300 opacity-70"
+                : "bg-gradient-to-br from-emerald-300 to-teal-300 ring-emerald-200"
+            }`}
           >
             <div className="rounded-[0.9rem] bg-white/85 px-3 py-2 text-center">
               <p className="text-[10px] font-bold text-emerald-700 tracking-widest">
                 きりかえる
               </p>
               <p className="text-sm font-black text-emerald-900">🏹 アクティブ 狩り</p>
-              <p className="text-[10px] text-emerald-700/80">
-                投槍器・複合弓 / ゲージ式
-              </p>
+              {huntStaminaRemaining !== null ? (
+                <p className="text-[11px] font-extrabold text-emerald-700">
+                  きょうの かり：あと{" "}
+                  <span
+                    className={
+                      huntStaminaRemaining <= 0
+                        ? "text-rose-500 text-base"
+                        : "text-emerald-700 text-base"
+                    }
+                  >
+                    {huntStaminaRemaining}
+                  </span>
+                  /{huntStaminaLimit} かい
+                </p>
+              ) : (
+                <p className="text-[10px] text-emerald-700/80">
+                  状況判断 → 読解クイズ
+                </p>
+              )}
             </div>
           </Link>
         </div>
