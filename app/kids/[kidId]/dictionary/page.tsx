@@ -33,10 +33,15 @@ export default async function DictionaryPage({ params }: { params: Params }) {
         imageUrl: true,
         isExtinct: true,
         habitat: true,
+        era: true,
+        location: true,
       },
     }),
     // 🌟 家族全員ぶんの捕獲履歴を取得（個別ではなく、システム全体）
     prisma.caughtAnimal.findMany({
+      where: {
+        caughtBy: { isTestAccount: false },
+      },
       select: {
         animalId: true,
         caughtByUserId: true,
@@ -44,7 +49,7 @@ export default async function DictionaryPage({ params }: { params: Params }) {
       },
     }),
     prisma.user.findMany({
-      where: { role: "CHILD" },
+      where: { role: "CHILD", isTestAccount: false },
       orderBy: { birthDate: "asc" },
       select: { id: true, name: true },
     }),

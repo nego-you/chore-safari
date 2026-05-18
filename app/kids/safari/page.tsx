@@ -39,6 +39,7 @@ export default async function SafariPage({
       include: { targetAnimal: true },
     }),
     prisma.caughtAnimal.findMany({
+      where: { caughtBy: { isTestAccount: false } },
       orderBy: { caughtAt: "desc" },
       take: 200,
       include: {

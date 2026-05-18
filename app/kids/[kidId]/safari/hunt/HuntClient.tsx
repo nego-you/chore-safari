@@ -20,7 +20,7 @@ type ToolEntry = {
   emoji: string;
   description: string;
   historicalContext: string;
-  type: "BOW" | "SPEAR";
+  type: "BOW" | "SPEAR" | "WEAPON";
   successRateBonus: number;
   inventoryItemId: string | null;
   consumable: boolean;
@@ -34,8 +34,6 @@ type StageEntry = {
   description: string;
   animalCount: number;
 };
-
-type InventoryRow = { itemId: string; quantity: number; itemName: string };
 
 type AnimalLite = {
   id: string;
@@ -59,7 +57,7 @@ type StaminaInfo = {
 
 type ActiveHunt = {
   id: string;
-  huntType: "BOW" | "SPEAR";
+  huntType: "BOW" | "SPEAR" | "WEAPON";
   toolName: string;
   toolEmoji: string;
   targetAnimal: AnimalLite;
@@ -70,7 +68,6 @@ type Props = {
   kidName: string;
   tools: ToolEntry[];
   stages: StageEntry[];
-  inventory: InventoryRow[];
   noTools: boolean;
   initialStamina: StaminaInfo;
 };
@@ -135,6 +132,41 @@ const TOOL_ACTION_QUIZ: Record<string, ActionQuiz> = {
   },
 };
 
+// WEAPON（刃物・銃）用クイズ
+const WEAPON_ACTION_QUIZ_MAP: Record<string, ActionQuiz> = {
+  flint_knife: {
+    question: "せっきの ナイフで どう ちかづく？",
+    choices: [
+      { emoji: "🤫", label: "しずかに はらって えものに ちかづく", correct: true },
+      { emoji: "🏃", label: "ダッシュして ながら きる", correct: false },
+      { emoji: "📢", label: "おおごえで おどかしてから きる", correct: false },
+    ],
+  },
+  survival_knife: {
+    question: "サバイバルナイフで どう ねらう？",
+    choices: [
+      { emoji: "🌿", label: "くさに かくれて えものを まつ", correct: true },
+      { emoji: "🔊", label: "さけびながら とびかかる", correct: false },
+    ],
+  },
+  arquebus: {
+    question: "ひなわじゅうで うつ まえに なにを する？",
+    choices: [
+      { emoji: "🎯", label: "しっかり たいせいを ととのえて ねらいを さだめる", correct: true },
+      { emoji: "💨", label: "いそいで てきとうに うつ", correct: false },
+      { emoji: "🏃", label: "はしりながら うつ", correct: false },
+    ],
+  },
+  hunting_rifle: {
+    question: "りょうじゅうで とおくの えものを ねらう とき、どうする？",
+    choices: [
+      { emoji: "🌬️", label: "かぜの むきを よんで、しずかに こきゅうを ととのえる", correct: true },
+      { emoji: "🎉", label: "おおさわぎして ちゅういを ひく", correct: false },
+      { emoji: "⏩", label: "はやく うてば あたる", correct: false },
+    ],
+  },
+};
+
 // デフォルト（未知の道具用）
 const DEFAULT_ACTION_QUIZ: ActionQuiz = {
   question: "どう ねらう？",
@@ -163,7 +195,6 @@ export function HuntClient({
   kidName,
   tools,
   stages,
-  inventory: _inventory,
   noTools,
   initialStamina,
 }: Props) {
@@ -380,9 +411,8 @@ export function HuntClient({
 
         {noTools && (
           <div className="rounded-2xl bg-yellow-100 px-4 py-3 text-sm font-bold text-yellow-900 ring-1 ring-yellow-300">
-            ⚠️ 弓・投槍器の データが ありません。
-            <code className="ml-1 rounded bg-yellow-200 px-1">npm run db:seed</code>{" "}
-            を実行してね。
+            ⚠️ つかえる どうぐが ありません。
+            クラフト工場で BOW・とうしゃぶき・ぶき を つくってね！
           </div>
         )}
 
@@ -445,7 +475,9 @@ export function HuntClient({
                         ? "bg-slate-100 ring-slate-200 opacity-50 cursor-not-allowed"
                         : t.type === "BOW"
                           ? "bg-gradient-to-br from-emerald-100 to-teal-100 ring-emerald-300 hover:scale-[1.02]"
-                          : "bg-gradient-to-br from-sky-100 to-indigo-100 ring-sky-300 hover:scale-[1.02]"
+                          : t.type === "SPEAR"
+                            ? "bg-gradient-to-br from-sky-100 to-indigo-100 ring-sky-300 hover:scale-[1.02]"
+                            : "bg-gradient-to-br from-rose-100 to-orange-100 ring-rose-300 hover:scale-[1.02]"
                     }`}
                   >
                     <div className="flex items-start gap-2">
@@ -455,7 +487,7 @@ export function HuntClient({
                           {t.name}
                         </p>
                         <p className="text-[10px] font-bold text-slate-600 mt-0.5">
-                          {t.type === "BOW" ? "弓" : "投擲"} ／ 命中 +{Math.round(t.successRateBonus * 100)}%
+                          {t.type === "BOW" ? "🏹 弓" : t.type === "SPEAR" ? "🗡️ 投擲" : "🔪 ぶき"} ／ 命中 +{Math.round(t.successRateBonus * 100)}%
                         </p>
                         <p className="text-[10px] text-slate-500 mt-1 line-clamp-2">
                           {t.description}
@@ -559,7 +591,10 @@ function EncounterModal({
   onPass: (hunt: ActiveHunt, tool: ToolEntry) => void;
   onFail: (reason: string) => void;
 }) {
-  const quiz = TOOL_ACTION_QUIZ[tool.toolId] ?? DEFAULT_ACTION_QUIZ;
+  const quiz =
+    TOOL_ACTION_QUIZ[tool.toolId] ??
+    WEAPON_ACTION_QUIZ_MAP[tool.toolId] ??
+    DEFAULT_ACTION_QUIZ;
   const [picked, setPicked] = useState<number | null>(null);
 
   const handlePick = (idx: number) => {

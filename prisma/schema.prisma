@@ -33,8 +33,9 @@ enum CoinTxKind {
 }
 
 enum ItemType {
-  FOOD       // エサ
-  TRAP_PART  // 罠パーツ
+  FOOD       // エサ（廃止済み・履歴用）
+  TRAP_PART  // 旧罠パーツ（廃止済み・履歴用）
+  MATERIAL   // 新素材（クレーンゲームドロップ品）
 
   @@map("item_type")
 }
@@ -57,22 +58,25 @@ enum QuestStatus {
 }
 
 // 狩りの種別。
-//   TRAP  : 落とし穴・トラバサミなどのパッシブ罠（仕掛けて待つ）
-//   BOW   : 複合弓などの飛び道具（ゲージ式タイミング）
-//   SPEAR : アトラトル(投槍器)・槍などの投擲武器（ゲージ式タイミング）
+//   TRAP   : 落とし穴・トラバサミなどのパッシブ罠（仕掛けて待つ）
+//   BOW    : 複合弓などの飛び道具（ゲージ式タイミング）
+//   SPEAR  : アトラトル(投槍器)・槍などの投擲武器（ゲージ式タイミング）
+//   WEAPON : 刃物・銃火器（ゲージ式タイミング）
 enum HuntType {
   TRAP
   BOW
   SPEAR
+  WEAPON
 
   @@map("hunt_type")
 }
 
 // 道具種別。シードデータの type フィールドに対応。
 enum ToolType {
-  TRAP
-  BOW
-  SPEAR
+  TRAP    // パッシブ罠（仕掛けて待つ。使い捨て）
+  BOW     // 弓（アクティブ狩り・非消耗）
+  SPEAR   // 投槍器（アクティブ狩り・非消耗）
+  WEAPON  // 刃物・銃火器（アクティブ狩り・非消耗）
 
   @@map("tool_type")
 }
@@ -98,14 +102,14 @@ model User {
   birthDate         DateTime           @map("birth_date") @db.Date
   role              UserRole           @default(CHILD)
   coinBalance       Int                @default(0) @map("coin_balance")
-  // 1日のアクティブ狩り（BOW/SPEAR）回数制限管理。
+  // 1日のアクティブ狩り（BOW/SPEAR/WEAPON）回数制限管理。
   //   dailyHuntCount: 「今日 既に消費した」回数。0〜HUNT_DAILY_LIMIT。
   //   lastHuntDate  : 最後にカウンタを増やした日（深夜0時で繰り越し判定）。
   // 起動時に lastHuntDate と「今日」が違えば dailyHuntCount を 0 リセットする。
   dailyHuntCount    Int                @default(0) @map("daily_hunt_count")
   lastHuntDate      DateTime?          @map("last_hunt_date")
   // テスト用フラグ：true の場合、コイン・回数制限をすべてバイパスする
-  isTest            Boolean            @default(false) @map("is_test")
+  isTestAccount     Boolean            @default(false) @map("is_test")
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")
   transactions       CoinTransaction[]
@@ -114,6 +118,8 @@ model User {
   bonusNotifications SpecialBonusNotification[]
   questSubmissions   QuestSubmission[]
   hunts              Hunt[]
+  userMaterials      UserMaterial[]
+  userTools          UserTool[]
   // 専用クエストの対象となる場合
   targetedQuests     Quest[]
   // 専用ペナルティの対象となる場合
@@ -208,11 +214,16 @@ model Tool {
   // 罠は使い切り(消費)、弓・投槍器はストック扱い（消費 0）。
   inventoryItemId   String?  @map("inventory_item_id")
   consumable        Boolean  @default(true)
+  // 地域ラベル（世界地図ハイライト用）
+  location          String   @default("") @map("location")
+  // 時代ラベル（タイムライン表示用）
+  era               String   @default("") @map("era")
   // 並び順（小さい数字ほど前に表示）
   sortOrder         Int      @default(0) @map("sort_order")
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
   hunts             Hunt[]
+  userTools         UserTool[]
 
   @@index([type])
   @@map("tools")
@@ -239,6 +250,10 @@ model Animal {
   isExtinct    Boolean        @default(false) @map("is_extinct")
   // 生息地の自由記述（例: "アフリカのサバンナ" / "北極圏" / "中生代白亜紀"）
   habitat      String         @default("") @map("habitat")
+  // 地域ラベル（世界地図ハイライト用: "アフリカ" / "アジア" / "ヨーロッパ" / "アメリカ" / "ユーラシア" / "かいよう" / "せかい"）
+  location     String         @default("") @map("location")
+  // 時代ラベル（タイムライン表示用: "きょうりゅうじだい" / "こおりのじだい" / "げんだい" など）
+  era          String         @default("") @map("era")
   // どのステージに属するか（null=未分類/プレイ可能ながらステージ未割当）
   stageId      String?        @map("stage_id")
   stage        Stage?         @relation(fields: [stageId], references: [id], onDelete: SetNull)
@@ -367,6 +382,55 @@ model Hunt {
   @@index([targetAnimalId])
   @@index([huntType])
   @@map("hunts")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 素材マスタ：クレーンゲームでドロップする生素材。クラフトで消費する。
+//   1人1行。quantity が 0 でも行は残す（クラフト画面で素材欄を常に表示するため）。
+// ─────────────────────────────────────────────────────────────
+model Material {
+  id            String         @id @default(cuid())
+  materialId    String         @unique @map("material_id")   // "wood_branch" / "stone" / …
+  name          String
+  emoji         String         @default("📦")
+  description   String         @default("")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  userMaterials UserMaterial[]
+
+  @@map("materials")
+}
+
+// ユーザーごとの素材所持数。
+model UserMaterial {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  materialId String   @map("material_id")
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  quantity   Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, materialId])
+  @@index([userId])
+  @@map("user_materials")
+}
+
+// ユーザーごとの道具所持数（クラフトで増える。TRAPは使い捨て、それ以外は永続）。
+model UserTool {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  toolId    String   @map("tool_id")
+  tool      Tool     @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  quantity  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, toolId])
+  @@index([userId])
+  @@map("user_tools")
 }
 
 // ペナルティマスタ：親が「やったらコイン没収」を事前定義しておく。

@@ -19,6 +19,7 @@ export default async function RacePage({
 
   // 家族で捕まえたことのある動物を、種別ごとに最新の捕獲時刻つきで集める。
   const catches = await prisma.caughtAnimal.findMany({
+    where: { caughtBy: { isTestAccount: false } },
     orderBy: { caughtAt: "desc" },
     include: { animal: true },
   });

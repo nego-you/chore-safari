@@ -1,9 +1,14 @@
 "use client";
 
-// UFOキャッチャー仕様クレーンゲーム（本格改修版）
-// ステートマシン: IDLE → MOVING_X → WAITING_Y → MOVING_Y → GRABBING → RETURNING → DROPPING → SHOW
-// 操作: ➡️（移動開始/停止）⬇️（降下）の 2 ボタンのみ
-// CSSトランジションで滑らか動作（setInterval/requestAnimationFrame 座標計算なし）
+// UFOキャッチャー仕様クレーンゲーム（実機挙動再現版）
+// ステートマシン:
+//   IDLE → MOVING_RIGHT（右押し）→ WAITING_DEPTH（右離し）
+//   → MOVING_DEPTH（奥押し）→ DROPPING（奥離し・自動降下）
+//   → GRABBING → RETURNING → SHOW → IDLE
+// ボタン操作:
+//   ➡️ 押している間 右移動、離すと停止 → WAITING_DEPTH
+//   ⬆️ 押している間 奥移動（縮小演出）、離すと自動降下 → DROPPING
+// try-catch-finally でフリーズバグを完全修正（どのパスでも必ず IDLE に戻る）。
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -16,12 +21,12 @@ type Props = { initialKidId: string | null; kids: Kid[] };
 
 type MachineState =
   | "IDLE"
-  | "MOVING_X"
-  | "WAITING_Y"
-  | "MOVING_Y"
+  | "MOVING_RIGHT"
+  | "WAITING_DEPTH"
+  | "MOVING_DEPTH"
+  | "DROPPING"
   | "GRABBING"
   | "RETURNING"
-  | "DROPPING"
   | "SHOW";
 
 type Prize = {
@@ -39,26 +44,27 @@ type Outcome =
   | null;
 
 // ── 定数 ────────────────────────────────────────────────────────────────
-const X_START = 8;   // クレーン初期位置（プレイエリア幅の %）
-const X_END   = 88;  // クレーン右端（%）
-const CABLE_TOP = 7; // プレイエリア上端からクレーングループの top（%）
-const CABLE_EXTENDED = "min(46vh, 255px)"; // ケーブル最大長
+const X_START = 8;
+const X_END   = 88;
+const CABLE_TOP = 7;
+const CABLE_EXTENDED = "min(46vh, 255px)";
 const DROP_CHANCE = 0.2;
 
-// アニメーション時間 (ms)
 const MS = {
-  moveX:    7000, // 左端→右端 全移動時間
-  moveY:    1500, // ケーブル降下
-  grab:     1200, // 掴む演出最低時間（API 待ちを含む）
-  retract:   700, // ケーブル収縮
-  returnX:  1800, // 左端へ帰還
-  dropping:  700, // アーム開いて結果前
-  fall:      850, // 途中落下アニメ
+  moveX:        4000, // 左端→右端 全移動時間（1〜2 秒押すと中央付近へ）
+  depthInMs:    1200, // 奥移動 CSS transition（押し込み：ゆっくり）
+  depthOutMs:    400, // 奥移動 CSS transition（離し・戻り：素早く）
+  depthReturn:   400, // ※ 現在未使用（奥演出は DROPPING 中も維持し RETURNING で一括リセット）
+  moveY:        1500, // ケーブル降下
+  grab:         1200, // 掴む演出最低時間（API 待ちを含む）
+  retract:       700, // ケーブル収縮
+  returnX:      1800, // 左端へ帰還
+  dropping:      700, // アーム開いて結果前
+  fall:          850, // 途中落下アニメ
 } as const;
 
 const ITEM_EMOJI: Record<string, string> = {
-  meat: "🍖", fish: "🐟", berry: "🍓", rope: "🪢", wood: "🪵",
-  net: "🕸️", sturdy_trap: "🪤", premium_food: "🍱", hunter_net: "🥅", mixed_food: "🍲",
+  rope: "🪢", wood: "🪵", net: "🕸️", sturdy_trap: "🪤", hunter_net: "🥅",
 };
 
 const NAME_READING: Record<string, string> = {
@@ -109,10 +115,10 @@ export function CraneClient({ initialKidId, kids }: Props) {
   const [kidId, setKidId] = useState<string | null>(initialKidId);
   const selectedKid = kidId ? kids.find((k) => k.id === kidId) ?? null : null;
 
-  // ゲーム状態
   const [mState,        setMState]        = useState<MachineState>("IDLE");
   const [craneX,        setCraneX]        = useState(X_START);
   const [xTransition,   setXTransition]   = useState("none");
+  const [isDepth,       setIsDepth]       = useState(false);
   const [cableExtended, setCableExtended] = useState(false);
   const [clawClosed,    setClawClosed]    = useState(false);
   const [carriedEmojis, setCarriedEmojis] = useState<string[]>([]);
@@ -126,142 +132,187 @@ export function CraneClient({ initialKidId, kids }: Props) {
   const [heapSeed, setHeapSeed] = useState(1);
   const heap = useMemo(() => buildHeap(heapSeed), [heapSeed]);
 
-  // MOVING_X 開始時刻（補間で現在位置を計算するため）
   const moveStartRef = useRef(0);
-  // 非同期シーケンスの二重起動防止
-  const busyRef = useRef(false);
+  const busyRef      = useRef(false);
 
-  // 子供切り替え時に残高を更新
   useEffect(() => {
     if (!kidId) return;
     const k = kids.find((x) => x.id === kidId);
     if (k) setCoinBalance(k.coinBalance);
   }, [kidId, kids]);
 
-  // MOVING_X: 右端に達したら自動で WAITING_Y へ
+  // MOVING_RIGHT: 右端に達したら自動で WAITING_DEPTH へ
   useEffect(() => {
-    if (mState !== "MOVING_X") return;
+    if (mState !== "MOVING_RIGHT") return;
     const t = setTimeout(() => {
       setXTransition("none");
-      setMState("WAITING_Y");
+      setMState("WAITING_DEPTH");
     }, MS.moveX + 60);
     return () => clearTimeout(t);
   }, [mState]);
 
-  // ── ➡️ ハンドラ ──────────────────────────────────────────────────
-  const handleRight = useCallback(() => {
-    if (mState === "IDLE") {
-      // 移動開始: CSS transition で X_END まで滑らかに動く
-      moveStartRef.current = Date.now();
-      setXTransition(`left ${MS.moveX}ms linear`);
-      setCraneX(X_END);
-      setMState("MOVING_X");
-    } else if (mState === "MOVING_X") {
-      // 停止: 経過時間から現在の視覚的位置を線形補間で計算
-      const elapsed  = Date.now() - moveStartRef.current;
-      const progress = Math.min(1, elapsed / MS.moveX);
-      const currentX = X_START + progress * (X_END - X_START);
-      setXTransition("none");
-      setCraneX(currentX);
-      setMState("WAITING_Y");
-    }
+  // ── ➡️ ボタン押し（右移動開始） ──────────────────────────────
+  const handleRightDown = useCallback(() => {
+    if (mState !== "IDLE") return;
+    moveStartRef.current = Date.now();
+    setXTransition(`left ${MS.moveX}ms linear`);
+    setCraneX(X_END);
+    setMState("MOVING_RIGHT");
   }, [mState]);
 
-  // ── ⬇️ ハンドラ（非同期ステートマシン） ─────────────────────────
-  const handleDown = useCallback(async () => {
-    if (mState !== "WAITING_Y" || busyRef.current || !selectedKid) return;
+  // ── ➡️ ボタン離し（右移動停止 → WAITING_DEPTH） ────────────
+  const handleRightUp = useCallback(() => {
+    if (mState !== "MOVING_RIGHT") return;
+    const elapsed  = Date.now() - moveStartRef.current;
+    const progress = Math.min(1, elapsed / MS.moveX);
+    const currentX = X_START + progress * (X_END - X_START);
+    setXTransition("none");
+    setCraneX(currentX);
+    setMState("WAITING_DEPTH");
+  }, [mState]);
+
+  // ── ドロップシーケンス（フリーズバグ修正版） ──────────────────
+  // kid と capturedCraneX をパラメータで受け取り、クロージャで state を読まない。
+  // try-catch-finally により、成功・失敗・例外のいずれのパスでも
+  // 必ず busyRef=false かつ IDLE にリセットされることを保証する。
+  const runDropSequence = useCallback(
+    async (capturedCraneX: number, kid: Kid) => {
+      if (busyRef.current) return;
+      busyRef.current = true;
+      setError(null);
+      setFalling(false);
+      setCarriedEmojis([]);
+
+      const willDrop = Math.random() < DROP_CHANCE;
+      const didCatch = !willDrop;
+      let reachedShow = false;
+
+      try {
+        // 奥移動の transform（translateY / scale）を維持したまま降下開始。
+        // setIsDepth(false) は RETURNING まで呼ばない。
+        // これにより「右・奥に移動したその真下」へそのまま降りていく。
+
+        // ① DROPPING: ケーブル降下（CSS height transition）
+        setMState("DROPPING");
+        setCableExtended(true);
+        await wait(MS.moveY);
+
+        // ② GRABBING: ツメを閉じて API 呼び出し
+        setMState("GRABBING");
+        setClawClosed(true);
+        const grabStart = Date.now();
+
+        // API 呼び出し。サーバーエラー・ネットワーク障害どちらも安全に処理。
+        let result: Awaited<ReturnType<typeof playCraneGame>>;
+        try {
+          result = await playCraneGame(kid.id, didCatch);
+        } catch (apiErr) {
+          console.error("[CraneGame] playCraneGame threw:", apiErr);
+          setError("つうしん エラーが おきたよ。もう いちど どうぞ");
+          return; // finally で IDLE にリセット
+        }
+
+        if (!result.success) {
+          console.error("[CraneGame] API returned failure:", result.error);
+          setError(result.error ?? "エラーが発生したよ");
+          return; // finally で IDLE にリセット
+        }
+
+        // レスポンスデータをオプショナルチェーンで安全に取り出す
+        const rawItems = result.items ?? [];
+        setCoinBalance(result.newCoinBalance ?? 0);
+
+        const prizes: Prize[] = rawItems.map((it) => ({
+          itemId:        it?.itemId        ?? "",
+          itemName:      it?.itemName      ?? "アイテム",
+          itemType:      (it?.itemType     ?? "TRAP_PART") as "FOOD" | "TRAP_PART",
+          count:         it?.count         ?? 1,
+          totalQuantity: it?.totalQuantity ?? null,
+          emoji:         ITEM_EMOJI[it?.itemId ?? ""] ?? "🎁",
+        }));
+        setCarriedEmojis(
+          prizes.flatMap((p) => Array.from({ length: Math.max(1, p.count) }, () => p.emoji)),
+        );
+
+        // 掴む演出の残り時間を消化
+        const grabRemaining = MS.grab - (Date.now() - grabStart);
+        if (grabRemaining > 0) await wait(grabRemaining);
+
+        // ③ RETURNING: ケーブル収縮 + 奥移動リセット + 左端への帰還（同時進行）
+        // ここで初めて isDepth をリセットする。
+        // depth revert（400ms）と左帰還（1800ms）が同時に走り、自然な帰宅アニメになる。
+        setMState("RETURNING");
+        setCableExtended(false);
+        setIsDepth(false);
+        setXTransition(`left ${MS.returnX}ms cubic-bezier(.4,0,.2,1)`);
+        setCraneX(X_START);
+
+        if (willDrop) {
+          // 帰還の 40% 地点でアイテムを落とす（ハラハラ演出）
+          const dropDelay = Math.round(MS.returnX * 0.4);
+          await wait(dropDelay);
+          setFallingAtX(capturedCraneX + (X_START - capturedCraneX) * 0.4);
+          setClawClosed(false);
+          setFalling(true);
+          await wait(MS.fall);
+          setCarriedEmojis([]);
+          setFalling(false);
+          await wait(MS.returnX - dropDelay + 100);
+          setXTransition("none");
+          reachedShow = true;
+          setOutcome({ kind: "dropped", prizes });
+          setMState("SHOW");
+        } else {
+          // ケーブル収縮と横移動の長い方が終わるまで待つ
+          await wait(Math.max(MS.retract, MS.returnX) + 100);
+          setClawClosed(false);
+          await wait(MS.dropping);
+          setXTransition("none");
+          setCarriedEmojis([]);
+          reachedShow = true;
+          setOutcome({ kind: "caught", prizes });
+          setMState("SHOW");
+        }
+      } catch (e) {
+        console.error("[CraneGame] unexpected error:", e);
+        setError("エラーが発生したよ。もう いちど どうぞ");
+      } finally {
+        busyRef.current = false;
+        // SHOW に到達していない場合（エラー・失敗パス）は必ず IDLE に戻す。
+        // これがフリーズバグ修正の核心。
+        if (!reachedShow) {
+          setCableExtended(false);
+          setClawClosed(false);
+          setCarriedEmojis([]);
+          setIsDepth(false);
+          setFalling(false);
+          setXTransition("none");
+          setCraneX(X_START);
+          setMState("IDLE");
+        }
+      }
+    },
+    [],
+  );
+
+  // ── ⬆️ ボタン押し（奥移動開始） ──────────────────────────────
+  const handleDepthDown = useCallback(() => {
+    if (mState !== "WAITING_DEPTH") return;
+    setIsDepth(true);
+    setMState("MOVING_DEPTH");
+  }, [mState]);
+
+  // ── ⬆️ ボタン離し（自動降下トリガー） ─────────────────────────
+  const handleDepthUp = useCallback(() => {
+    if (mState !== "MOVING_DEPTH" || !selectedKid) return;
     if (coinBalance < CRANE_COST) {
       setError(`コインが ${CRANE_COST - coinBalance} まい たりないよ`);
+      setIsDepth(false);
+      setMState("WAITING_DEPTH");
       return;
     }
-    busyRef.current = true;
-    setError(null);
-    setFalling(false);
-    setCarriedEmojis([]);
-
-    // 停止位置を保存（落下演出の位置計算に使う）
-    const capturedCraneX = craneX;
-    const willDrop = Math.random() < DROP_CHANCE;
-    const didCatch = !willDrop;
-
-    // ① MOVING_Y: ケーブル降下（CSS height transition）
-    setMState("MOVING_Y");
-    setCableExtended(true);
-    await wait(MS.moveY);
-
-    // ② GRABBING: ツメを閉じてAPIを叩く（最低 MS.grab ms 待機）
-    setMState("GRABBING");
-    setClawClosed(true);
-    const grabStart = Date.now();
-    const result = await playCraneGame(selectedKid.id, didCatch);
-
-    if (!result.success) {
-      setError(result.error ?? "エラーが発生したよ");
-      setClawClosed(false);
-      setCableExtended(false);
-      setMState("WAITING_Y");
-      busyRef.current = false;
-      return;
-    }
-    setCoinBalance(result.newCoinBalance);
-
-    const prizes: Prize[] = result.items.map((it) => ({
-      itemId: it.itemId,
-      itemName: it.itemName,
-      itemType: it.itemType,
-      count: it.count,
-      totalQuantity: it.totalQuantity,
-      emoji: ITEM_EMOJI[it.itemId] ?? "🎁",
-    }));
-    // アイテムをツメに表示（API 結果が来たらすぐ）
-    setCarriedEmojis(prizes.flatMap((p) => Array.from({ length: p.count }, () => p.emoji)));
-
-    // 掴む演出の残り時間を消化
-    const grabRemaining = MS.grab - (Date.now() - grabStart);
-    if (grabRemaining > 0) await wait(grabRemaining);
-
-    // ③ RETURNING: ケーブル収縮 + 左端への帰還（CSS transition で同時進行）
-    setMState("RETURNING");
-    setCableExtended(false); // ← height transition で収縮
-    setXTransition(`left ${MS.returnX}ms cubic-bezier(.4,0,.2,1)`);
-    setCraneX(X_START);     // ← left transition で帰還
-
-    if (willDrop) {
-      // 帰還の 40% 地点でアイテムを落とす（ハラハラ演出）
-      const dropDelay = Math.round(MS.returnX * 0.4);
-      await wait(dropDelay);
-
-      // 落下位置: capturedCraneX → X_START へ 40% 進んだ地点
-      setFallingAtX(capturedCraneX + (X_START - capturedCraneX) * 0.4);
-      setClawClosed(false);
-      setFalling(true);
-      await wait(MS.fall);
-      setCarriedEmojis([]);
-      setFalling(false);
-
-      // 残り帰還時間を待つ
-      await wait(MS.returnX - dropDelay + 100);
-      setXTransition("none");
-      setOutcome({ kind: "dropped", prizes });
-      setMState("SHOW");
-    } else {
-      // ケーブル収縮と横移動、長い方が終わるまで待つ
-      await wait(Math.max(MS.retract, MS.returnX) + 100);
-
-      // ④ DROPPING: ツメを開いてアイテムを取り出し口へ
-      setMState("DROPPING");
-      setClawClosed(false);
-      await wait(MS.dropping);
-
-      // ⑤ SHOW
-      setXTransition("none");
-      setCarriedEmojis([]);
-      setOutcome({ kind: "caught", prizes });
-      setMState("SHOW");
-    }
-
-    busyRef.current = false;
-  }, [mState, selectedKid, coinBalance, craneX]);
+    runDropSequence(craneX, selectedKid);
+  }, [mState, selectedKid, coinBalance, craneX, runDropSequence]);
 
   // ── リセット ────────────────────────────────────────────────────
   const closeResult = () => {
@@ -273,6 +324,7 @@ export function CraneClient({ initialKidId, kids }: Props) {
     setClawClosed(false);
     setCarriedEmojis([]);
     setFalling(false);
+    setIsDepth(false);
     setHeapSeed((s) => s + 1);
   };
 
@@ -308,19 +360,21 @@ export function CraneClient({ initialKidId, kids }: Props) {
     );
   }
 
-  // ── ボタン有効状態 & ステータスメッセージ ────────────────────
-  const rightBtnActive = mState === "IDLE" || mState === "MOVING_X";
-  const downBtnActive  = mState === "WAITING_Y" && coinBalance >= CRANE_COST;
-  const noCoins        = mState === "WAITING_Y" && coinBalance < CRANE_COST;
+  // ── ボタン有効状態 ────────────────────────────────────────────
+  const rightBtnInteractive = mState === "IDLE" || mState === "MOVING_RIGHT";
+  const rightBtnHeld        = mState === "MOVING_RIGHT";
+  const depthBtnInteractive = mState === "WAITING_DEPTH" || mState === "MOVING_DEPTH";
+  const depthBtnHeld        = mState === "MOVING_DEPTH";
+  const noCoins = mState === "WAITING_DEPTH" && coinBalance < CRANE_COST;
 
   const STATUS: Partial<Record<MachineState, string>> = {
-    IDLE:      "➡️ を おして クレーンを うごかそう！",
-    MOVING_X:  "もう いちど ➡️ を おして とめよう！",
-    WAITING_Y: "⬇️ を おして アームを おとそう！",
-    MOVING_Y:  "⬇️ アームが おりていくよ…",
-    GRABBING:  "✊ ぐっと つかんだ！",
-    RETURNING: "⬆️ もちあげて もどってるよ…",
-    DROPPING:  "🎁 おとす！",
+    IDLE:          "➡️ ボタンを おして クレーンを うごかそう！",
+    MOVING_RIGHT:  "➡️ ボタンを はなすと とまるよ！",
+    WAITING_DEPTH: "⬆️ ボタンを おして 奥に うごかそう！",
+    MOVING_DEPTH:  "⬆️ ボタンを はなすと アームが おちるよ！",
+    DROPPING:      "⬇️ アームが おりていくよ…",
+    GRABBING:      "✊ ぐっと つかんだ！",
+    RETURNING:     "⬆️ もちあげて もどってるよ…",
   };
 
   return (
@@ -355,6 +409,7 @@ export function CraneClient({ initialKidId, kids }: Props) {
               heap={heap}
               craneX={craneX}
               xTransition={xTransition}
+              isDepth={isDepth}
               cableExtended={cableExtended}
               clawClosed={clawClosed}
               mState={mState}
@@ -378,46 +433,55 @@ export function CraneClient({ initialKidId, kids }: Props) {
         <section className="rounded-3xl bg-white/90 p-5 shadow-lg ring-2 ring-fuchsia-200">
           <div className="flex items-center justify-center gap-8">
 
-            {/* ➡️ ボタン: IDLE で押すと動き出し、MOVING_X で押すと停止 */}
+            {/* ➡️ 右ボタン */}
             <button
               type="button"
-              onClick={handleRight}
-              disabled={!rightBtnActive}
-              aria-label={mState === "MOVING_X" ? "とめる" : "右へうごかす"}
+              onPointerDown={handleRightDown}
+              onPointerUp={handleRightUp}
+              onPointerLeave={handleRightUp}
+              disabled={!rightBtnInteractive}
+              aria-label="右にうごかす"
+              style={{ touchAction: "none" }}
               className={[
                 "flex h-28 w-36 select-none flex-col items-center justify-center gap-1 rounded-3xl text-5xl font-black shadow-xl transition active:scale-[0.92]",
-                !rightBtnActive
-                  ? "cursor-not-allowed bg-gray-200 text-gray-400 shadow-none"
-                  : mState === "MOVING_X"
-                    ? "bg-gradient-to-br from-amber-400 to-orange-500 text-white ring-4 ring-amber-300/70"
-                    : "bg-gradient-to-br from-fuchsia-400 to-violet-500 text-white hover:brightness-110",
+                rightBtnHeld
+                  ? "bg-gradient-to-br from-amber-400 to-orange-500 text-white ring-4 ring-amber-300/70"
+                  : rightBtnInteractive
+                    ? "bg-gradient-to-br from-fuchsia-400 to-violet-500 text-white hover:brightness-110"
+                    : "cursor-not-allowed bg-gray-200 text-gray-400 shadow-none",
               ].join(" ")}
             >
               ➡️
               <span className="text-xs font-extrabold leading-none">
-                {mState === "MOVING_X" ? "とめる！" : "うごかす"}
+                {rightBtnHeld ? "はなして！" : "みぎへ"}
               </span>
             </button>
 
-            {/* ⬇️ ボタン: WAITING_Y のみ有効 */}
+            {/* ⬆️ 奥ボタン */}
             <button
               type="button"
-              onClick={handleDown}
-              disabled={!downBtnActive}
-              aria-label="アームをおとす"
+              onPointerDown={handleDepthDown}
+              onPointerUp={handleDepthUp}
+              onPointerLeave={handleDepthUp}
+              disabled={!depthBtnInteractive}
+              aria-label="奥にうごかして アームをおとす"
+              style={{ touchAction: "none" }}
               className={[
                 "flex h-28 w-36 select-none flex-col items-center justify-center gap-1 rounded-3xl text-5xl font-black shadow-xl transition active:scale-[0.92]",
-                downBtnActive
-                  ? "bg-gradient-to-br from-rose-500 to-fuchsia-600 text-white hover:brightness-110"
-                  : "cursor-not-allowed bg-gray-200 text-gray-400 shadow-none",
+                depthBtnHeld
+                  ? "bg-gradient-to-br from-rose-400 to-pink-500 text-white ring-4 ring-rose-300/70"
+                  : depthBtnInteractive
+                    ? "bg-gradient-to-br from-rose-500 to-fuchsia-600 text-white hover:brightness-110"
+                    : "cursor-not-allowed bg-gray-200 text-gray-400 shadow-none",
               ].join(" ")}
             >
-              ⬇️
-              <span className="text-xs font-extrabold leading-none">おとす！</span>
+              ⬆️
+              <span className="text-xs font-extrabold leading-none">
+                {depthBtnHeld ? "はなして！" : "おくへ"}
+              </span>
             </button>
           </div>
 
-          {/* エラー / ステータスメッセージ */}
           {error && (
             <p className="mt-4 text-center text-sm font-bold text-rose-500">{error}</p>
           )}
@@ -426,7 +490,7 @@ export function CraneClient({ initialKidId, kids }: Props) {
               コインが {CRANE_COST - coinBalance} まい たりないよ
             </p>
           )}
-          {STATUS[mState] && !noCoins && (
+          {!noCoins && !error && STATUS[mState] && (
             <p className="mt-3 min-h-[1.25rem] text-center text-xs font-bold text-fuchsia-600/80">
               {STATUS[mState]}
             </p>
@@ -444,13 +508,15 @@ export function CraneClient({ initialKidId, kids }: Props) {
 }
 
 // ── PlayArea ──────────────────────────────────────────────────────────
-// クレーングループは flex column（キャリッジ → ケーブル → アーム）で構成し、
-// ケーブルの height が伸びるにつれてアームが自然に降りる。
-// X 移動は親 div の `left` プロパティを CSS transition で制御。
+// X 移動は `left` CSS transition で制御。
+// 奥移動（MOVING_DEPTH）は transform の translateY + scale で表現し、
+// 「クレーンが画面奥に入っていく」ように見せる。
+// 押し込み時は depthInMs でゆっくり、離し時は depthOutMs で素早く戻る。
 function PlayArea({
   heap,
   craneX,
   xTransition,
+  isDepth,
   cableExtended,
   clawClosed,
   mState,
@@ -461,6 +527,7 @@ function PlayArea({
   heap: HeapItem[];
   craneX: number;
   xTransition: string;
+  isDepth: boolean;
   cableExtended: boolean;
   clawClosed: boolean;
   mState: MachineState;
@@ -468,6 +535,18 @@ function PlayArea({
   falling: boolean;
   fallingAtX: number;
 }) {
+  const depthTransform = isDepth
+    ? "translateX(-50%) translateY(-18px) scale(0.88)"
+    : "translateX(-50%) translateY(0px) scale(1)";
+
+  // 押し込み時はゆっくり（depthInMs）、離し時は素早く戻る（depthOutMs）。
+  // X 移動の transition と合成して同一要素で両方を同時アニメーション。
+  const depthDur = `${isDepth ? MS.depthInMs : MS.depthOutMs}ms`;
+  const combinedTransition =
+    xTransition === "none"
+      ? `transform ${depthDur} ease`
+      : `${xTransition}, transform ${depthDur} ease`;
+
   return (
     <div className="relative aspect-[5/6] w-full overflow-hidden rounded-2xl bg-gradient-to-b from-sky-100 via-amber-50 to-amber-200 shadow-inner">
 
@@ -532,25 +611,21 @@ function PlayArea({
       {/* 上部レール */}
       <div className="absolute inset-x-3 top-3 h-2 rounded-full bg-gradient-to-b from-slate-700 to-slate-500 shadow" />
 
-      {/* ── クレーングループ ──
-           flex column で キャリッジ → ケーブル → アーム が縦に並ぶ。
-           ケーブルの height が伸びるにつれてアームが自然に降りる。
-           X 移動は left の CSS transition のみで行い、Y 座標は常に固定。
-      */}
+      {/* ── クレーングループ ── */}
       <div
         className="pointer-events-none absolute flex flex-col items-center"
         style={{
           left: `${craneX}%`,
           top: `${CABLE_TOP}%`,
-          transform: "translateX(-50%)",
-          transition: xTransition,
+          transform: depthTransform,
+          transition: combinedTransition,
           zIndex: 25,
         }}
       >
-        {/* キャリッジ（レール上のスライダー） */}
+        {/* キャリッジ */}
         <div className="h-3 w-16 rounded-md bg-gradient-to-b from-slate-700 to-slate-900 shadow-lg" />
 
-        {/* ケーブル: height を transition で伸縮させることでアームが下降 */}
+        {/* ケーブル */}
         <div
           style={{
             width: "3px",
@@ -563,9 +638,8 @@ function PlayArea({
           }}
         />
 
-        {/* アーム（ツメ + 本体バー + 掴んだアイテム） */}
+        {/* アーム */}
         <div className="relative flex h-10 w-12 items-end justify-center">
-          {/* 左ツメ: open=42°, closed=15° */}
           <span
             className="absolute -left-1 bottom-0 block h-7 w-2 rounded-b-md bg-gradient-to-b from-slate-500 to-slate-800"
             style={{
@@ -574,7 +648,6 @@ function PlayArea({
               transition: "transform 0.4s cubic-bezier(.34,1.56,.64,1)",
             }}
           />
-          {/* 右ツメ: open=-42°, closed=-15° */}
           <span
             className="absolute -right-1 bottom-0 block h-7 w-2 rounded-b-md bg-gradient-to-b from-slate-500 to-slate-800"
             style={{
@@ -583,16 +656,14 @@ function PlayArea({
               transition: "transform 0.4s cubic-bezier(.34,1.56,.64,1)",
             }}
           />
-          {/* 本体バー */}
           <span className="block h-3 w-7 rounded-b-md bg-slate-700 shadow" />
 
-          {/* 掴んだアイテム（GRABBING / RETURNING 中に表示） */}
           {carriedEmojis.length > 0 && !falling && (
             <div
               className="absolute left-1/2 top-4 -translate-x-1/2 select-none"
               style={{
                 transition: "opacity 0.4s",
-                opacity: mState === "DROPPING" ? 0.25 : 1,
+                opacity: mState === "SHOW" ? 0 : 1,
               }}
             >
               {carriedEmojis.map((emoji, i) => {
@@ -616,7 +687,7 @@ function PlayArea({
         </div>
       </div>
 
-      {/* 落下中アイテム（途中おち演出） */}
+      {/* 落下中アイテム */}
       {falling && carriedEmojis.length > 0 && (
         <div
           aria-hidden
@@ -657,12 +728,11 @@ function ResultModal({
   outcome: { kind: "caught"; prizes: Prize[] } | { kind: "dropped"; prizes: Prize[] };
   onClose: () => void;
 }) {
-  const isCaught = outcome.kind === "caught";
-  const prizes   = outcome.prizes;
+  const isCaught   = outcome.kind === "caught";
+  const prizes     = outcome.prizes;
   const totalCount = prizes.reduce((s, p) => s + p.count, 0);
   const isMulti    = totalCount > 1;
 
-  // 成功時のみ紙吹雪
   useEffect(() => {
     if (!isCaught) return;
     let cancelled = false;
@@ -796,10 +866,10 @@ function ResultModal({
 // ── キーフレーム ──────────────────────────────────────────────────────
 const CSS_KEYFRAMES = `
   @keyframes fall-from-arm {
-    0%   { transform: translateY(0) rotate(0deg);    opacity: 1; }
-    70%  { transform: translateY(220px) rotate(0deg); opacity: 1; }
-    85%  { transform: translateY(205px) rotate(-15deg); opacity: 1; }
-    100% { transform: translateY(218px) rotate(12deg);  opacity: 0.55; }
+    0%   { transform: translateY(0) rotate(0deg);        opacity: 1; }
+    70%  { transform: translateY(220px) rotate(0deg);    opacity: 1; }
+    85%  { transform: translateY(205px) rotate(-15deg);  opacity: 1; }
+    100% { transform: translateY(218px) rotate(12deg);   opacity: 0.55; }
   }
   @keyframes shake {
     0%   { transform: translateX(0); }

@@ -633,7 +633,7 @@ export async function applyPenaltyMaster(
 
 /** テストユーザーが存在しなければ作成し、id を返す */
 export async function getOrCreateTestUser(): Promise<{ id: string; name: string; coinBalance: number }> {
-  const existing = await prisma.user.findFirst({ where: { isTest: true } });
+  const existing = await prisma.user.findFirst({ where: { isTestAccount: true } });
   if (existing) {
     return { id: existing.id, name: existing.name, coinBalance: existing.coinBalance };
   }
@@ -643,7 +643,7 @@ export async function getOrCreateTestUser(): Promise<{ id: string; name: string;
       birthDate: new Date("2000-01-01"),
       role: "CHILD",
       coinBalance: 99999,
-      isTest: true,
+      isTestAccount: true,
     },
   });
   return { id: created.id, name: created.name, coinBalance: created.coinBalance };
@@ -653,7 +653,7 @@ export async function getOrCreateTestUser(): Promise<{ id: string; name: string;
 export async function resetTestUser(): Promise<{ success: boolean }> {
   try {
     await prisma.user.updateMany({
-      where: { isTest: true },
+      where: { isTestAccount: true },
       data: { coinBalance: 99999, dailyHuntCount: 0 },
     });
     revalidatePath("/bank");

@@ -31,12 +31,12 @@ function isSSRAnimal(animal: { animalId: string; rarity: Rarity }): boolean {
 
 type KidLite = { id: string; name: string; coinBalance: number };
 
-type Inv = {
-  id: string;
-  itemId: string;
-  itemName: string;
+// UserTool の TRAP 型のみが渡ってくる。itemId → toolId に切替済み。
+type UserToolRow = {
+  toolId: string;
+  toolName: string;
+  emoji: string;
   quantity: number;
-  itemType: "FOOD" | "TRAP_PART";
 };
 
 type Animal = {
@@ -75,7 +75,7 @@ type CatchEntry = {
 type Props = {
   initialKidId: string | null;
   kids: KidLite[];
-  inventory: Inv[];
+  ownedTraps: UserToolRow[];  // UserTool (type=TRAP) のみ
   activeTraps: TrapDTO[];
   catches: CatchEntry[];
   // アクティブ狩り（BOW/SPEAR）の本日残り回数。罠スタイル自体は無制限なので nullable。
@@ -121,16 +121,17 @@ const ITEM_EMOJI: Record<string, string> = {
   mixed_food: "🍲",
 };
 
-// 罠の見た目を罠アイテム種別で出し分ける
+// 罠の見た目を Tool.toolId で出し分ける（旧 SharedInventoryItem.itemId から移行済み）
 const TRAP_EMOJI: Record<string, string> = {
-  rope: "🌿",
-  wood: "📦",
-  net: "🪤",
-  sturdy_trap: "🪤",
-  hunter_net: "🥅",
+  pitfall:      "🕳️",
+  leghold:      "🪤",
+  snare_net:    "🕸️",
+  deadfall_trap: "🪨",
+  bamboo_trap:  "🎋",
+  cage_trap:    "🧺",
 };
-function trapVisual(itemId: string): string {
-  return TRAP_EMOJI[itemId] ?? "🌿";
+function trapVisual(toolId: string): string {
+  return TRAP_EMOJI[toolId] ?? "🪤";
 }
 
 // 罠 id から決定論的に画面上の位置を出す（リロードしても同じ場所）。
@@ -322,14 +323,14 @@ const FIELD_KEYFRAMES = `
 export function SafariClient({
   initialKidId,
   kids,
-  inventory,
+  ownedTraps,
   activeTraps: initialTraps,
   catches: initialCatches,
   huntStaminaRemaining = null,
   huntStaminaLimit = 3,
 }: Props) {
   const [kidId, setKidId] = useState<string | null>(initialKidId);
-  const [inv, setInv] = useState<Inv[]>(inventory);
+  const [trapTools, setTrapTools] = useState<UserToolRow[]>(ownedTraps);
   const [traps, setTraps] = useState<TrapDTO[]>(initialTraps);
   const [catches, setCatches] = useState<CatchEntry[]>(initialCatches);
 
@@ -348,7 +349,7 @@ export function SafariClient({
 
   const [, startTransition] = useTransition();
 
-  useEffect(() => setInv(inventory), [inventory]);
+  useEffect(() => setTrapTools(ownedTraps), [ownedTraps]);
   useEffect(() => setTraps(initialTraps), [initialTraps]);
   useEffect(() => setCatches(initialCatches), [initialCatches]);
 
@@ -356,12 +357,6 @@ export function SafariClient({
   const myTraps = useMemo(
     () => traps.filter((t) => t.userId === kidId),
     [traps, kidId],
-  );
-
-  const foods = useMemo(() => inv.filter((i) => i.itemType === "FOOD"), [inv]);
-  const trapsInv = useMemo(
-    () => inv.filter((i) => i.itemType === "TRAP_PART"),
-    [inv],
   );
 
   // ── PLACED の罠を appears_at で自動 APPEARED 化 ──
@@ -400,9 +395,9 @@ export function SafariClient({
   }, []);
 
   // しかける！ボタン → 配置モードに入るだけ。座標を待つ。
-  const handleSetTrap = (trapItemId: string, baitItemId: string) => {
+  const handleSetTrap = (trapItemId: string) => {
     if (!selectedKid) return;
-    setPendingPlacement({ trapItemId, baitItemId });
+    setPendingPlacement({ trapItemId, baitItemId: trapItemId });
   };
 
   const cancelPlacement = () => setPendingPlacement(null);
@@ -418,10 +413,11 @@ export function SafariClient({
         alert(r.error);
         return;
       }
-      setInv((prev) =>
-        prev.map((i) => {
-          const u = r.updatedInventory.find((x) => x.itemId === i.itemId);
-          return u ? { ...i, quantity: u.quantity } : i;
+      // 消費後の道具残数で楽観的更新（toolId でマッチ）
+      setTrapTools((prev) =>
+        prev.map((t) => {
+          const u = r.updatedInventory.find((x) => x.itemId === t.toolId);
+          return u ? { ...t, quantity: u.quantity } : t;
         }),
       );
       setTraps((prev) => [
@@ -598,7 +594,7 @@ export function SafariClient({
         />
 
         {/* もちもの（仕掛けるフォーム） */}
-        <Pouch foods={foods} traps={trapsInv} onSubmit={handleSetTrap} />
+        <Pouch traps={trapTools} onSubmit={handleSetTrap} />
 
         {/* かぞくのどうぶつずかん */}
         <Zukan catches={catches} />
@@ -844,82 +840,64 @@ function FieldTrap({
   );
 }
 
-// ────────── もちもの（罠を仕掛けるフォーム） ──────────
+// ────────── もちもの（罠を仕掛けるフォーム・1本化） ──────────
+// UserTool (type=TRAP) の toolId / toolName / emoji / quantity を受け取る。
 function Pouch({
-  foods,
   traps,
   onSubmit,
 }: {
-  foods: Inv[];
-  traps: Inv[];
-  onSubmit: (trapItemId: string, baitItemId: string) => void;
+  traps: UserToolRow[];
+  onSubmit: (trapToolId: string) => void;
 }) {
-  const firstTrap = traps.find((t) => t.quantity > 0)?.itemId ?? "";
-  const firstFood = foods.find((f) => f.quantity > 0)?.itemId ?? "";
-  const [trapId, setTrapId] = useState(firstTrap);
-  const [baitId, setBaitId] = useState(firstFood);
+  const firstAvailable = traps.find((t) => t.quantity > 0)?.toolId ?? "";
+  const [trapId, setTrapId] = useState(firstAvailable);
 
+  // インベントリ更新時：選択中のものが 0 個になったら次の在庫アイテムに切り替え
   useEffect(() => {
-    if (!trapId || (traps.find((t) => t.itemId === trapId)?.quantity ?? 0) <= 0) {
-      setTrapId(traps.find((t) => t.quantity > 0)?.itemId ?? "");
+    const cur = traps.find((t) => t.toolId === trapId);
+    if (!trapId || !cur || cur.quantity <= 0) {
+      setTrapId(traps.find((t) => t.quantity > 0)?.toolId ?? "");
     }
   }, [traps, trapId]);
-  useEffect(() => {
-    if (!baitId || (foods.find((f) => f.itemId === baitId)?.quantity ?? 0) <= 0) {
-      setBaitId(foods.find((f) => f.quantity > 0)?.itemId ?? "");
-    }
-  }, [foods, baitId]);
 
-  const canSubmit =
-    !!trapId &&
-    !!baitId &&
-    (traps.find((t) => t.itemId === trapId)?.quantity ?? 0) > 0 &&
-    (foods.find((f) => f.itemId === baitId)?.quantity ?? 0) > 0;
+  const selectedQty = traps.find((t) => t.toolId === trapId)?.quantity ?? 0;
+  const canSubmit = !!trapId && selectedQty > 0;
+  // 上位ワナ（かごわな・バネわな）を使うと SSR 出現率アップ
+  const isRare = trapId === "cage_trap" || trapId === "leghold";
 
   return (
     <section className="rounded-3xl bg-white/95 p-3 shadow-lg ring-2 ring-emerald-200">
       <div className="flex items-center justify-between gap-2 pb-2">
         <p className="flex items-center gap-1 text-xs font-extrabold text-emerald-800">
-          🎒 もちもの
+          🎒 つかう ワナ
         </p>
-        <p className="text-[10px] text-emerald-700/70">
-          えらんで「しかける！」
-        </p>
+        {isRare && (
+          <p className="text-[10px] font-bold text-amber-600 animate-pulse">
+            ✨ レア！ SSR どうぶつが でやすいよ
+          </p>
+        )}
       </div>
+
       <div className="flex flex-wrap items-end gap-2">
-        <label className="block min-w-[8rem] flex-1 text-[11px] font-bold text-amber-800">
-          🛠️ ワナ
+        <label className="block min-w-[10rem] flex-1 text-[11px] font-bold text-amber-800">
+          🛠️ ワナを えらぶ
           <select
             value={trapId}
             onChange={(e) => setTrapId(e.target.value)}
             className="mt-1 w-full rounded-xl border-2 border-amber-300 bg-amber-50 px-2 py-1.5 text-sm font-bold text-amber-900 focus:border-amber-500 focus:outline-none"
           >
-            {traps.length === 0 && <option value="">わなが ないよ</option>}
+            {traps.length === 0 && <option value="">ワナが ないよ（クラフトで つくろう！）</option>}
             {traps.map((t) => (
-              <option key={t.itemId} value={t.itemId} disabled={t.quantity <= 0}>
-                {ITEM_EMOJI[t.itemId] ?? "❓"} {t.itemName} ×{t.quantity}
+              <option key={t.toolId} value={t.toolId} disabled={t.quantity <= 0}>
+                {t.emoji} {t.toolName} ×{t.quantity}
               </option>
             ))}
           </select>
         </label>
-        <label className="block min-w-[8rem] flex-1 text-[11px] font-bold text-rose-700">
-          🍱 エサ
-          <select
-            value={baitId}
-            onChange={(e) => setBaitId(e.target.value)}
-            className="mt-1 w-full rounded-xl border-2 border-rose-300 bg-rose-50 px-2 py-1.5 text-sm font-bold text-rose-900 focus:border-rose-500 focus:outline-none"
-          >
-            {foods.length === 0 && <option value="">エサが ないよ</option>}
-            {foods.map((f) => (
-              <option key={f.itemId} value={f.itemId} disabled={f.quantity <= 0}>
-                {ITEM_EMOJI[f.itemId] ?? "❓"} {f.itemName} ×{f.quantity}
-              </option>
-            ))}
-          </select>
-        </label>
+
         <button
           type="button"
-          onClick={() => onSubmit(trapId, baitId)}
+          onClick={() => onSubmit(trapId)}
           disabled={!canSubmit}
           className={`h-[42px] shrink-0 rounded-xl px-4 text-base font-black text-white shadow transition active:scale-[0.97] ${
             canSubmit
@@ -927,7 +905,7 @@ function Pouch({
               : "cursor-not-allowed bg-gray-300 text-gray-500 shadow-none"
           }`}
         >
-          🪤 しかける ばしょを えらぶ！
+          🪤 ばしょを えらぶ！
         </button>
       </div>
     </section>

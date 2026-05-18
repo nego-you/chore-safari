@@ -337,7 +337,7 @@ export function SafariClient({
 
   // 配置モード：「しかける！」を押した直後、フィールドタップ待ちの状態。
   const [pendingPlacement, setPendingPlacement] = useState<
-    { trapItemId: string; baitItemId: string } | null
+    { trapItemId: string } | null
   >(null);
   const isPlacingMode = pendingPlacement !== null;
 
@@ -353,7 +353,6 @@ export function SafariClient({
     [traps, kidId],
   );
 
-  const foods = useMemo(() => inv.filter((i) => i.itemType === "FOOD"), [inv]);
   const trapsInv = useMemo(
     () => inv.filter((i) => i.itemType === "TRAP_PART"),
     [inv],
@@ -395,9 +394,9 @@ export function SafariClient({
   }, []);
 
   // しかける！ボタン → 配置モードに入るだけ。座標を待つ。
-  const handleSetTrap = (trapItemId: string, baitItemId: string) => {
+  const handleSetTrap = (trapItemId: string) => {
     if (!selectedKid) return;
-    setPendingPlacement({ trapItemId, baitItemId });
+    setPendingPlacement({ trapItemId });
   };
 
   const cancelPlacement = () => setPendingPlacement(null);
@@ -405,10 +404,11 @@ export function SafariClient({
   // フィールド上のタップ位置が確定したらサーバ呼び出し。
   const confirmPlacement = (posX: number, posY: number) => {
     if (!selectedKid || !pendingPlacement) return;
-    const { trapItemId, baitItemId } = pendingPlacement;
+    const { trapItemId } = pendingPlacement;
     setPendingPlacement(null);
     startTransition(async () => {
-      const r = await setTrap(selectedKid.id, trapItemId, baitItemId, posX, posY);
+      // 統合ワナセット方式: baitItemId = trapItemId（エサ別途不要）
+      const r = await setTrap(selectedKid.id, trapItemId, trapItemId, posX, posY);
       if (!r.success) {
         alert(r.error);
         return;
@@ -544,7 +544,7 @@ export function SafariClient({
         />
 
         {/* もちもの（仕掛けるフォーム） */}
-        <Pouch foods={foods} traps={trapsInv} onSubmit={handleSetTrap} />
+        <Pouch traps={trapsInv} onSubmit={handleSetTrap} />
 
         {/* かぞくのどうぶつずかん */}
         <Zukan catches={catches} />
@@ -792,35 +792,24 @@ function FieldTrap({
 
 // ────────── もちもの（罠を仕掛けるフォーム） ──────────
 function Pouch({
-  foods,
   traps,
   onSubmit,
 }: {
-  foods: Inv[];
   traps: Inv[];
-  onSubmit: (trapItemId: string, baitItemId: string) => void;
+  onSubmit: (trapItemId: string) => void;
 }) {
   const firstTrap = traps.find((t) => t.quantity > 0)?.itemId ?? "";
-  const firstFood = foods.find((f) => f.quantity > 0)?.itemId ?? "";
   const [trapId, setTrapId] = useState(firstTrap);
-  const [baitId, setBaitId] = useState(firstFood);
 
+  // インベントリが変わって選択中が使えなくなったら先頭に戻す
   useEffect(() => {
     if (!trapId || (traps.find((t) => t.itemId === trapId)?.quantity ?? 0) <= 0) {
       setTrapId(traps.find((t) => t.quantity > 0)?.itemId ?? "");
     }
   }, [traps, trapId]);
-  useEffect(() => {
-    if (!baitId || (foods.find((f) => f.itemId === baitId)?.quantity ?? 0) <= 0) {
-      setBaitId(foods.find((f) => f.quantity > 0)?.itemId ?? "");
-    }
-  }, [foods, baitId]);
 
   const canSubmit =
-    !!trapId &&
-    !!baitId &&
-    (traps.find((t) => t.itemId === trapId)?.quantity ?? 0) > 0 &&
-    (foods.find((f) => f.itemId === baitId)?.quantity ?? 0) > 0;
+    !!trapId && (traps.find((t) => t.itemId === trapId)?.quantity ?? 0) > 0;
 
   return (
     <section className="rounded-3xl bg-white/95 p-3 shadow-lg ring-2 ring-emerald-200">
@@ -829,43 +818,32 @@ function Pouch({
           🎒 もちもの
         </p>
         <p className="text-[10px] text-emerald-700/70">
-          えらんで「しかける！」
+          ワナを えらんで「しかける！」
         </p>
       </div>
       <div className="flex flex-wrap items-end gap-2">
         <label className="block min-w-[8rem] flex-1 text-[11px] font-bold text-amber-800">
-          🛠️ ワナ
+          🪤 つかう ワナ
           <select
             value={trapId}
             onChange={(e) => setTrapId(e.target.value)}
             className="mt-1 w-full rounded-xl border-2 border-amber-300 bg-amber-50 px-2 py-1.5 text-sm font-bold text-amber-900 focus:border-amber-500 focus:outline-none"
           >
-            {traps.length === 0 && <option value="">わなが ないよ</option>}
-            {traps.map((t) => (
-              <option key={t.itemId} value={t.itemId} disabled={t.quantity <= 0}>
-                {ITEM_EMOJI[t.itemId] ?? "❓"} {t.itemName} ×{t.quantity}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block min-w-[8rem] flex-1 text-[11px] font-bold text-rose-700">
-          🍱 エサ
-          <select
-            value={baitId}
-            onChange={(e) => setBaitId(e.target.value)}
-            className="mt-1 w-full rounded-xl border-2 border-rose-300 bg-rose-50 px-2 py-1.5 text-sm font-bold text-rose-900 focus:border-rose-500 focus:outline-none"
-          >
-            {foods.length === 0 && <option value="">エサが ないよ</option>}
-            {foods.map((f) => (
-              <option key={f.itemId} value={f.itemId} disabled={f.quantity <= 0}>
-                {ITEM_EMOJI[f.itemId] ?? "❓"} {f.itemName} ×{f.quantity}
-              </option>
-            ))}
+            {traps.filter((t) => t.quantity > 0).length === 0 && (
+              <option value="">わなが ないよ</option>
+            )}
+            {traps
+              .filter((t) => t.quantity > 0)
+              .map((t) => (
+                <option key={t.itemId} value={t.itemId}>
+                  {ITEM_EMOJI[t.itemId] ?? "❓"} {t.itemName} ×{t.quantity}
+                </option>
+              ))}
           </select>
         </label>
         <button
           type="button"
-          onClick={() => onSubmit(trapId, baitId)}
+          onClick={() => onSubmit(trapId)}
           disabled={!canSubmit}
           className={`h-[42px] shrink-0 rounded-xl px-4 text-base font-black text-white shadow transition active:scale-[0.97] ${
             canSubmit

@@ -24,16 +24,11 @@ type Props = {
 
 // レシピでよく使う素材／完成品の絵文字。未知のものは ❓。
 const ITEM_EMOJI: Record<string, string> = {
-  meat: "🍖",
-  fish: "🐟",
-  berry: "🍓",
-  rope: "🪢",
-  wood: "🪵",
-  net: "🕸️",
+  rope:        "🪢",
+  wood:        "🪵",
+  net:         "🕸️",
   sturdy_trap: "🪤",
-  premium_food: "🍱",
-  hunter_net: "🥅",
-  mixed_food: "🍲",
+  hunter_net:  "🥅",
 };
 
 function emojiFor(itemId: string): string {

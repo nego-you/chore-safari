@@ -92,7 +92,6 @@ export function WarehouseClient({
   const progressPct = totalCount > 0 ? Math.round((caughtCount / totalCount) * 100) : 0;
   const [selectedTool, setSelectedTool] = useState<ToolEntry | null>(null);
 
-  const foods = inventory.filter((i) => i.itemType === "FOOD");
   const trapParts = inventory.filter((i) => i.itemType === "TRAP_PART");
 
   return (
@@ -207,30 +206,16 @@ export function WarehouseClient({
           </div>
         </section>
 
-        {/* 共有倉庫（エサ・罠パーツ） */}
+        {/* 共有倉庫（罠パーツ） */}
         <section className="rounded-3xl bg-white/85 p-5 shadow ring-1 ring-indigo-200">
           <h2 className="flex items-center gap-2 text-base font-extrabold text-indigo-800">
             <span aria-hidden>📦</span> 共有 倉庫
           </h2>
           <p className="text-[11px] text-indigo-500 mt-0.5">
-            かぞくみんなで つかう エサと 罠パーツ
+            かぞくみんなで つかう ワナと そざい
           </p>
 
-          <div className="mt-3 space-y-3">
-            <h3 className="text-xs font-extrabold text-rose-600">🍱 エサ</h3>
-            {foods.length === 0 ? (
-              <p className="text-xs text-rose-400">まだ なにもないよ</p>
-            ) : (
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                {foods.map((item) => (
-                  <ItemCard key={item.id} item={item} />
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="mt-4 space-y-3">
-            <h3 className="text-xs font-extrabold text-amber-700">🛠️ 罠 パーツ</h3>
+          <div className="mt-3">
             {trapParts.length === 0 ? (
               <p className="text-xs text-amber-500">まだ なにもないよ</p>
             ) : (

@@ -68,7 +68,7 @@ export function DevClient({ testUser }: Props) {
         <div className="space-y-3">
           <button
             type="button"
-            onClick={() => router.push(`/kids?kid=${testUser.id}`)}
+            onClick={() => router.push(`/kids/${testUser.id}`)}
             className="w-full rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 py-4 text-lg font-extrabold text-white shadow-xl transition hover:brightness-110 active:scale-[0.97]"
           >
             🎮 テストユーザーで遊ぶ

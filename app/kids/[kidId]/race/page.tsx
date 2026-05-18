@@ -11,8 +11,14 @@ type Params = Promise<{ kidId: string }>;
 export default async function RacePage({ params }: { params: Params }) {
   const { kidId } = await params;
 
+  const kid = await prisma.user.findFirst({
+    where: { id: kidId, role: "CHILD" },
+    select: { coinBalance: true },
+  });
+
   // 家族で捕まえたことのある動物を、種別ごとに最新の捕獲時付きで集める。
   const catches = await prisma.caughtAnimal.findMany({
+    where: { caughtBy: { isTestAccount: false } },
     orderBy: { caughtAt: "desc" },
     include: { animal: true },
   });
@@ -43,5 +49,11 @@ export default async function RacePage({ params }: { params: Params }) {
     });
   }
 
-  return <RacePlayer kidId={kidId} animals={uniqueAnimals} />;
+  return (
+    <RacePlayer
+      kidId={kidId}
+      animals={uniqueAnimals}
+      coinBalance={kid?.coinBalance ?? 0}
+    />
+  );
 }

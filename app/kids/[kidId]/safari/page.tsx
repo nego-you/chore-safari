@@ -1,5 +1,6 @@
-// /kids/safari — 罠を仕掛けて、出現→タイミングゲームで捕獲する非同期フロー。
+// /kids/[kidId]/safari — 罠を仕掛けて、出現→タイミングゲームで捕獲する非同期フロー。
 // 即時抽選 (旧 exploreSafari) は廃止。setTrap → 待機 → checkTrap → resolveTrap の流れ。
+// 2026-05-18: インベントリを SharedInventoryItem → UserTool（TRAP タイプ）に切替。
 
 import { prisma } from "@/lib/prisma";
 import { getHuntStamina } from "../../actions";
@@ -16,22 +17,28 @@ export default async function SafariPage({
 }) {
   const { kidId: kidParam } = await params;
 
-  const [kids, inventory, activeTraps, caughtAnimals] = await Promise.all([
-    prisma.user.findMany({
-      where: { role: "CHILD" },
-      orderBy: { birthDate: "asc" },
-      select: { id: true, name: true, coinBalance: true },
-    }),
-    prisma.sharedInventoryItem.findMany({
-      orderBy: [{ itemType: "asc" }, { itemName: "asc" }],
-      select: {
-        id: true,
-        itemId: true,
-        itemName: true,
-        quantity: true,
-        itemType: true,
-      },
-    }),
+  // kids 一覧を先に取得して initialKid を確定する（UserTool クエリに必要）。
+  const kids = await prisma.user.findMany({
+    where: { role: "CHILD" },
+    orderBy: { birthDate: "asc" },
+    select: { id: true, name: true, coinBalance: true },
+  });
+
+  const initialKid =
+    kidParam && kids.some((k) => k.id === kidParam) ? kidParam : null;
+
+  const [ownedTrapRows, activeTraps, caughtAnimals] = await Promise.all([
+    // この子が持っている TRAP 型の道具だけを返す。
+    initialKid
+      ? prisma.userTool.findMany({
+          where: {
+            userId: initialKid,
+            tool: { type: "TRAP" },
+          },
+          include: { tool: true },
+          orderBy: { tool: { sortOrder: "asc" } },
+        })
+      : Promise.resolve([]),
     // 全 CHILD の仕掛け中・出現中の罠。クライアントで選択中の子の分だけ表示。
     prisma.hunt.findMany({
       where: { status: { in: ["PLACED", "APPEARED"] } },
@@ -39,6 +46,7 @@ export default async function SafariPage({
       include: { targetAnimal: true },
     }),
     prisma.caughtAnimal.findMany({
+      where: { caughtBy: { isTestAccount: false } },
       orderBy: { caughtAt: "desc" },
       take: 200,
       include: {
@@ -48,11 +56,16 @@ export default async function SafariPage({
     }),
   ]);
 
-  const initialKid =
-    kidParam && kids.some((k) => k.id === kidParam) ? kidParam : null;
-
   // アクティブ狩り（BOW/SPEAR）用の本日残り回数。罠スタイル自体は制限なし。
   const huntStamina = initialKid ? await getHuntStamina(initialKid) : null;
+
+  // UserTool → クライアント用の軽量型に変換。
+  const ownedTraps = ownedTrapRows.map((ut) => ({
+    toolId: ut.tool.toolId,
+    toolName: ut.tool.name,
+    emoji: ut.tool.emoji,
+    quantity: ut.quantity,
+  }));
 
   const traps = activeTraps.map((t) => ({
     id: t.id,
@@ -64,7 +77,6 @@ export default async function SafariPage({
     appearsAt: t.appearsAt.toISOString(),
     posX: t.posX,
     posY: t.posY,
-    // ターゲットの種別だけ最小限渡す（捕獲成功時の演出用に使う）
     targetAnimal: {
       id: t.targetAnimal.id,
       animalId: t.targetAnimal.animalId,
@@ -105,7 +117,7 @@ export default async function SafariPage({
     <SafariClient
       initialKidId={initialKid}
       kids={kids}
-      inventory={inventory}
+      ownedTraps={ownedTraps}
       activeTraps={traps}
       catches={catches}
       huntStaminaRemaining={huntStamina?.remaining ?? null}

@@ -57,8 +57,8 @@ export default async function BankPage() {
     todayMap.get(key)!.push(s.id);
   }
 
-  // テストユーザーは残高一覧から除外（マイグレーション後 isTest が使える）
-  const realChildren = children.filter((c) => !(c as any).isTest);
+  // テストユーザーは残高一覧から除外（マイグレーション後 isTestAccount が使える）
+  const realChildren = children.filter((c) => !(c as any).isTestAccount);
 
   const childrenData = realChildren.map((c) => ({
     id: c.id,

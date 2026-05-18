@@ -276,6 +276,14 @@ export function KidsPortal({
             spotlight
           />
           <SpokeCard
+            href={`/kids/${selected.id}/craft`}
+            emoji="⚒️"
+            title="クラフト 工場"
+            subtitle="素材を つかって 道具を つくる"
+            description="集めた MaterialでTRAPや武器をクラフト"
+            gradient="from-amber-400 via-yellow-300 to-lime-400"
+          />
+          <SpokeCard
             href={`/kids/${selected.id}/warehouse`}
             emoji="📦"
             title="博物 倉庫"

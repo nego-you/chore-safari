@@ -1,61 +1,72 @@
 "use client";
 
-// クラフト画面のクライアント本体。レシピカードを並べて、足りているレシピだけ
-// 「これをつくる！」ボタンを有効化する。成功時はその場で在庫表示を更新。
+// クラフト画面クライアント本体。
+// 素材（UserMaterial）を消費して道具（UserTool）を作る。
+// レシピカードを TRAP / SPEAR / BOW / WEAPON タブで分類。
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import type { Recipe } from "@/lib/recipes";
 import { craftItem } from "../../actions";
 
-type Inv = {
-  itemId: string;
-  itemName: string;
+type MaterialRow = {
+  materialId: string;
+  materialName: string;
+  emoji: string;
   quantity: number;
-  itemType: "FOOD" | "TRAP_PART";
+};
+
+type ToolRow = {
+  toolId: string;
+  toolName: string;
+  emoji: string;
+  toolType: "TRAP" | "BOW" | "SPEAR" | "WEAPON";
+  quantity: number;
 };
 
 type Props = {
+  kidId: string;
+  kidName: string;
   recipes: Recipe[];
-  inventory: Inv[];
-  // URL から流れてくる ?kid=（戻り先のポータルに引き継ぐためだけに保持）
-  kidId?: string | null;
+  materials: MaterialRow[];
+  ownedTools: ToolRow[];
 };
 
-// レシピでよく使う素材／完成品の絵文字。未知のものは ❓。
-const ITEM_EMOJI: Record<string, string> = {
-  meat: "🍖",
-  fish: "🐟",
-  berry: "🍓",
-  rope: "🪢",
-  wood: "🪵",
-  net: "🕸️",
-  sturdy_trap: "🪤",
-  premium_food: "🍱",
-  hunter_net: "🥅",
-  mixed_food: "🍲",
+type Toast = { message: string; ok: boolean };
+type Tab = "TRAP" | "SPEAR" | "BOW" | "WEAPON";
+
+const TAB_LABELS: Record<Tab, string> = {
+  TRAP:   "🪤 パッシブわな",
+  SPEAR:  "🗡️ とうしゃぶき",
+  BOW:    "🏹 ゆみ",
+  WEAPON: "🔪 ナイフ・じゅう",
 };
 
-function emojiFor(itemId: string): string {
-  return ITEM_EMOJI[itemId] ?? "❓";
-}
-
-type Toast = {
-  itemId: string;
-  itemName: string;
-  emoji: string;
+const TOOL_TYPE_BADGE: Record<Tab, string> = {
+  TRAP:   "bg-amber-100 text-amber-800 ring-amber-300",
+  SPEAR:  "bg-sky-100 text-sky-800 ring-sky-300",
+  BOW:    "bg-violet-100 text-violet-800 ring-violet-300",
+  WEAPON: "bg-rose-100 text-rose-800 ring-rose-300",
 };
 
-export function CraftClient({ recipes, inventory, kidId = null }: Props) {
-  const portalHref = kidId ? `/kids/${kidId}` : "/kids";
-  const [inv, setInv] = useState<Inv[]>(inventory);
+export function CraftClient({
+  kidId,
+  kidName,
+  recipes,
+  materials,
+  ownedTools,
+}: Props) {
+  const portalHref = `/kids/${kidId}`;
+  const [mats, setMats] = useState<MaterialRow[]>(materials);
+  const [tools, setTools] = useState<ToolRow[]>(ownedTools);
   const [toast, setToast] = useState<Toast | null>(null);
-  const [pendingRecipeId, setPendingRecipeId] = useState<string | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
   const [errorByRecipe, setErrorByRecipe] = useState<Record<string, string>>({});
+  const [activeTab, setActiveTab] = useState<Tab>("TRAP");
   const [isPending, startTransition] = useTransition();
 
-  // props が更新（revalidate 後）されたら state を同期。
-  useEffect(() => setInv(inventory), [inventory]);
+  useEffect(() => setMats(materials), [materials]);
+  useEffect(() => setTools(ownedTools), [ownedTools]);
 
   useEffect(() => {
     if (!toast) return;
@@ -63,251 +74,251 @@ export function CraftClient({ recipes, inventory, kidId = null }: Props) {
     return () => clearTimeout(id);
   }, [toast]);
 
-  const qtyMap = useMemo(() => {
+  // materialId → 所持数
+  const matQty = useMemo(() => {
     const m = new Map<string, number>();
-    for (const i of inv) m.set(i.itemId, i.quantity);
+    for (const mat of mats) m.set(mat.materialId, mat.quantity);
     return m;
-  }, [inv]);
+  }, [mats]);
+
+  // toolId → 所持数
+  const toolQty = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of tools) m.set(t.toolId, t.quantity);
+    return m;
+  }, [tools]);
 
   const handleCraft = (recipe: Recipe) => {
     setErrorByRecipe((prev) => ({ ...prev, [recipe.id]: "" }));
-    setPendingRecipeId(recipe.id);
+    setPendingId(recipe.id);
     startTransition(async () => {
-      const result = await craftItem(recipe.id);
-      setPendingRecipeId(null);
+      const result = await craftItem(recipe.id, kidId);
+      setPendingId(null);
       if (!result.success) {
         setErrorByRecipe((prev) => ({ ...prev, [recipe.id]: result.error }));
         return;
       }
-      // 楽観的更新：素材を減らし、完成品を反映。
-      setInv((prev) => {
-        const map = new Map<string, Inv>();
-        for (const i of prev) map.set(i.itemId, { ...i });
-        // 素材
-        for (const u of result.updatedInventory) {
-          const cur = map.get(u.itemId);
-          if (cur) map.set(u.itemId, { ...cur, quantity: u.quantity });
-        }
-        // 完成品
-        const existing = map.get(result.product.itemId);
+      // 素材の楽観的更新
+      setMats((prev) =>
+        prev.map((m) => {
+          const updated = result.updatedMaterials.find(
+            (u) => u.materialId === m.materialId,
+          );
+          return updated ? { ...m, quantity: updated.quantity } : m;
+        }),
+      );
+      // 道具の楽観的更新
+      const { toolId, toolName, toolType, totalQuantity } = result.product;
+      setTools((prev) => {
+        const existing = prev.find((t) => t.toolId === toolId);
         if (existing) {
-          map.set(result.product.itemId, {
-            ...existing,
-            quantity: result.product.totalQuantity,
-          });
-        } else {
-          map.set(result.product.itemId, {
-            itemId: result.product.itemId,
-            itemName: result.product.itemName,
-            quantity: result.product.totalQuantity,
-            itemType: result.product.itemType,
-          });
+          return prev.map((t) =>
+            t.toolId === toolId ? { ...t, quantity: totalQuantity } : t,
+          );
         }
-        return [...map.values()];
+        // 新規取得
+        const recipe2 = recipes.find((r) => r.resultToolId === toolId);
+        return [
+          ...prev,
+          {
+            toolId,
+            toolName,
+            toolType,
+            emoji: recipe2?.emoji ?? "🛠️",
+            quantity: totalQuantity,
+          },
+        ];
       });
-
-      setToast({
-        itemId: result.product.itemId,
-        itemName: result.product.itemName,
-        emoji: emojiFor(result.product.itemId),
-      });
+      setToast({ message: `${recipe.emoji} ${recipe.name} を つくった！`, ok: true });
     });
   };
 
+  const tabRecipes = useMemo(
+    () => recipes.filter((r) => r.resultToolType === activeTab),
+    [recipes, activeTab],
+  );
+
   return (
-    <main className="min-h-screen bg-gradient-to-b from-violet-100 via-pink-50 to-amber-50 px-4 py-8">
-      <div className="mx-auto max-w-3xl space-y-8">
+    <main className="min-h-screen bg-gradient-to-b from-amber-50 via-orange-50 to-yellow-50 px-4 py-6">
+      <div className="mx-auto max-w-2xl space-y-4">
         {/* ヘッダー */}
         <div className="flex items-center justify-between">
           <Link
             href={portalHref}
-            className="rounded-full bg-white/90 px-4 py-2 text-sm font-bold text-violet-700 shadow ring-1 ring-violet-200 transition hover:bg-white"
+            className="rounded-full bg-white/90 px-4 py-2 text-sm font-bold text-amber-700 shadow ring-1 ring-amber-200 transition active:scale-95"
           >
             ← ポータルへ
           </Link>
-          <p className="text-sm font-bold text-violet-700/80">クラフト こうぼう</p>
+          <p className="text-sm font-bold text-amber-700/80">
+            ⚙️ クラフト こうじょう ⚙️
+          </p>
+          <p className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-700">
+            {kidName}
+          </p>
         </div>
 
-        {/* タイトル */}
-        <section className="rounded-[2rem] bg-gradient-to-br from-violet-300 via-pink-200 to-amber-200 p-1 shadow-xl">
-          <div className="rounded-[1.75rem] bg-white/95 p-6 text-center">
-            <p className="text-4xl">🛠️✨🧰</p>
-            <h1 className="mt-2 text-3xl font-black text-violet-700 sm:text-4xl">
-              アイテムを つくる！
-            </h1>
-            <p className="mt-1 text-sm text-violet-600/80">
-              そうこの アイテムを くみあわせて あたらしい どうぐを つくろう
+        {/* 素材一覧 */}
+        <section className="rounded-3xl bg-white/95 p-4 shadow ring-2 ring-amber-200">
+          <p className="mb-3 text-xs font-extrabold text-amber-800">
+            🪵 もっている そざい（クレーンで あつめよう！）
+          </p>
+          {mats.length === 0 ? (
+            <p className="text-center text-xs text-amber-600">
+              まだ そざいが ないよ。クレーンゲームで あつめてね！
             </p>
-          </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {mats.map((m) => (
+                <div
+                  key={m.materialId}
+                  className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-bold shadow ring-1 ${
+                    m.quantity > 0
+                      ? "bg-amber-50 ring-amber-200 text-amber-800"
+                      : "bg-gray-100 ring-gray-200 text-gray-400"
+                  }`}
+                >
+                  <span>{m.emoji}</span>
+                  <span>{m.materialName}</span>
+                  <span
+                    className={`ml-1 rounded-full px-1.5 text-[10px] font-black ${
+                      m.quantity > 0
+                        ? "bg-amber-400 text-white"
+                        : "bg-gray-300 text-gray-500"
+                    }`}
+                  >
+                    ×{m.quantity}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
+
+        {/* タブ */}
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
+          {(["TRAP", "SPEAR", "BOW", "WEAPON"] as Tab[]).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-extrabold shadow transition active:scale-95 ${
+                activeTab === tab
+                  ? "bg-amber-500 text-white ring-2 ring-amber-300"
+                  : "bg-white/90 text-amber-700 ring-1 ring-amber-200 hover:bg-amber-50"
+              }`}
+            >
+              {TAB_LABELS[tab]}
+            </button>
+          ))}
+        </div>
 
         {/* レシピカード一覧 */}
-        <section aria-labelledby="recipes-heading" className="space-y-4">
-          <h2 id="recipes-heading" className="text-xl font-extrabold text-violet-800">
-            レシピ
-          </h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {recipes.map((r) => (
-              <RecipeCard
-                key={r.id}
-                recipe={r}
-                qtyMap={qtyMap}
-                producedQty={qtyMap.get(r.resultItemId) ?? 0}
-                onCraft={() => handleCraft(r)}
-                isPending={isPending && pendingRecipeId === r.id}
-                disabledByOther={isPending && pendingRecipeId !== r.id}
-                error={errorByRecipe[r.id]}
-              />
-            ))}
-          </div>
-        </section>
+        <div className="space-y-3">
+          {tabRecipes.map((recipe) => {
+            const canCraft = recipe.materials.every(
+              (m) => (matQty.get(m.materialId) ?? 0) >= m.quantity,
+            );
+            const isPendingThis = pendingId === recipe.id;
+            const errMsg = errorByRecipe[recipe.id];
+            const owned = toolQty.get(recipe.resultToolId) ?? 0;
 
-        <p className="text-center text-xs text-violet-700/70">
-          ✨ つくった アイテムは みんなの そうこに しまわれるよ ✨
-        </p>
-      </div>
-
-      {toast && <SuccessToast toast={toast} onClose={() => setToast(null)} />}
-    </main>
-  );
-}
-
-function RecipeCard({
-  recipe,
-  qtyMap,
-  producedQty,
-  onCraft,
-  isPending,
-  disabledByOther,
-  error,
-}: {
-  recipe: Recipe;
-  qtyMap: Map<string, number>;
-  producedQty: number;
-  onCraft: () => void;
-  isPending: boolean;
-  disabledByOther: boolean;
-  error?: string;
-}) {
-  const canCraft =
-    !disabledByOther &&
-    !isPending &&
-    recipe.materials.every(
-      (m) => (qtyMap.get(m.itemId) ?? 0) >= m.quantity,
-    );
-
-  return (
-    <article className="flex flex-col gap-4 rounded-3xl bg-white/95 p-5 shadow-lg ring-2 ring-violet-200">
-      {/* 完成品 */}
-      <header className="flex items-center gap-3 rounded-2xl bg-gradient-to-br from-violet-100 to-pink-100 p-4 ring-1 ring-violet-200">
-        <span className="text-5xl drop-shadow" aria-hidden>
-          {ITEM_EMOJI[recipe.resultItemId] ?? recipe.emoji}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-lg font-black text-violet-800">{recipe.name}</p>
-          <p className="text-xs text-violet-700/80">{recipe.description}</p>
-          <p className="mt-1 text-[11px] font-bold text-violet-700/70">
-            いま そうこに ×{producedQty} ／ つくると +
-            {recipe.resultQuantity}
-          </p>
-        </div>
-      </header>
-
-      {/* 素材 */}
-      <div>
-        <p className="mb-1 text-xs font-extrabold text-violet-700">
-          ひつようなもの
-        </p>
-        <ul className="space-y-1.5">
-          {recipe.materials.map((m) => {
-            const have = qtyMap.get(m.itemId) ?? 0;
-            const ok = have >= m.quantity;
             return (
-              <li
-                key={m.itemId}
-                className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-bold ring-1 ${
-                  ok
-                    ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
-                    : "bg-rose-50 text-rose-700 ring-rose-200"
-                }`}
+              <div
+                key={recipe.id}
+                className="rounded-2xl bg-white/95 p-4 shadow ring-1 ring-amber-100"
               >
-                <span aria-hidden className="text-xl">
-                  {emojiFor(m.itemId)}
-                </span>
-                <span className="flex-1">{m.itemName}</span>
-                <span className="font-mono">
-                  {ok ? "✓" : "✗"} {have}/{m.quantity}
-                </span>
-              </li>
+                <div className="flex items-start gap-3">
+                  <span className="text-4xl shrink-0">{recipe.emoji}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-base font-black text-slate-800">
+                        {recipe.name}
+                      </p>
+                      <span
+                        className={`rounded-full px-2 py-0 text-[9px] font-extrabold ring-1 ${
+                          TOOL_TYPE_BADGE[recipe.resultToolType as Tab]
+                        }`}
+                      >
+                        {TAB_LABELS[recipe.resultToolType as Tab]}
+                      </span>
+                      {owned > 0 && (
+                        <span className="rounded-full bg-emerald-100 px-2 py-0 text-[9px] font-extrabold text-emerald-700 ring-1 ring-emerald-300">
+                          ✅ もっている ×{owned}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">{recipe.description}</p>
+
+                    {/* 必要素材 */}
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {recipe.materials.map((mat) => {
+                        const have = matQty.get(mat.materialId) ?? 0;
+                        const enough = have >= mat.quantity;
+                        return (
+                          <span
+                            key={mat.materialId}
+                            className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ${
+                              enough
+                                ? "bg-emerald-50 ring-emerald-200 text-emerald-800"
+                                : "bg-rose-50 ring-rose-200 text-rose-700"
+                            }`}
+                          >
+                            {mat.emoji} {mat.materialName} ×{mat.quantity}
+                            <span className="ml-0.5 text-[9px] opacity-70">
+                              （いま{have}）
+                            </span>
+                          </span>
+                        );
+                      })}
+                    </div>
+
+                    {errMsg && (
+                      <p className="mt-1 text-xs font-bold text-rose-600">
+                        ⚠️ {errMsg}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleCraft(recipe)}
+                  disabled={!canCraft || isPendingThis || isPending}
+                  className={`mt-3 w-full rounded-xl px-4 py-3 text-sm font-black text-white shadow transition active:scale-[0.98] ${
+                    canCraft && !isPendingThis
+                      ? "bg-gradient-to-r from-amber-500 via-orange-500 to-yellow-500 hover:brightness-110"
+                      : "cursor-not-allowed bg-gray-300 text-gray-500 shadow-none"
+                  }`}
+                >
+                  {isPendingThis
+                    ? "⚙️ つくっています…"
+                    : canCraft
+                    ? `⚙️ ${recipe.name} を つくる！`
+                    : "そざいが たりない…"}
+                </button>
+              </div>
             );
           })}
-        </ul>
-      </div>
-
-      {/* ボタン */}
-      <button
-        type="button"
-        onClick={onCraft}
-        disabled={!canCraft}
-        className={`w-full rounded-2xl px-4 py-3 text-lg font-black tracking-wide text-white shadow-lg transition active:scale-[0.98] ${
-          canCraft
-            ? "bg-gradient-to-r from-violet-500 via-pink-500 to-amber-500 hover:brightness-110"
-            : "cursor-not-allowed bg-gray-300 text-gray-500 shadow-none"
-        }`}
-      >
-        {isPending ? "つくってる…" : "🛠️ これを つくる！"}
-      </button>
-
-      {error && <p className="text-sm font-bold text-rose-500">{error}</p>}
-    </article>
-  );
-}
-
-function SuccessToast({
-  toast,
-  onClose,
-}: {
-  toast: Toast;
-  onClose: () => void;
-}) {
-  return (
-    <div
-      role="dialog"
-      aria-live="polite"
-      onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-    >
-      <div className="mx-4 max-w-sm rounded-[2rem] bg-gradient-to-br from-violet-300 via-pink-200 to-amber-200 p-1 shadow-2xl">
-        <div className="rounded-[1.7rem] bg-white px-6 py-10 text-center">
-          <p className="text-sm font-extrabold tracking-widest text-violet-500">
-            ✨ かんせい ✨
-          </p>
-          <div className="relative my-4 flex items-center justify-center">
-            <span aria-hidden className="absolute text-9xl opacity-20 blur-md">
-              {toast.emoji}
-            </span>
-            <span
-              aria-hidden
-              className="relative text-8xl drop-shadow-lg animate-bounce"
-            >
-              {toast.emoji}
-            </span>
-          </div>
-          <p className="text-3xl font-black text-violet-700">
-            {toast.itemName}
-          </p>
-          <p className="mt-2 text-base font-bold text-violet-500">
-            が かんせい した！
-          </p>
-          <button
-            type="button"
-            onClick={onClose}
-            className="mt-6 rounded-full bg-violet-500 px-6 py-2 text-sm font-extrabold text-white shadow transition hover:brightness-110"
-          >
-            やったー！
-          </button>
         </div>
+
+        <Link
+          href={portalHref}
+          className="block text-center text-sm font-bold text-amber-600 underline"
+        >
+          ← ポータルへ もどる
+        </Link>
       </div>
-    </div>
+
+      {/* トースト */}
+      {toast && (
+        <div
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-full px-6 py-3 text-sm font-extrabold text-white shadow-xl transition ${
+            toast.ok ? "bg-emerald-500" : "bg-rose-500"
+          }`}
+        >
+          {toast.message}
+        </div>
+      )}
+    </main>
   );
 }

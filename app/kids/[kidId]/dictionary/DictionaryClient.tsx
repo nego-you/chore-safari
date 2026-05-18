@@ -27,6 +27,8 @@ type AnimalEntry = {
   imageUrl: string | null;
   isExtinct: boolean;
   habitat?: string;
+  era?: string;
+  location?: string;
   // 家族の誰か1人でも捕まえていれば true（家族共通図鑑）
   caught: boolean;
   // 子供ごとの捕獲回数（年上から）
@@ -75,6 +77,244 @@ const NAME_READING: Record<string, string> = {
   "幸仁": "ゆきひと",
   "叶泰": "かなた",
 };
+
+// ── 世界地図 コンポーネント ─────────────────────────────────────────
+// location 文字列に部分一致するリージョンをハイライト表示する簡易SVG地図。
+const WORLD_REGIONS: Array<{
+  id: string;
+  label: string;
+  keywords: string[];
+  path: string;
+  cx: number;
+  cy: number;
+}> = [
+  {
+    id: "africa",
+    label: "アフリカ",
+    keywords: ["アフリカ"],
+    path: "M 175,95 L 185,90 L 205,92 L 215,105 L 210,130 L 195,148 L 180,145 L 168,130 L 165,112 Z",
+    cx: 190, cy: 120,
+  },
+  {
+    id: "europe",
+    label: "ヨーロッパ",
+    keywords: ["ヨーロッパ", "イギリス", "フランス", "ドイツ"],
+    path: "M 155,55 L 175,52 L 190,58 L 188,72 L 175,78 L 158,74 L 150,65 Z",
+    cx: 170, cy: 65,
+  },
+  {
+    id: "eurasia",
+    label: "ユーラシア",
+    keywords: ["ユーラシア", "シベリア", "ロシア"],
+    path: "M 190,42 L 280,40 L 295,55 L 285,72 L 240,75 L 192,70 L 185,58 Z",
+    cx: 240, cy: 57,
+  },
+  {
+    id: "asia",
+    label: "アジア",
+    keywords: ["アジア", "ちゅうごく", "にほん", "インド", "ちゅうとう", "ちゅうきんとう"],
+    path: "M 250,65 L 310,62 L 325,80 L 315,105 L 285,110 L 260,100 L 248,82 Z",
+    cx: 288, cy: 87,
+  },
+  {
+    id: "americas",
+    label: "アメリカ",
+    keywords: ["アメリカ", "なんアメリカ", "きたアメリカ", "アマゾン", "なんべい", "きたべい"],
+    path: "M 60,55 L 105,52 L 110,75 L 100,115 L 80,130 L 60,120 L 48,90 L 52,68 Z",
+    cx: 80, cy: 90,
+  },
+  {
+    id: "ocean",
+    label: "かいよう",
+    keywords: ["かいよう", "うみ", "たいへいよう", "大西洋", "インド洋", "深海"],
+    path: "M 120,130 L 145,135 L 140,150 L 120,148 Z",
+    cx: 360, cy: 150,
+  },
+  {
+    id: "world",
+    label: "せかい",
+    keywords: ["せかい", "世界各地", "せかいかくち", "ぜんせかい"],
+    path: "",
+    cx: 200, cy: 100,
+  },
+];
+
+function WorldMap({ location }: { location?: string }) {
+  if (!location) return null;
+
+  const loc = location.toLowerCase();
+  const matchAll = WORLD_REGIONS.some(
+    (r) => r.id === "world" && r.keywords.some((k) => loc.includes(k.toLowerCase())),
+  );
+
+  const highlighted = new Set(
+    WORLD_REGIONS
+      .filter((r) => r.keywords.some((k) => loc.includes(k.toLowerCase())))
+      .map((r) => r.id),
+  );
+
+  return (
+    <div className="mt-3 rounded-2xl bg-slate-800/60 p-3 ring-1 ring-white/10">
+      <p className="mb-1 text-[10px] font-extrabold tracking-widest text-slate-400">
+        🌍 せかい ちず
+      </p>
+      <p className="mb-2 text-[11px] text-amber-300 font-bold">{location}</p>
+      <svg
+        viewBox="0 0 400 180"
+        className="w-full rounded-xl"
+        style={{ background: "linear-gradient(180deg,#0a2540 0%,#0f3460 100%)" }}
+        aria-label={`地図: ${location}`}
+      >
+        {/* 海の背景 */}
+        <rect x="0" y="0" width="400" height="180" fill="#0f3460" rx="8" />
+
+        {/* 大陸シルエット（全体を薄く） */}
+        {WORLD_REGIONS.filter((r) => r.path).map((r) => {
+          const isHit = matchAll || highlighted.has(r.id);
+          return (
+            <g key={r.id}>
+              <path
+                d={r.path}
+                fill={isHit ? "#f59e0b" : "#1e4a7a"}
+                stroke={isHit ? "#fcd34d" : "#2d6aa0"}
+                strokeWidth={isHit ? 1.5 : 0.8}
+                style={{
+                  filter: isHit ? "drop-shadow(0 0 6px #fbbf24)" : "none",
+                  transition: "fill 0.3s",
+                }}
+              />
+              {isHit && (
+                <text
+                  x={r.cx}
+                  y={r.cy + 4}
+                  textAnchor="middle"
+                  fontSize="7"
+                  fontWeight="bold"
+                  fill="#1a0a00"
+                >
+                  {r.label}
+                </text>
+              )}
+            </g>
+          );
+        })}
+
+        {/* 世界各地ハイライト時は全大陸をぼんやり光らせる */}
+        {matchAll && (
+          <text x="200" y="172" textAnchor="middle" fontSize="8" fill="#fcd34d" fontWeight="bold">
+            ✨ せかいかくちに いたよ！
+          </text>
+        )}
+
+        {/* ピン：ハイライト地域の中心 */}
+        {!matchAll && WORLD_REGIONS.filter((r) => r.path && highlighted.has(r.id)).map((r) => (
+          <g key={`pin-${r.id}`}>
+            <circle cx={r.cx} cy={r.cy} r="5" fill="#ef4444" stroke="#fff" strokeWidth="1.2" />
+            <line
+              x1={r.cx} y1={r.cy - 5}
+              x2={r.cx} y2={r.cy - 12}
+              stroke="#ef4444" strokeWidth="1.5"
+            />
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+// ── 年代タイムライン コンポーネント ───────────────────────────────────
+const ERA_MILESTONES = [
+  { label: "きょうりゅう", pos: 2,  full: "きょうりゅうじだい" },
+  { label: "こおり",       pos: 15, full: "こおりのじだい（ひょうがき）" },
+  { label: "きゅうせっき", pos: 32, full: "きゅうせっきじだい" },
+  { label: "じょうもん",   pos: 50, full: "じょうもんじだい" },
+  { label: "こだい",       pos: 65, full: "こだい" },
+  { label: "ちゅうせい",   pos: 80, full: "ちゅうせい" },
+  { label: "きんだい",     pos: 90, full: "きんだい" },
+  { label: "いま",         pos: 98, full: "げんだい" },
+];
+
+function eraToPosition(era: string): number {
+  const e = era.toLowerCase();
+  if (e.includes("きょうりゅう") || e.includes("白亜") || e.includes("恐竜")) return 2;
+  if (e.includes("こおり") || e.includes("ひょうがき") || e.includes("氷河")) return 16;
+  if (e.includes("50まん") || e.includes("30まん") || e.includes("旧石器") || e.includes("きゅうせっき")) return 33;
+  if (e.includes("9まん") || e.includes("5まん") || e.includes("3まん") || e.includes("1まん") || e.includes("じょうもん") || e.includes("縄文")) return 52;
+  if (e.includes("5000") || e.includes("こだい") || e.includes("古代")) return 65;
+  if (e.includes("ちゅうせい") || e.includes("中世") || e.includes("2500") || e.includes("1000")) return 80;
+  if (e.includes("きんだい") || e.includes("近代") || e.includes("1700") || e.includes("1800") || e.includes("1900")) return 90;
+  if (e.includes("げんだい") || e.includes("現代") || e.includes("いま") || e.includes("いまも")) return 98;
+  return 50; // default: 中間
+}
+
+function EraTimeline({ era }: { era?: string }) {
+  if (!era) return null;
+  const pos = eraToPosition(era);
+
+  return (
+    <div className="mt-3 rounded-2xl bg-slate-800/60 p-3 ring-1 ring-white/10">
+      <p className="mb-1 text-[10px] font-extrabold tracking-widest text-slate-400">
+        ⏳ ねんだい タイムライン
+      </p>
+      <p className="mb-2 text-[11px] text-amber-300 font-bold">{era}</p>
+
+      {/* タイムラインバー */}
+      <div className="relative mx-1">
+        {/* 軸 */}
+        <div className="h-2 w-full rounded-full bg-gradient-to-r from-sky-900 via-indigo-700 to-emerald-600" />
+
+        {/* マイルストーンのティック */}
+        {ERA_MILESTONES.map((m) => (
+          <div
+            key={m.label}
+            className="absolute top-0 flex flex-col items-center"
+            style={{ left: `${m.pos}%`, transform: "translateX(-50%)" }}
+          >
+            <div className="h-2 w-0.5 bg-white/30" />
+          </div>
+        ))}
+
+        {/* 現在位置ピン */}
+        <div
+          className="absolute -top-1.5 flex flex-col items-center"
+          style={{ left: `${pos}%`, transform: "translateX(-50%)" }}
+        >
+          <div
+            className="h-5 w-5 rounded-full border-2 border-amber-300 bg-amber-500 shadow-lg"
+            style={{ filter: "drop-shadow(0 0 4px #fbbf24)" }}
+          />
+        </div>
+      </div>
+
+      {/* ラベル行 */}
+      <div className="relative mt-3 h-6">
+        {ERA_MILESTONES.map((m) => (
+          <span
+            key={m.label}
+            className={`absolute text-[8px] font-bold leading-none ${
+              Math.abs(eraToPosition(m.full) - pos) < 10
+                ? "text-amber-300"
+                : "text-slate-500"
+            }`}
+            style={{
+              left: `${m.pos}%`,
+              transform: "translateX(-50%)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {m.label}
+          </span>
+        ))}
+      </div>
+
+      {/* 端ラベル */}
+      <div className="mt-1 flex justify-between text-[8px] text-slate-500">
+        <span>← おおむかし</span>
+        <span>いま →</span>
+      </div>
+    </div>
+  );
+}
 
 // ── カード詳細モーダル ───────────────────────────────────────────
 function AnimalDetailModal({
@@ -136,10 +376,16 @@ function AnimalDetailModal({
 
           {animal.habitat && (
             <p className="mt-2 text-[11px] text-slate-400 text-left">
-              <span className="font-bold text-slate-300">🌍 すみか：</span>
+              <span className="font-bold text-slate-300">🌿 すみか：</span>
               {animal.habitat}
             </p>
           )}
+
+          {/* 🌍 世界地図 */}
+          {animal.location && <WorldMap location={animal.location} />}
+
+          {/* ⏳ 年代タイムライン */}
+          {animal.era && <EraTimeline era={animal.era} />}
 
           {/* 🌟 家族の捕獲スタッツ */}
           <div className="mt-4 rounded-2xl bg-white/5 p-3 ring-1 ring-white/10 text-left">

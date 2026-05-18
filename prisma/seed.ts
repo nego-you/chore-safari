@@ -29,16 +29,56 @@ type InventorySeed = {
   quantity: number;
 };
 
-// 共有倉庫の初期アイテム。
+// 共有倉庫の初期アイテム（エサ廃止・罠パーツのみ）。
 const INVENTORY: InventorySeed[] = [
-  // エサ
-  { itemId: "meat", itemName: "おにく", itemType: "FOOD", quantity: 1 },
-  { itemId: "fish", itemName: "おさかな", itemType: "FOOD", quantity: 0 },
-  { itemId: "berry", itemName: "きのみ", itemType: "FOOD", quantity: 0 },
-  // 罠パーツ
-  { itemId: "rope", itemName: "ロープ", itemType: "TRAP_PART", quantity: 3 },
-  { itemId: "wood", itemName: "きのいた", itemType: "TRAP_PART", quantity: 0 },
-  { itemId: "net", itemName: "あみ", itemType: "TRAP_PART", quantity: 0 },
+  { itemId: "rope",        itemName: "ロープ",         itemType: "TRAP_PART", quantity: 3 },
+  { itemId: "wood",        itemName: "きのいた",       itemType: "TRAP_PART", quantity: 2 },
+  { itemId: "net",         itemName: "あみ",           itemType: "TRAP_PART", quantity: 1 },
+  { itemId: "sturdy_trap", itemName: "じょうぶなワナ", itemType: "TRAP_PART", quantity: 0 },
+  { itemId: "hunter_net",  itemName: "ハンターネット", itemType: "TRAP_PART", quantity: 0 },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Material マスタ（クレーンゲームドロップ品・クラフト素材）
+// ─────────────────────────────────────────────────────────────────────────────
+type MaterialSeed = {
+  materialId: string;
+  name: string;
+  emoji: string;
+  description: string;
+};
+
+const MATERIALS: MaterialSeed[] = [
+  {
+    materialId: "wood_branch",
+    name: "きのえだ",
+    emoji: "🪵",
+    description: "もりで ひろった じょうぶな えだ。わなや ゆみを つくるのに つかうよ！",
+  },
+  {
+    materialId: "stone",
+    name: "いし",
+    emoji: "🪨",
+    description: "かわらで みつけた するどい いし。ナイフや おもりわなに つかえるよ！",
+  },
+  {
+    materialId: "iron_shard",
+    name: "てつの かけら",
+    emoji: "⚙️",
+    description: "ざっかやで みつけた てつの かけら。じゅうや ナイフを つくるのに ひつようだよ！",
+  },
+  {
+    materialId: "sturdy_rope",
+    name: "じょうぶな イト",
+    emoji: "🪢",
+    description: "ちぎれにくい つよい イト。わなや ゆみの げんに つかうよ！",
+  },
+  {
+    materialId: "gunpowder",
+    name: "かやく",
+    emoji: "💥",
+    description: "じゅうの タマを とばす パワーのもと。あつかいに ちゅうい！",
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -112,105 +152,249 @@ type ToolSeed = {
   emoji: string;
   description: string;
   historicalContext: string;
-  type: "TRAP" | "BOW" | "SPEAR";
+  type: "TRAP" | "BOW" | "SPEAR" | "WEAPON";
   successRateBonus: number;
   inventoryItemId?: string;
   consumable: boolean;
+  era: string;
+  location: string;
   sortOrder: number;
 };
 
 const TOOLS: ToolSeed[] = [
-  // ── パッシブ罠 ─────────────────────────────────
+  // ── パッシブ罠（TRAP）× 6 ────────────────────────
   {
     toolId: "pitfall",
-    name: "落とし穴",
+    name: "にくいり おとしあな",
     emoji: "🕳️",
-    description: "地面に穴を掘って獲物が落ちるのを待つ最も古典的な罠。大型動物にも有効。",
-    historicalContext:
-      "落とし穴は人類が獣を狩るために使った最古の罠のひとつ。中国の周口店遺跡からは約50万年前のものと推定される遺構も見つかっており、マンモスやサイ等の大型哺乳類を捕らえるために世界各地で使われてきた。",
+    description: "ふかい アナの なかに おにくを おいて、においで どうぶつを おびきよせる わな！ おおきな どうぶつにも まけないよ。",
+    historicalContext: "おおむかしの ひとが マンモスみたいな きょだいな どうぶつを つかまえるために つかっていたよ。ちゅうごくの しゅうこうてん いせきから やく 50まんねんまえの あとが みつかっているんだって！",
     type: "TRAP",
     successRateBonus: 0.0,
     inventoryItemId: "wood",
     consumable: true,
+    era: "50まんねんまえ（おおむかし）",
+    location: "アジア・ヨーロッパ",
     sortOrder: 10,
   },
   {
     toolId: "leghold",
-    name: "トラバサミ",
+    name: "バネワナ（トラバサミ）",
     emoji: "🪤",
-    description: "獲物の足を挟むばね式の罠。中型獣に有効。",
-    historicalContext:
-      "金属製のばねトラップは18世紀の北米毛皮交易で広く普及。それ以前にも木と縄を使った同型のスナップトラップが、縄文時代の日本やシベリアの先住民により使われていた。現代では動物福祉の観点から多くの国で規制されている。",
+    description: "どうぶつの あしを バネではさむ わな。ちゅうがたの どうぶつを ぴたっと つかまえるよ！",
+    historicalContext: "きんぞくせいの バネワナは 1700ねんごろ きたアメリカの けがわ こうえきで ひろまったよ。それよりまえにも きと なわを つかった おなじ しくみの わなが、じょうもんじだいの にほんや シベリアでも つかわれていたんだって。",
     type: "TRAP",
     successRateBonus: 0.1,
     inventoryItemId: "rope",
     consumable: true,
+    era: "きんだい（1700ねんごろ）",
+    location: "きたアメリカ・ヨーロッパ",
     sortOrder: 20,
   },
   {
     toolId: "snare_net",
-    name: "あみワナ",
+    name: "さかないり あみワナ",
     emoji: "🕸️",
-    description: "天井から落とすネット。小〜中型の動物を傷つけずに捕獲できる。",
-    historicalContext:
-      "投網・落とし網の起源は1万年以上前。古代エジプトの壁画にも鳥猟用の網が描かれている。現代の生態学調査でも非殺傷捕獲の標準的な道具として使われ続けている。",
+    description: "うえから バサッと おとす あみワナ。さかなの においで おびきよせて、ちいさな どうぶつを やさしく つかまえられるよ。",
+    historicalContext: "なげあみや おとしあみの はじまりは 1まんねん いじょう まえ。こだい エジプトの かべえにも とりりょう用の あみが かかれているよ。いまでも せいたいがくの ちょうさで つかわれているんだって！",
     type: "TRAP",
     successRateBonus: 0.15,
     inventoryItemId: "net",
     consumable: true,
+    era: "1まんねんまえ（じょうもんじだい）",
+    location: "アジア・アフリカ",
     sortOrder: 30,
   },
+  {
+    toolId: "deadfall_trap",
+    name: "おもりわな（デッドフォール）",
+    emoji: "🪨",
+    description: "おもい いわや まるたを じくで つっかえ棒して、えさを つつくと どさっと おちてくる わな！",
+    historicalContext: "「デッドフォール」は せかいじゅうで さいも ふるく つかわれた わなのひとつ。やく 3まんねんまえから きたアメリカの せんじゅうみんや じょうもんじんも つかっていたと いわれているよ。",
+    type: "TRAP",
+    successRateBonus: 0.05,
+    inventoryItemId: "wood",
+    consumable: true,
+    era: "3まんねんまえ（きゅうせっきじだい）",
+    location: "きたアメリカ・アジア",
+    sortOrder: 35,
+  },
+  {
+    toolId: "bamboo_trap",
+    name: "たけスプリングわな",
+    emoji: "🎋",
+    description: "たけを しならせた バネのちから で どうぶつを ぴょーんと つかまえる わな。かるくて じょうぶ！",
+    historicalContext: "アジアの もりで ながいこと つかわれてきた わな。たけは しなやかで つよく、バネとして さいこうなんだって。5000ねんいじょう まえから ちゅうごくや にほんでも つかわれていたよ。",
+    type: "TRAP",
+    successRateBonus: 0.12,
+    inventoryItemId: "rope",
+    consumable: true,
+    era: "5000ねんまえ（こだい）",
+    location: "アジア",
+    sortOrder: 38,
+  },
+  {
+    toolId: "cage_trap",
+    name: "カゴわな",
+    emoji: "🧺",
+    description: "どうぶつが はいると ドアが しまる カゴワナ。どうぶつを きずつけずに いきたまま つかまえるよ！",
+    historicalContext: "カゴわなは こだい エジプトや メソポタミアで、とりや ちいさな どうぶつを いきたまま つかまえるために つかわれていたよ。5000ねんいじょう まえから つかわれている やさしい わな！",
+    type: "TRAP",
+    successRateBonus: 0.18,
+    inventoryItemId: "net",
+    consumable: true,
+    era: "5000ねんまえ（こだい）",
+    location: "ちゅうとう・アジア",
+    sortOrder: 40,
+  },
 
-  // ── アクティブ：投擲武器（SPEAR） ───────────────
+  // ── アクティブ：投擲武器（SPEAR）× 4 ──────────────
   {
     toolId: "atlatl",
-    name: "アトラトル（投槍器）",
+    name: "アトラトル（とうそうき）",
     emoji: "🏹",
-    description: "槍に「てこ」を加えて飛距離と威力を倍増させた投擲器。中型獣を一撃で。",
-    historicalContext:
-      "アトラトルは今から約3万年前、後期旧石器時代のヨーロッパで発明された人類最初の機械武器。長さ約60cmのてこの原理で槍の初速を2倍以上に増幅し、マンモスやバイソンの狩猟を可能にした。アステカ語の「投げ槍」が語源。",
+    description: "やりに「てこ」を くわえて、ものすごい いきおいで とおくに なげる どうぐ！ ちゅうがたの どうぶつを いちげきで しとめられるよ。",
+    historicalContext: "アトラトルは いまから やく 3まんねんまえ、ヨーロッパの こうき きゅうせっきじだいに はつめいされた、にんげんさいしょの きかいぶき。てこのげんりで やりの しょくを 2ばい いじょうに ふやして、マンモスや バイソンを かりするために つかわれたよ！",
     type: "SPEAR",
     successRateBonus: 0.25,
     consumable: false,
-    sortOrder: 40,
+    era: "3まんねんまえ（こうききゅうせっきじだい）",
+    location: "ヨーロッパ・アメリカ",
+    sortOrder: 50,
   },
   {
     toolId: "harpoon",
-    name: "もり（銛）",
+    name: "もり（ぎょか用銛）",
     emoji: "🔱",
-    description: "返しのついた魚介専用の投擲武器。深海生物にも届く。",
-    historicalContext:
-      "銛は約9万年前のアフリカ・カタンダ遺跡で骨製のものが発見されており、人類最古級の漁具とされる。日本でも縄文時代の貝塚から黒曜石・骨角製の銛が多数出土し、マグロやクジラの捕獲に使われた。",
+    description: "かえしの ついた さきで、つきさした どうぶつが にげられない うみの ぶき。かいよう の いきものにも とどくよ！",
+    historicalContext: "もりは やく 9まんねんまえの アフリカ・カタンダ いせきで ほね製の ものが みつかっており、にんげんさいこきゅう の りょうぐと いわれているよ。にほんの じょうもんじだいの かいづかからも こっかくせいの もりが たくさん でてきて、マグロや クジラを とるために つかわれていたんだって！",
     type: "SPEAR",
     successRateBonus: 0.3,
     consumable: false,
-    sortOrder: 50,
+    era: "9まんねんまえ（きゅうせっきじだい）",
+    location: "アフリカ・アジア",
+    sortOrder: 55,
   },
-
-  // ── アクティブ：飛び道具（BOW） ─────────────────
   {
-    toolId: "compound_bow",
-    name: "複合弓",
-    emoji: "🏹",
-    description: "滑車を組み合わせて引きを軽くした近代弓。大型獣も一射で仕留める。",
-    historicalContext:
-      "複合弓（コンパウンドボウ）は1966年にアメリカの技術者ホリー・アレンが特許を取得した近代弓。ケーブルと滑車により最大引き重量を1/2以下に下げ、命中時の運動エネルギーは長弓の約2倍。現代ハンティングの主力武器。",
-    type: "BOW",
-    successRateBonus: 0.4,
+    toolId: "javelin",
+    name: "やり（ジャベリン）",
+    emoji: "🗡️",
+    description: "まっすぐ とおくへ なげる シンプルな ぶき。はじめは きのえだを とがらせた だけ！ どんな どうぶつにも ねらえるよ。",
+    historicalContext: "やりは にんげんが つくった さいも ふるい ぶきのひとつ。やく 50まんねんまえの ドイツで はっくつされた もっせいの やりが、いまも せかいさいこの ぼっきの ひとつ。アフリカから ぜんせかいへ ひろまったよ！",
+    type: "SPEAR",
+    successRateBonus: 0.2,
     consumable: false,
+    era: "50まんねんまえ（おおむかし）",
+    location: "アフリカ・ヨーロッパ",
     sortOrder: 60,
   },
   {
+    toolId: "blowgun",
+    name: "ふきや（吹き矢）",
+    emoji: "💨",
+    description: "ほそい つつの なかに ちいさな ハリを いれて、いきで フッ！と とばす ぶき。おとを たてずに とおくから しずかに ねらえるよ。",
+    historicalContext: "ふきやは なんアメリカや アジアの ねったい もりで いまも つかわれているよ。アマゾンの せんじゅうみんは くわの どくを ぬった ハリを つかって、きの うえの サルや とりを かりしていたんだって！",
+    type: "SPEAR",
+    successRateBonus: 0.22,
+    consumable: false,
+    era: "げんだい（いまもつかわれている）",
+    location: "なんアメリカ・アジア",
+    sortOrder: 65,
+  },
+
+  // ── アクティブ：飛び道具（BOW）× 3 ────────────────
+  {
     toolId: "longbow",
-    name: "長弓",
+    name: "ながゆみ（ロングボウ）",
     emoji: "🏹",
-    description: "古典的な木製の弓。コストは低く、レアな獲物にも狙える。",
-    historicalContext:
-      "ウェールズ・イングランド産の長弓（イチイ材）は中世ヨーロッパの戦場を支配し、1346年のクレシーの戦いでは仏騎兵を壊滅させた。射程は200m超、毎分10〜12射の速射力を誇り、火砲が普及するまで「ロングボウマン」は戦略兵器だった。",
+    description: "ながい もくせいの ゆみ。シンプルだけど つよい！ しゃていは 200m いじょう。レアな どうぶつも ねらえるよ。",
+    historicalContext: "ウェールズ・イングランドの ながゆみ（イチイざい）は ちゅうせいヨーロッパの せんじょうを しはいして、1346ねんの クレシーの たたかいでは フランスの きしぐんを くずしたんだって。1ぷんに 10〜12ほん いじょう はなてる そくしゃりょくを ほこる つよいぶき！",
     type: "BOW",
     successRateBonus: 0.2,
     consumable: false,
+    era: "ちゅうせい（1200ねんごろ）",
+    location: "ヨーロッパ",
     sortOrder: 70,
+  },
+  {
+    toolId: "crossbow",
+    name: "クロスボウ（いしゆみ）",
+    emoji: "⚔️",
+    description: "よこに ゆみを とりつけた ちから いらずの とびどうぐ。引き金を ひくだけで ほっしゃできて、おおものを ねらえるよ！",
+    historicalContext: "クロスボウは やく 2500ねんまえに ちゅうごくで はつめいされて、そこから ヨーロッパに つたわったよ。ふつうの ゆみより ちからが いらないのに つよい や を とばせるから、おおぜいの へいしが つかえる かいきてきな ぶき！",
+    type: "BOW",
+    successRateBonus: 0.32,
+    consumable: false,
+    era: "2500ねんまえ（こだい）",
+    location: "ちゅうごく・ヨーロッパ",
+    sortOrder: 75,
+  },
+  {
+    toolId: "compound_bow",
+    name: "ふくごうゆみ（コンパウンドボウ）",
+    emoji: "🎯",
+    description: "かっしゃと ケーブルで ひきを かるくした さいきんの ゆみ。おおきな どうぶつも いちほんで しとめる もっとも つよい ゆみ！",
+    historicalContext: "ふくごうゆみは 1966ねんに アメリカの エンジニア ホリー・アレンが とっきょを とった さいしんぶき。ケーブルと かっしゃで ひき重量を はんぶん いかに さげながら、めいちゅうじの うんどうエネルギーは ながゆみの やく 2ばい！ げんだいハンティングの しゅりょくぶき。",
+    type: "BOW",
+    successRateBonus: 0.4,
+    consumable: false,
+    era: "げんだい（1966ねん〜）",
+    location: "アメリカ",
+    sortOrder: 80,
+  },
+
+  // ── アクティブ：刃物・銃火器（WEAPON）× 4 ──────────────
+  {
+    toolId: "flint_knife",
+    name: "せっきの ナイフ",
+    emoji: "🪨",
+    description: "いしを わって つくった おおむかしの ナイフ！ けものを さばくのに つかうよ。かるくて もちやすい！",
+    historicalContext: "せっきの ナイフは やく 250まんねん まえから にんげんの そせんが つくりはじめた、もっとも ふるい どうぐの ひとつ。くろいせき（フリント）を たたいて するどい やいばを つくる「うちわり ぎじゅつ」は せかいじゅうで どくりつして はってんしたんだって！",
+    type: "WEAPON",
+    successRateBonus: 0.1,
+    consumable: false,
+    era: "250まんねんまえ（せっきじだい）",
+    location: "せかいかくち",
+    sortOrder: 85,
+  },
+  {
+    toolId: "survival_knife",
+    name: "サバイバルナイフ",
+    emoji: "🔪",
+    description: "ギザギザの は が ついていて、き を きったり も できる げんだいの べんりな ナイフ！ えものに すばやく ちかづいて しとめるよ。",
+    historicalContext: "サバイバルナイフの だいめいし「ボウイナイフ」は 1830ねんごろ アメリカの ジム・ボウイが せっけいしたと いわれているよ。だいにじせかいたいせん以降、ぐんたいの サバイバルキットに かならず はいるようになって、アウトドアの てっぱん どうぐに なったんだって！",
+    type: "WEAPON",
+    successRateBonus: 0.2,
+    consumable: false,
+    era: "げんだい（1830ねんごろ〜）",
+    location: "アメリカ",
+    sortOrder: 90,
+  },
+  {
+    toolId: "arquebus",
+    name: "むかしの じゅう（ひなわじゅう）",
+    emoji: "🔫",
+    description: "かやくの ちからで タマを とばす ぶき。うつまでに じかんが かかるけど、とても つよい！ とおくの えものも ねらえるよ。",
+    historicalContext: "ひなわじゅうは 15せいきに ヨーロッパで はったつした、はじめての てもち じゅう。ひなわに かや を ともして かやくに てんかする しくみで、せんごくじだいの にほんにも でんらいして 「たねがしまの てっぽう」として ひろまり、ながしのの たたかいで のぶながが つかったよ！",
+    type: "WEAPON",
+    successRateBonus: 0.35,
+    consumable: false,
+    era: "15〜17せいき（ちゅうきんせい）",
+    location: "ヨーロッパ・アジア",
+    sortOrder: 92,
+  },
+  {
+    toolId: "hunting_rifle",
+    name: "ハンターの じゅう（りょうじゅう）",
+    emoji: "🎯",
+    description: "とおくの えものを せいかくに ねらえる すごい じゅう！ スコープで ちいさな どうぶつも ぴったり ねらえるよ。",
+    historicalContext: "りょうじゅうは 19せいきから ヨーロッパや アメリカで さかんに つかわれるようになった、ライフリング（みぞきり）ぎじゅつが とくちょうの じゅう。ライフリングで だんがんが らせん かいてんし、めいちゅうせいが ひやくてきに あがったんだって。いまも ぐんたいや ハンターに つかわれているよ！",
+    type: "WEAPON",
+    successRateBonus: 0.45,
+    consumable: false,
+    era: "げんだい（19せいき〜）",
+    location: "ヨーロッパ・アメリカ",
+    sortOrder: 95,
   },
 ];
 
@@ -729,6 +913,17 @@ async function main() {
     console.log(`Seeded child: ${created.name} (${created.id})`);
   }
 
+  const testUser = await prisma.user.create({
+    data: {
+      name: "🧪 テスト",
+      birthDate: new Date("2000-01-01"),
+      role: "CHILD",
+      coinBalance: 99999,
+      isTestAccount: true,
+    },
+  });
+  console.log(`Seeded test user: ${testUser.name} (${testUser.id})`);
+
   for (const item of INVENTORY) {
     const upserted = await prisma.sharedInventoryItem.upsert({
       where: { itemId: item.itemId },
@@ -774,34 +969,80 @@ async function main() {
 
   // Tool マスタ
   for (const t of TOOLS) {
+    const toolData = {
+      name: t.name,
+      emoji: t.emoji,
+      description: t.description,
+      historicalContext: t.historicalContext,
+      type: t.type,
+      successRateBonus: t.successRateBonus,
+      inventoryItemId: t.inventoryItemId ?? null,
+      consumable: t.consumable,
+      era: t.era,
+      location: t.location,
+      sortOrder: t.sortOrder,
+    };
     const upserted = await prisma.tool.upsert({
       where: { toolId: t.toolId },
-      update: {
-        name: t.name,
-        emoji: t.emoji,
-        description: t.description,
-        historicalContext: t.historicalContext,
-        type: t.type,
-        successRateBonus: t.successRateBonus,
-        inventoryItemId: t.inventoryItemId ?? null,
-        consumable: t.consumable,
-        sortOrder: t.sortOrder,
-      },
-      create: {
-        toolId: t.toolId,
-        name: t.name,
-        emoji: t.emoji,
-        description: t.description,
-        historicalContext: t.historicalContext,
-        type: t.type,
-        successRateBonus: t.successRateBonus,
-        inventoryItemId: t.inventoryItemId ?? null,
-        consumable: t.consumable,
-        sortOrder: t.sortOrder,
-      },
+      update: toolData,
+      create: { toolId: t.toolId, ...toolData },
     });
     console.log(`Seeded tool:  ${upserted.emoji} ${upserted.name} [${upserted.type}]`);
   }
+
+  // Material マスタ
+  for (const m of MATERIALS) {
+    const upserted = await prisma.material.upsert({
+      where: { materialId: m.materialId },
+      update: { name: m.name, emoji: m.emoji, description: m.description },
+      create: { materialId: m.materialId, name: m.name, emoji: m.emoji, description: m.description },
+    });
+    console.log(`Seeded material: ${upserted.emoji} ${upserted.name}`);
+  }
+
+  // テストユーザーに初期素材を付与（各10個）
+  const testUsers = await prisma.user.findMany({
+    where: { isTestAccount: true, role: "CHILD" },
+    select: { id: true, name: true },
+  });
+  for (const user of testUsers) {
+    const materials = await prisma.material.findMany();
+    for (const mat of materials) {
+      await prisma.userMaterial.upsert({
+        where: { userId_materialId: { userId: user.id, materialId: mat.id } },
+        update: {},  // 既存は変えない（量が減っていたら戻さない）
+        create: { userId: user.id, materialId: mat.id, quantity: 10 },
+      });
+    }
+    // テストユーザーに全道具を1個ずつ付与
+    const tools = await prisma.tool.findMany();
+    for (const tool of tools) {
+      await prisma.userTool.upsert({
+        where: { userId_toolId: { userId: user.id, toolId: tool.id } },
+        update: {},
+        create: { userId: user.id, toolId: tool.id, quantity: 3 },
+      });
+    }
+    console.log(`Seeded UserMaterial + UserTool for test user: ${user.name}`);
+  }
+
+  // stageId → デフォルト era / location マッピング
+  const ERA_BY_STAGE: Record<string, string> = {
+    savanna:    "げんだい（いま）",
+    forest:     "げんだい（いま）",
+    ice_age:    "こおりのじだい（やく260まんねんまえ〜1まんねんまえ）",
+    deep_sea:   "げんだい（いま）",
+    cretaceous: "きょうりゅうじだい（やく6600まんねんまえ）",
+    mythos:     "でんせつのじだい",
+  };
+  const LOCATION_BY_STAGE: Record<string, string> = {
+    savanna:    "アフリカ",
+    forest:     "ユーラシア",
+    ice_age:    "ユーラシア・アメリカ",
+    deep_sea:   "かいよう",
+    cretaceous: "せかいかくち",
+    mythos:     "せかい",
+  };
 
   // Animal マスタ
   let animalSeedCount = 0;
@@ -815,6 +1056,8 @@ async function main() {
       rarity: animal.rarity,
       description: animal.description,
       habitat: animal.habitat,
+      era: ERA_BY_STAGE[animal.stageId] ?? "げんだい（いま）",
+      location: LOCATION_BY_STAGE[animal.stageId] ?? "せかいかくち",
       isExtinct: animal.isExtinct ?? false,
       imageUrl: animal.imageUrl ?? null,
       stageId: stageDbId,

@@ -12,8 +12,10 @@ export default async function KidsPage() {
   // ピッカーで子供カードを描画するのに必要な最小限のデータだけ取る。
   // 共有インベントリや通知はピッカーでは使わない（ホーム画面で取り直す）が、
   // KidsPortal の Props を満たすために空配列を渡しておく。
+  // isTestAccount: true のユーザーは子供ピッカーから隠す。
+  // テストユーザーへのアクセスは /bank/dev 経由で行う。
   const children = await prisma.user.findMany({
-    where: { role: "CHILD" },
+    where: { role: "CHILD", isTestAccount: false },
     orderBy: { birthDate: "asc" },
     select: { id: true, name: true, coinBalance: true },
   });
