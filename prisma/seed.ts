@@ -1126,6 +1126,80 @@ async function main() {
     );
   }
 
+  const childUsers = await prisma.user.findMany({
+    where: {
+      isTestAccount: false,
+      role: "CHILD",
+    },
+    select: {
+      id: true,
+      name: true,
+    },
+  });
+
+  const seedMaterials = await prisma.material.findMany({
+    orderBy: { materialId: "asc" },
+    take: 5,
+  });
+  const seedTools = await prisma.tool.findMany({
+    orderBy: { toolId: "asc" },
+    take: 5,
+  });
+  const seedAnimals = await prisma.animal.findMany({
+    orderBy: { animalId: "asc" },
+    take: 3,
+  });
+
+  for (const user of childUsers) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { coinBalance: 1000 },
+    });
+
+    for (const material of seedMaterials) {
+      await prisma.userMaterial.upsert({
+        where: { userId_materialId: { userId: user.id, materialId: material.id } },
+        update: {},
+        create: {
+          userId: user.id,
+          materialId: material.id,
+          quantity: 5,
+        },
+      });
+    }
+
+    for (const tool of seedTools) {
+      await prisma.userTool.upsert({
+        where: { userId_toolId: { userId: user.id, toolId: tool.id } },
+        update: {},
+        create: {
+          userId: user.id,
+          toolId: tool.id,
+          quantity: 3,
+        },
+      });
+    }
+
+    for (const animal of seedAnimals) {
+      const existingCaught = await prisma.caughtAnimal.findFirst({
+        where: {
+          caughtByUserId: user.id,
+          animalId: animal.id,
+        },
+      });
+      if (!existingCaught) {
+        await prisma.caughtAnimal.create({
+          data: {
+            caughtByUserId: user.id,
+            animalId: animal.id,
+          },
+        });
+      }
+    }
+
+    console.log(`Seeded test assets for child user: ${user.name} (${user.id})`);
+  }
+
   console.log(`\n✅ Done. Animals seeded: ${animalSeedCount}`);
 }
 
