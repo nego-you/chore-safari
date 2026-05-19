@@ -3,13 +3,13 @@
 // 子供用ポータルのクライアント本体。
 // 2026-05-17 改修:
 //   「だれがあそぶ？」ピッカー → 選択後は「ワールドマップ」UI に。
-//   3拠点へのスポーク:
-//     🏰 クエストギルド (/kids/[kidId]/guild)
-//     🌿 サファリ        (/kids/[kidId]/safari)
-//     📦 博物倉庫        (/kids/[kidId]/warehouse)
+// 2026-05-20 改修:
+//   SpokeCard 式のメニューを WorldMapPortal（インタラクティブ地図UI）へ全面差替え。
+//   幸仁のアイコンを 🐹 → 🐷 に変更。
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { WorldMapPortal } from "./WorldMapPortal";
 import {
   getUnreadBonusNotifications,
   markBonusRead,
@@ -52,13 +52,14 @@ const NAME_READING: Record<string, string> = {
   "叶泰": "かなた",
 };
 
-// 表示順 = 年上から。美琴=アザラシ / 幸仁=ハムスター / 叶泰=ラッコ。
+// 表示順 = 年上から。美琴=アザラシ / 幸仁=ブタ / 叶泰=ラッコ。
+// ※ 幸仁のアイコンを 🐹(ハムスター) → 🐷(ブタ) に変更 (2026-05-20)
 const KID_THEMES: Array<{
   emoji: string;
   bg: string;
   ring: string;
   text: string;
-  // ワールドマップで使う背景グラデーション
+  // ピッカー画面で使う背景グラデーション
   mapBg: string;
 }> = [
   {
@@ -69,11 +70,11 @@ const KID_THEMES: Array<{
     mapBg: "from-sky-200 via-cyan-100 to-emerald-100",
   },
   {
-    emoji: "🐹",
-    bg: "bg-gradient-to-br from-yellow-200 to-pink-200",
-    ring: "ring-amber-300",
-    text: "text-amber-900",
-    mapBg: "from-amber-100 via-pink-100 to-emerald-100",
+    emoji: "🐷",
+    bg: "bg-gradient-to-br from-pink-200 to-rose-200",
+    ring: "ring-pink-300",
+    text: "text-rose-900",
+    mapBg: "from-pink-100 via-rose-100 to-emerald-100",
   },
   {
     emoji: "🦦",
@@ -211,141 +212,18 @@ export function KidsPortal({
     );
   }
 
-  // ── 選択後：ワールドマップ ─────────────────────────────
-  const theme = themeFor(selectedIndex);
-
+  // ── 選択後：インタラクティブ・ワールドマップ ──────────────
   return (
-    <main
-      className={`h-screen overflow-hidden bg-gradient-to-b ${theme.mapBg} px-4 py-3 flex flex-col`}
-    >
-      <div className="mx-auto w-full max-w-3xl flex flex-col gap-3 h-full">
-        {/* ヘッダー：もどるボタン */}
-        <div className="flex items-center justify-between shrink-0">
-          <Link
-            href="/kids"
-            className="rounded-full bg-white/80 px-4 py-2 text-sm font-bold text-slate-700 shadow ring-1 ring-slate-200 transition hover:bg-white active:scale-95"
-          >
-            ← べつのこ
-          </Link>
-          <p className="text-sm font-extrabold text-slate-700/80 tracking-widest">
-            🗺️ ワールドマップ
-          </p>
-        </div>
-
-        {/* ヒーロー：名前 + コイン */}
-        <section
-          className={`shrink-0 rounded-[2rem] ${theme.bg} px-6 py-4 text-center shadow-xl ring-4 ring-white`}
-        >
-          <p className="text-4xl drop-shadow leading-none" aria-hidden>
-            {theme.emoji}
-          </p>
-          <h1
-            className={`mt-0.5 text-2xl font-extrabold sm:text-3xl ${theme.text}`}
-          >
-            <NameRuby name={selected.name} />
-          </h1>
-          <p className="mt-2 text-xs font-bold text-white/90 tracking-widest">
-            きみの コイン
-          </p>
-          <p className="mt-0.5 font-mono text-4xl font-black tracking-tight text-white drop-shadow sm:text-5xl">
-            {selected.coinBalance.toLocaleString()}
-            <span className="ml-2 text-lg">🪙</span>
-          </p>
-        </section>
-
-        {/* ワールドマップの3拠点 */}
-        <section
-          aria-label="ワールドマップの拠点"
-          className="flex flex-col gap-3 flex-1 justify-center"
-        >
-          <SpokeCard
-            href={`/kids/${selected.id}/guild`}
-            emoji="🏰"
-            title="クエスト ギルド"
-            subtitle="おてつだい・がくしゅうで コインを かせぐ"
-            description="おしごとを うけて 報酬を もらおう"
-            gradient="from-amber-400 via-orange-400 to-rose-400"
-          />
-          <SpokeCard
-            href={`/kids/${selected.id}/safari`}
-            emoji="🌿🦁"
-            title="サファリ（狩場）"
-            subtitle="罠と道具で どうぶつを 捕まえる"
-            description="ステージを えらんで 出かけよう"
-            gradient="from-emerald-400 via-lime-400 to-teal-400"
-            spotlight
-          />
-          <SpokeCard
-            href={`/kids/${selected.id}/craft`}
-            emoji="⚒️"
-            title="クラフト 工場"
-            subtitle="素材を つかって 道具を つくる"
-            description="集めた MaterialでTRAPや武器をクラフト"
-            gradient="from-amber-400 via-yellow-300 to-lime-400"
-          />
-          <SpokeCard
-            href={`/kids/${selected.id}/warehouse`}
-            emoji="📦"
-            title="博物 倉庫"
-            subtitle="図鑑・道具・素材を 管理する"
-            description="つかまえた どうぶつを しらべよう"
-            gradient="from-sky-400 via-indigo-400 to-violet-400"
-          />
-        </section>
-
-        <p className="shrink-0 text-center text-[11px] font-bold text-slate-500/70 tracking-widest pb-1">
-          🌍 サファリの 世界へ ようこそ 🌍
-        </p>
-      </div>
-
+    <>
+      <WorldMapPortal
+        children={childList}
+        selectedId={selected.id}
+        onBack={() => setSelectedId(null)}
+      />
       {activeBonus && (
         <BonusCelebrationModal bonus={activeBonus} onAck={handleAckBonus} />
       )}
-    </main>
-  );
-}
-
-// ───────────── ワールドマップのスポーク（拠点カード） ─────────────
-function SpokeCard({
-  href,
-  emoji,
-  title,
-  subtitle,
-  description,
-  gradient,
-  spotlight = false,
-}: {
-  href: string;
-  emoji: string;
-  title: string;
-  subtitle: string;
-  description: string;
-  gradient: string;
-  spotlight?: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      className={`block rounded-3xl bg-gradient-to-br ${gradient} p-1 shadow-xl transition hover:brightness-110 active:scale-[0.99] ${
-        spotlight ? "ring-4 ring-white shadow-2xl" : ""
-      }`}
-    >
-      <div className="flex items-center gap-3 rounded-[1.4rem] bg-white/90 px-4 py-3 backdrop-blur">
-        <span className="text-4xl shrink-0" aria-hidden>
-          {emoji}
-        </span>
-        <div className="flex-1 min-w-0">
-          <p className="text-lg font-black text-slate-800 leading-tight">
-            {title}
-          </p>
-          <p className="text-xs font-bold text-slate-600 mt-0.5">{subtitle}</p>
-          <p className="text-[11px] text-slate-500 mt-0.5">{description}</p>
-        </div>
-        <span className="text-2xl text-slate-500 shrink-0" aria-hidden>
-          →
-        </span>
-      </div>
-    </Link>
+    </>
   );
 }
 
