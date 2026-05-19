@@ -340,7 +340,7 @@ export function RacePlayer({ kidId, animals, coinBalance: initialCoinBalance }: 
   // ── スタートハンドラ（ベット処理込み） ───────────────────
   const handleStart = useCallback(async () => {
     if (!betLaneKey) { setBetError("よそうする どうぶつを えらんでね！"); return; }
-    if (betAmount < 1)  { setBetError("1コイン いじょう かけてね！"); return; }
+    if (betAmount < 10)  { setBetError("10コイン いじょう かけてね！"); return; }
     if (betAmount > maxBet) {
       setBetError(`さいだい ${maxBet}コイン まで だよ（もちコインの はんぶん or 100まい）`);
       return;
@@ -607,8 +607,8 @@ export function RacePlayer({ kidId, animals, coinBalance: initialCoinBalance }: 
               {/* −10 */}
               <button
                 type="button"
-                onClick={() => setBetAmount(a => Math.max(1, a - 10))}
-                disabled={betAmount <= 1}
+                onClick={() => setBetAmount(a => Math.max(10, a - 10))}
+                disabled={betAmount <= 10}
                 className="w-9 h-9 rounded-full bg-white/15 text-white font-black text-lg leading-none shadow transition active:scale-90 hover:bg-white/25 disabled:opacity-30"
               >
                 −
