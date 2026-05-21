@@ -90,7 +90,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
 export default async function KidsHomePage({ params }: { params: Params }) {
   const { kidId } = await params;
 
-  const [children, inventory, notifications] = await Promise.all([
+  const [children, inventory, notifications, penaltyNotifications] = await Promise.all([
     prisma.user.findMany({
       where: { role: "CHILD" },
       orderBy: { birthDate: "asc" },
@@ -110,6 +110,10 @@ export default async function KidsHomePage({ params }: { params: Params }) {
       where: { isRead: false },
       orderBy: { createdAt: "asc" },
     }),
+    prisma.penaltyNotification.findMany({
+      where: { userId: kidId, isRead: false },
+      orderBy: { createdAt: "asc" },
+    }),
   ]);
 
   // 存在しない kidId のときは 404。
@@ -123,6 +127,13 @@ export default async function KidsHomePage({ params }: { params: Params }) {
       inventory={inventory}
       initialSelectedId={kidId}
       initialNotifications={notifications.map((n) => ({
+        id: n.id,
+        userId: n.userId,
+        reason: n.reason,
+        coinAmount: n.coinAmount,
+        createdAt: n.createdAt.toISOString(),
+      }))}
+      initialPenalties={penaltyNotifications.map((n) => ({
         id: n.id,
         userId: n.userId,
         reason: n.reason,

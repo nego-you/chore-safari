@@ -354,10 +354,10 @@ export function HuntClient({
         {/* ヘッダー */}
         <div className="flex items-center justify-between">
           <Link
-            href={`/kids/${kidId}/safari`}
+            href={`/kids/${kidId}`}
             className="rounded-full bg-white/80 px-4 py-2 text-sm font-bold text-emerald-800 shadow ring-1 ring-emerald-200 transition hover:bg-white active:scale-95"
           >
-            ← サファリへ
+            ← マップへ
           </Link>
           <p className="text-sm font-extrabold text-emerald-700/80 tracking-widest">
             🏹 アクティブ 狩り

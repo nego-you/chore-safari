@@ -29,6 +29,8 @@ type AnimalEntry = {
   habitat?: string;
   era?: string;
   location?: string;
+  // 現実の平均寿命（年）
+  lifespanYears?: number;
   // 家族の誰か1人でも捕まえていれば true（家族共通図鑑）
   caught: boolean;
   // 子供ごとの捕獲回数（年上から）
@@ -373,6 +375,18 @@ function AnimalDetailModal({
           <p className="mt-4 text-sm text-slate-300 leading-relaxed text-left">
             {animal.description}
           </p>
+
+          {/* じゅみょう */}
+          {animal.lifespanYears !== undefined && (
+            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 px-3 py-1 ring-1 ring-amber-400/40">
+              <span className="text-base" aria-hidden>⌛</span>
+              <span className="text-[12px] font-extrabold text-amber-300">
+                {animal.lifespanYears >= 999
+                  ? "じゅみょう：ふろうふし（えいえんのいのち）"
+                  : `じゅみょう：やく ${animal.lifespanYears} ねん`}
+              </span>
+            </div>
+          )}
 
           {animal.habitat && (
             <p className="mt-2 text-[11px] text-slate-400 text-left">

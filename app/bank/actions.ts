@@ -48,6 +48,7 @@ export async function giveChoreCoins(userId: string) {
 
 export async function applyPenalty(userId: string, reason?: string) {
   await ensureChild(userId);
+  const trimmedReason = reason?.trim() || "喧嘩";
   await prisma.$transaction([
     prisma.user.update({
       where: { id: userId },
@@ -58,11 +59,20 @@ export async function applyPenalty(userId: string, reason?: string) {
         userId,
         amount: -PENALTY_AMOUNT,
         kind: "PENALTY",
-        reason: reason?.trim() || "喧嘩",
+        reason: trimmedReason,
+      },
+    }),
+    prisma.penaltyNotification.create({
+      data: {
+        userId,
+        reason: trimmedReason,
+        coinAmount: PENALTY_AMOUNT,
+        isRead: false,
       },
     }),
   ]);
   revalidatePath("/bank");
+  revalidatePath("/kids");
 }
 
 // 特大達成ボーナス：コイン加算 + CoinTransaction 履歴 + 未読の SpecialBonusNotification を
@@ -612,6 +622,14 @@ export async function applyPenaltyMaster(
           amount: -penalty.coinAmount,
           kind: "PENALTY",
           reason: penalty.title,
+        },
+      });
+      await tx.penaltyNotification.create({
+        data: {
+          userId,
+          reason: penalty.title,
+          coinAmount: penalty.coinAmount,
+          isRead: false,
         },
       });
       return u;

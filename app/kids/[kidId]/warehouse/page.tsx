@@ -13,7 +13,7 @@ type Params = Promise<{ kidId: string }>;
 export default async function WarehousePage({ params }: { params: Params }) {
   const { kidId } = await params;
 
-  const [kid, allAnimals, caughtAnimals, inventory, tools, stages] = await Promise.all([
+  const [kid, allAnimals, caughtAnimals, inventory, tools, stages, myAnimals] = await Promise.all([
     prisma.user.findFirst({
       where: { id: kidId, role: "CHILD" },
       select: { id: true, name: true, coinBalance: true },
@@ -65,6 +65,28 @@ export default async function WarehousePage({ params }: { params: Params }) {
       orderBy: { sortOrder: "asc" },
       select: { id: true, stageId: true, name: true, emoji: true },
     }),
+    // 🌟 この子供が捕まえた動物の一覧（寿命表示用）
+    prisma.caughtAnimal.findMany({
+      where: { caughtByUserId: kidId },
+      orderBy: { caughtAt: "desc" },
+      select: {
+        id: true,
+        caughtAt: true,
+        expiresAt: true,
+        isAlive: true,
+        animal: {
+          select: {
+            id: true,
+            animalId: true,
+            specificName: true,
+            genericName: true,
+            emoji: true,
+            rarity: true,
+            lifespanYears: true,
+          },
+        },
+      },
+    }),
   ]);
 
   if (!kid) notFound();
@@ -94,6 +116,24 @@ export default async function WarehousePage({ params }: { params: Params }) {
   const caughtCount = allAnimals.filter((a) => caughtSet.has(a.id)).length;
   const totalCount = allAnimals.length;
 
+  // isAlive フラグを現在時刻とも比較して最終判定（DB 値がまだ更新されていない場合も対応）
+  const now = new Date();
+  const myAnimalsMapped = myAnimals.map((ca) => ({
+    id: ca.id,
+    caughtAt: ca.caughtAt.toISOString(),
+    expiresAt: ca.expiresAt?.toISOString() ?? null,
+    isAlive: ca.isAlive && (ca.expiresAt === null || ca.expiresAt > now),
+    animal: {
+      id: ca.animal.id,
+      animalId: ca.animal.animalId,
+      specificName: ca.animal.specificName,
+      genericName: ca.animal.genericName,
+      emoji: ca.animal.emoji,
+      rarity: ca.animal.rarity as "COMMON" | "RARE" | "EPIC" | "LEGENDARY",
+      lifespanYears: ca.animal.lifespanYears,
+    },
+  }));
+
   return (
     <WarehouseClient
       kidId={kid.id}
@@ -106,6 +146,8 @@ export default async function WarehousePage({ params }: { params: Params }) {
         ...t,
         type: t.type as "TRAP" | "BOW" | "SPEAR",
       }))}
+      myAnimals={myAnimalsMapped}
+      nowIso={now.toISOString()}
     />
   );
 }

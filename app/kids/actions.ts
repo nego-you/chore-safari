@@ -454,11 +454,16 @@ export async function resolveTrap(
 
   try {
     if (isSuccess) {
+      // 捕獲日（現在時刻）+ lifespanYears 日数分を expiresAt として計算。
+      const now = new Date();
+      const lifespanDays = trap.targetAnimal.lifespanYears ?? 10;
+      const expiresAt = new Date(now.getTime() + lifespanDays * 24 * 60 * 60 * 1000);
+
       const result = await prisma.$transaction(async (tx) => {
         // APPEARED → CAUGHT。二重処理を condition で防ぐ。
         const upd = await tx.hunt.updateMany({
           where: { id: trapId, status: "APPEARED" },
-          data: { status: "CAUGHT", resolvedAt: new Date() },
+          data: { status: "CAUGHT", resolvedAt: now },
         });
         if (upd.count !== 1) throw new Error("ALREADY_RESOLVED");
 
@@ -468,6 +473,8 @@ export async function resolveTrap(
             caughtByUserId: trap.userId,
             trapItemId: trap.trapItemId,
             foodItemId: trap.baitItemId,
+            expiresAt,
+            isAlive: true,
           },
         });
       });
@@ -991,6 +998,55 @@ export async function markBonusRead(
     return { success: true };
   } catch (err) {
     console.error("markBonusRead failed:", err);
+    return { success: false, error: "既読化に しっぱい" };
+  }
+}
+
+// ─────────────────────────────────────────────
+// ペナルティ通知（子供側）。
+// 親がペナルティを実行した際に生成された未読通知を取得・既読化する。
+// ─────────────────────────────────────────────
+
+export type PenaltyNotificationDTO = {
+  id: string;
+  userId: string;
+  reason: string;
+  coinAmount: number;
+  createdAt: string; // ISO
+};
+
+export async function getUnreadPenaltyNotifications(
+  userId?: string,
+): Promise<PenaltyNotificationDTO[]> {
+  const rows = await prisma.penaltyNotification.findMany({
+    where: {
+      isRead: false,
+      ...(userId ? { userId } : {}),
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    userId: r.userId,
+    reason: r.reason,
+    coinAmount: r.coinAmount,
+    createdAt: r.createdAt.toISOString(),
+  }));
+}
+
+export async function markPenaltyRead(
+  notificationId: string,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await prisma.penaltyNotification.updateMany({
+      where: { id: notificationId, isRead: false },
+      data: { isRead: true },
+    });
+    revalidatePath("/kids");
+    revalidatePath("/bank");
+    return { success: true };
+  } catch (err) {
+    console.error("markPenaltyRead failed:", err);
     return { success: false, error: "既読化に しっぱい" };
   }
 }

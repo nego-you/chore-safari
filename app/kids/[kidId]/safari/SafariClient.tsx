@@ -528,60 +528,11 @@ export function SafariClient({
             ← ワールドマップ
           </Link>
           <p className="text-sm font-bold text-emerald-700/80">
-            🌿 罠 スタイル 🌿
+            🦁 罠スタイル
           </p>
           <p className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-bold text-emerald-700">
             <NameRuby name={selectedKid.name} />
           </p>
-        </div>
-
-        {/* モード切替：罠（現画面） / アクティブ狩り（投槍器・複合弓） */}
-        <div className="flex gap-2">
-          <div className="flex-1 rounded-2xl bg-gradient-to-br from-amber-200 to-orange-200 p-1 ring-2 ring-amber-400 shadow">
-            <div className="rounded-[0.9rem] bg-white/95 px-3 py-2 text-center">
-              <p className="text-[10px] font-bold text-amber-700 tracking-widest">
-                いま ここ
-              </p>
-              <p className="text-sm font-black text-amber-900">🪤 罠 スタイル</p>
-              <p className="text-[10px] text-amber-700/80">
-                仕掛けて 待つ パッシブ
-              </p>
-            </div>
-          </div>
-          <Link
-            href={`/kids/${selectedKid.id}/safari/hunt`}
-            className={`flex-1 rounded-2xl p-1 ring-2 shadow transition active:scale-95 hover:brightness-105 ${
-              huntStaminaRemaining !== null && huntStaminaRemaining <= 0
-                ? "bg-gradient-to-br from-slate-300 to-slate-400 ring-slate-300 opacity-70"
-                : "bg-gradient-to-br from-emerald-300 to-teal-300 ring-emerald-200"
-            }`}
-          >
-            <div className="rounded-[0.9rem] bg-white/85 px-3 py-2 text-center">
-              <p className="text-[10px] font-bold text-emerald-700 tracking-widest">
-                きりかえる
-              </p>
-              <p className="text-sm font-black text-emerald-900">🏹 アクティブ 狩り</p>
-              {huntStaminaRemaining !== null ? (
-                <p className="text-[11px] font-extrabold text-emerald-700">
-                  きょうの かり：あと{" "}
-                  <span
-                    className={
-                      huntStaminaRemaining <= 0
-                        ? "text-rose-500 text-base"
-                        : "text-emerald-700 text-base"
-                    }
-                  >
-                    {huntStaminaRemaining}
-                  </span>
-                  /{huntStaminaLimit} かい
-                </p>
-              ) : (
-                <p className="text-[10px] text-emerald-700/80">
-                  状況判断 → 読解クイズ
-                </p>
-              )}
-            </div>
-          </Link>
         </div>
 
         {/* サファリフィールド */}

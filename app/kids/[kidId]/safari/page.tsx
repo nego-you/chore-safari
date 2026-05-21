@@ -1,7 +1,10 @@
 // /kids/[kidId]/safari — 罠を仕掛けて、出現→タイミングゲームで捕獲する非同期フロー。
 // 即時抽選 (旧 exploreSafari) は廃止。setTrap → 待機 → checkTrap → resolveTrap の流れ。
 // 2026-05-18: インベントリを SharedInventoryItem → UserTool（TRAP タイプ）に切替。
+// 2026-05-20: ?style=active のとき safari/hunt へリダイレクト。
+//             ワールドマップで入口を分けたため、このページは「罠スタイル専用」に固定。
 
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getHuntStamina } from "../../actions";
 import { SafariClient } from "./SafariClient";
@@ -9,13 +12,22 @@ import { SafariClient } from "./SafariClient";
 export const dynamic = "force-dynamic";
 
 type Params = Promise<{ kidId: string }>;
+type SearchParams = Promise<{ style?: string }>;
 
 export default async function SafariPage({
   params,
+  searchParams,
 }: {
   params: Params;
+  searchParams: SearchParams;
 }) {
   const { kidId: kidParam } = await params;
+  const { style } = await searchParams;
+
+  // ?style=active → アクティブ狩り専用ページへリダイレクト（戻りはマップへ）
+  if (style === "active") {
+    redirect(`/kids/${kidParam}/safari/hunt`);
+  }
 
   // kids 一覧を先に取得して initialKid を確定する（UserTool クエリに必要）。
   const kids = await prisma.user.findMany({

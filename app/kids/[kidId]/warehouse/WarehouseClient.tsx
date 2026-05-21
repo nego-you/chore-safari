@@ -38,6 +38,22 @@ type ToolEntry = {
   consumable: boolean;
 };
 
+type MyAnimalEntry = {
+  id: string;
+  caughtAt: string;
+  expiresAt: string | null;
+  isAlive: boolean;
+  animal: {
+    id: string;
+    animalId: string;
+    specificName: string;
+    genericName: string;
+    emoji: string;
+    rarity: "COMMON" | "RARE" | "EPIC" | "LEGENDARY";
+    lifespanYears: number;
+  };
+};
+
 type Props = {
   kidId: string;
   kidName: string;
@@ -46,6 +62,8 @@ type Props = {
   stageProgress: StageProgress[];
   inventory: InventoryItem[];
   tools: ToolEntry[];
+  myAnimals: MyAnimalEntry[];
+  nowIso: string;
 };
 
 const NAME_READING: Record<string, string> = {
@@ -79,6 +97,20 @@ const TOOL_TYPE_BG: Record<ToolEntry["type"], string> = {
   SPEAR: "from-sky-200 to-indigo-200 text-sky-900",
 };
 
+// 残り日数を計算（正の整数 or 0）
+function calcRemainingDays(expiresAt: string | null, nowIso: string): number | null {
+  if (!expiresAt) return null;
+  const diff = new Date(expiresAt).getTime() - new Date(nowIso).getTime();
+  return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+}
+
+const RARITY_STYLE: Record<MyAnimalEntry["animal"]["rarity"], string> = {
+  COMMON: "from-slate-700/80 to-slate-800/90 ring-slate-500",
+  RARE: "from-sky-800/80 to-blue-900/90 ring-sky-400",
+  EPIC: "from-fuchsia-800/80 to-purple-900/90 ring-fuchsia-400",
+  LEGENDARY: "from-amber-700/80 to-yellow-800/90 ring-amber-400",
+};
+
 export function WarehouseClient({
   kidId,
   kidName,
@@ -87,6 +119,8 @@ export function WarehouseClient({
   stageProgress,
   inventory,
   tools,
+  myAnimals,
+  nowIso,
 }: Props) {
   const reading = NAME_READING[kidName] ?? kidName;
   const progressPct = totalCount > 0 ? Math.round((caughtCount / totalCount) * 100) : 0;
@@ -174,6 +208,98 @@ export function WarehouseClient({
           >
             📖 図鑑を ひらく →
           </Link>
+        </section>
+
+        {/* わたしの どうぶつ（寿命リスト） */}
+        <section className="rounded-3xl bg-white/85 p-5 shadow ring-1 ring-indigo-200">
+          <h2 className="flex items-center gap-2 text-base font-extrabold text-indigo-800">
+            <span aria-hidden>🌿</span> わたしの どうぶつ
+          </h2>
+          <p className="text-[11px] text-indigo-500 mt-0.5">
+            つかまえた どうぶつと いっしょに いよう
+          </p>
+          {myAnimals.length === 0 ? (
+            <p className="mt-3 text-xs text-slate-400">まだ どうぶつを つかまえていないよ。サファリへ いこう！</p>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {myAnimals.map((ca) => {
+                const remaining = calcRemainingDays(ca.expiresAt, nowIso);
+                const isLegendary = ca.animal.lifespanYears >= 999;
+                return (
+                  <div
+                    key={ca.id}
+                    className={`relative flex items-center gap-3 rounded-2xl bg-gradient-to-br p-3 ring-1 ${
+                      !ca.isAlive
+                        ? "from-slate-700/40 to-slate-800/50 ring-slate-600/40 opacity-60 grayscale"
+                        : RARITY_STYLE[ca.animal.rarity]
+                    }`}
+                  >
+                    {/* 絵文字 */}
+                    <span
+                      className="text-4xl shrink-0"
+                      aria-hidden
+                      style={!ca.isAlive ? { filter: "brightness(0.5)" } : undefined}
+                    >
+                      {ca.animal.emoji}
+                    </span>
+
+                    {/* 名前・状態 */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] font-bold text-slate-400 leading-tight">
+                        {ca.animal.genericName}
+                      </p>
+                      <p className="text-sm font-extrabold text-white leading-tight line-clamp-1">
+                        {ca.animal.specificName}
+                      </p>
+
+                      {!ca.isAlive ? (
+                        // 寿命を過ぎた場合
+                        <p className="mt-0.5 text-[11px] font-extrabold text-amber-300 flex items-center gap-1">
+                          <span>✨</span>
+                          <span>おほしさまに なりました</span>
+                        </p>
+                      ) : isLegendary ? (
+                        // 伝説（不老不死）
+                        <p className="mt-0.5 text-[11px] font-extrabold text-amber-300 flex items-center gap-1">
+                          <span>♾️</span>
+                          <span>えいえんに いっしょ！</span>
+                        </p>
+                      ) : remaining !== null ? (
+                        // 残り日数表示
+                        <p
+                          className={`mt-0.5 text-[11px] font-extrabold flex items-center gap-1 ${
+                            remaining <= 3
+                              ? "text-rose-300 animate-pulse"
+                              : remaining <= 7
+                                ? "text-orange-300"
+                                : "text-emerald-300"
+                          }`}
+                        >
+                          <span>⏳</span>
+                          <span>
+                            おほしさまになるまで：あと {remaining} にち
+                          </span>
+                        </p>
+                      ) : (
+                        <p className="mt-0.5 text-[11px] text-slate-400">じゅみょう：ふめい</p>
+                      )}
+                    </div>
+
+                    {/* 捕獲日 */}
+                    <div className="shrink-0 text-right">
+                      <p className="text-[9px] text-slate-500">つかまえた日</p>
+                      <p className="text-[10px] font-bold text-slate-400">
+                        {new Date(ca.caughtAt).toLocaleDateString("ja-JP", {
+                          month: "numeric",
+                          day: "numeric",
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </section>
 
         {/* 道具一覧 */}

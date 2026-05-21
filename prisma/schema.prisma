@@ -115,8 +115,9 @@ model User {
   transactions       CoinTransaction[]
   gachaTransactions  GachaTransaction[]
   caughtAnimals      CaughtAnimal[]
-  bonusNotifications SpecialBonusNotification[]
-  questSubmissions   QuestSubmission[]
+  bonusNotifications   SpecialBonusNotification[]
+  penaltyNotifications PenaltyNotification[]
+  questSubmissions     QuestSubmission[]
   hunts              Hunt[]
   userMaterials      UserMaterial[]
   userTools          UserTool[]
@@ -254,6 +255,8 @@ model Animal {
   location     String         @default("") @map("location")
   // 時代ラベル（タイムライン表示用: "きょうりゅうじだい" / "こおりのじだい" / "げんだい" など）
   era          String         @default("") @map("era")
+  // 現実の平均寿命（年）。ゲーム内ではこの日数分だけ生存する。伝説種は 999（不老不死）。
+  lifespanYears Int           @default(10) @map("lifespan_years")
   // どのステージに属するか（null=未分類/プレイ可能ながらステージ未割当）
   stageId      String?        @map("stage_id")
   stage        Stage?         @relation(fields: [stageId], references: [id], onDelete: SetNull)
@@ -279,8 +282,12 @@ model CaughtAnimal {
   trapItemId     String?  @map("trap_item_id")
   foodItemId     String?  @map("food_item_id")
   // どの道具（Tool）で捕まえたか。アクティブ狩りの記録用。
-  toolId         String?  @map("tool_id")
-  caughtAt       DateTime @default(now()) @map("caught_at")
+  toolId         String?   @map("tool_id")
+  caughtAt       DateTime  @default(now()) @map("caught_at")
+  // 寿命：捕獲日 + lifespanYears 日数分後に設定。null は未設定（旧データ）。
+  expiresAt      DateTime? @map("expires_at")
+  // 生存フラグ。寿命を過ぎたら false に更新（または画面上で動的判定）。
+  isAlive        Boolean   @default(true) @map("is_alive")
 
   @@index([animalId])
   @@index([caughtByUserId])
@@ -302,6 +309,22 @@ model SpecialBonusNotification {
   @@index([userId, isRead])
   @@index([createdAt])
   @@map("special_bonus_notifications")
+}
+
+// ペナルティ通知：親がペナルティを実行したときに未読(false)で作成され、
+// 子供がポータル画面で確認したら is_read=true に更新する。
+model PenaltyNotification {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reason     String
+  coinAmount Int      @map("coin_amount")
+  isRead     Boolean  @default(false) @map("is_read")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+  @@map("penalty_notifications")
 }
 
 // クエストマスター：親があらかじめ定義する「やってほしいこと」。

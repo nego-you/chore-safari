@@ -5,7 +5,7 @@
 //   「だれがあそぶ？」ピッカー → 選択後は「ワールドマップ」UI に。
 // 2026-05-20 改修:
 //   SpokeCard 式のメニューを WorldMapPortal（インタラクティブ地図UI）へ全面差替え。
-//   幸仁のアイコンを 🐹 → 🐷 に変更。
+//   幸仁のアイコンを 🐷 → 🐹 に修正。
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -13,6 +13,8 @@ import { WorldMapPortal } from "./WorldMapPortal";
 import {
   getUnreadBonusNotifications,
   markBonusRead,
+  getUnreadPenaltyNotifications,
+  markPenaltyRead,
 } from "./actions";
 
 type ChildLite = {
@@ -37,6 +39,14 @@ type BonusNotification = {
   createdAt: string; // ISO
 };
 
+type PenaltyNotification = {
+  id: string;
+  userId: string;
+  reason: string;
+  coinAmount: number;
+  createdAt: string; // ISO
+};
+
 type Props = {
   children: ChildLite[];
   // 後方互換のため受け取るが、ワールドマップ画面では使わない。
@@ -44,6 +54,7 @@ type Props = {
   inventory: InventoryItem[];
   initialSelectedId?: string | null;
   initialNotifications?: BonusNotification[];
+  initialPenalties?: PenaltyNotification[];
 };
 
 const NAME_READING: Record<string, string> = {
@@ -52,8 +63,8 @@ const NAME_READING: Record<string, string> = {
   "叶泰": "かなた",
 };
 
-// 表示順 = 年上から。美琴=アザラシ / 幸仁=ブタ / 叶泰=ラッコ。
-// ※ 幸仁のアイコンを 🐹(ハムスター) → 🐷(ブタ) に変更 (2026-05-20)
+// 表示順 = 年上から。美琴=アザラシ / 幸仁=ハムスター / 叶泰=ラッコ。
+// ※ 幸仁のアイコンを 🐷(ブタ) → 🐹(ハムスター) に修正 (2026-05-20)
 const KID_THEMES: Array<{
   emoji: string;
   bg: string;
@@ -70,7 +81,7 @@ const KID_THEMES: Array<{
     mapBg: "from-sky-200 via-cyan-100 to-emerald-100",
   },
   {
-    emoji: "🐷",
+    emoji: "🐹",
     bg: "bg-gradient-to-br from-pink-200 to-rose-200",
     ring: "ring-pink-300",
     text: "text-rose-900",
@@ -101,34 +112,60 @@ export function KidsPortal({
   inventory: _inventory,
   initialSelectedId = null,
   initialNotifications = [],
+  initialPenalties = [],
 }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [childList, setChildList] = useState<ChildLite[]>(children);
 
+  // ── ボーナス通知 ──────────────────────────────────────
   const [notifications, setNotifications] =
     useState<BonusNotification[]>(initialNotifications);
   const [activeBonus, setActiveBonus] = useState<BonusNotification | null>(null);
 
+  // ── ペナルティ通知 ────────────────────────────────────
+  const [penalties, setPenalties] =
+    useState<PenaltyNotification[]>(initialPenalties);
+  const [activePenalty, setActivePenalty] = useState<PenaltyNotification | null>(null);
+
   useEffect(() => setChildList(children), [children]);
   useEffect(() => setNotifications(initialNotifications), [initialNotifications]);
+  useEffect(() => setPenalties(initialPenalties), [initialPenalties]);
 
+  // ボーナス通知：選択中の子に未読があれば表示
   useEffect(() => {
     if (activeBonus || !selectedId) return;
     const next = notifications.find((n) => n.userId === selectedId);
     if (next) setActiveBonus(next);
   }, [selectedId, notifications, activeBonus]);
 
+  // ペナルティ通知：ボーナスを先に処理し終えてから表示（重なり防止）
+  useEffect(() => {
+    if (activeBonus || activePenalty || !selectedId) return;
+    const next = penalties.find((n) => n.userId === selectedId);
+    if (next) setActivePenalty(next);
+  }, [selectedId, penalties, activeBonus, activePenalty]);
+
+  // 15秒ごとにポーリング（ボーナス・ペナルティ両方）
   useEffect(() => {
     if (!selectedId) return;
     let cancelled = false;
     const tick = async () => {
       try {
-        const fresh = await getUnreadBonusNotifications(selectedId);
+        const [freshBonus, freshPenalty] = await Promise.all([
+          getUnreadBonusNotifications(selectedId),
+          getUnreadPenaltyNotifications(selectedId),
+        ]);
         if (!cancelled) {
           setNotifications((prev) => {
             const known = new Set(prev.map((n) => n.id));
             const merged = [...prev];
-            for (const n of fresh) if (!known.has(n.id)) merged.push(n);
+            for (const n of freshBonus) if (!known.has(n.id)) merged.push(n);
+            return merged;
+          });
+          setPenalties((prev) => {
+            const known = new Set(prev.map((n) => n.id));
+            const merged = [...prev];
+            for (const n of freshPenalty) if (!known.has(n.id)) merged.push(n);
             return merged;
           });
         }
@@ -150,6 +187,18 @@ export function KidsPortal({
     setNotifications((prev) => prev.filter((n) => n.id !== current.id));
     try {
       await markBonusRead(current.id);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const handleAckPenalty = async () => {
+    const current = activePenalty;
+    if (!current) return;
+    setActivePenalty(null);
+    setPenalties((prev) => prev.filter((n) => n.id !== current.id));
+    try {
+      await markPenaltyRead(current.id);
     } catch {
       /* ignore */
     }
@@ -222,6 +271,9 @@ export function KidsPortal({
       />
       {activeBonus && (
         <BonusCelebrationModal bonus={activeBonus} onAck={handleAckBonus} />
+      )}
+      {!activeBonus && activePenalty && (
+        <PenaltyWarningModal penalty={activePenalty} onAck={handleAckPenalty} />
       )}
     </>
   );
@@ -388,3 +440,103 @@ function BonusCelebrationModal({
     </div>
   );
 }
+
+// ───────────── ペナルティ警告モーダル ─────────────
+function PenaltyWarningModal({
+  penalty,
+  onAck,
+}: {
+  penalty: PenaltyNotification;
+  onAck: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-live="assertive"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-rose-950/60 backdrop-blur-sm touch-manipulation"
+    >
+      {/* 背景デコ */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -top-8 -left-8 select-none text-[12rem] opacity-10 blur-sm"
+      >
+        🚨
+      </span>
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -bottom-10 -right-10 select-none text-[12rem] opacity-10 blur-sm"
+      >
+        ⚡
+      </span>
+
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative mx-4 w-full max-w-sm rounded-[2rem] bg-gradient-to-b from-rose-800 to-slate-800 p-px shadow-[0_24px_60px_rgba(0,0,0,0.6)]"
+      >
+        <div className="rounded-[calc(2rem-1px)] bg-slate-900 px-6 py-8 text-center">
+          {/* アイコン */}
+          <div className="relative mx-auto mb-1 flex h-24 w-24 items-center justify-center">
+            <span
+              aria-hidden
+              className="absolute text-[5rem] opacity-20 blur-md"
+            >
+              🚨
+            </span>
+            <span
+              aria-hidden
+              className="relative text-[4.5rem] drop-shadow-[0_4px_12px_rgba(239,68,68,0.6)]"
+            >
+              🚨
+            </span>
+          </div>
+
+          {/* タイトル */}
+          <p className="text-[11px] font-extrabold tracking-[0.35em] text-rose-400 uppercase">
+            ペナルティ はっせい…
+          </p>
+          <h1 className="mt-2 text-2xl font-black leading-snug text-rose-100 sm:text-3xl">
+            コインが へって<br />しまった！
+          </h1>
+
+          {/* 理由 */}
+          <div className="mx-auto mt-5 max-w-xs rounded-2xl border border-rose-700/50 bg-rose-950/60 px-4 py-3">
+            <p className="text-[11px] font-bold tracking-widest text-rose-400/80 mb-1">
+              りゆう
+            </p>
+            <p className="text-lg font-extrabold leading-snug text-rose-100">
+              {penalty.reason}
+            </p>
+          </div>
+
+          {/* 没収額 */}
+          <div className="mt-4 inline-flex items-baseline gap-1.5 rounded-full border border-rose-700/60 bg-rose-950/80 px-5 py-2.5">
+            <span className="font-mono text-4xl font-black tabular-nums text-rose-300 sm:text-5xl">
+              {penalty.coinAmount.toLocaleString()}
+            </span>
+            <span className="text-lg font-extrabold text-rose-400">
+              コイン
+            </span>
+            <span className="text-2xl" aria-hidden>😢</span>
+          </div>
+          <p className="mt-1.5 text-sm font-bold text-rose-400/80">
+            ぼっしゅうされました
+          </p>
+
+          {/* 確認ボタン */}
+          <button
+            type="button"
+            onClick={onAck}
+            className="mt-7 w-full rounded-full bg-gradient-to-r from-rose-700 to-slate-600 px-8 py-3.5 text-lg font-black text-white shadow-lg transition hover:brightness-110 active:scale-95"
+          >
+            ごめんなさい…
+          </button>
+          <p className="mt-2 text-[10px] text-slate-500">
+            つぎは きをつけよう！
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+

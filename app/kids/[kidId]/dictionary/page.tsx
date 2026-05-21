@@ -35,6 +35,7 @@ export default async function DictionaryPage({ params }: { params: Params }) {
         habitat: true,
         era: true,
         location: true,
+        lifespanYears: true,
       },
     }),
     // 🌟 家族全員ぶんの捕獲履歴を取得（個別ではなく、システム全体）
