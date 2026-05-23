@@ -12,6 +12,8 @@ export function DevClient({ testUser }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [resetDone, setResetDone] = useState(false);
+  // loading flag while navigating to kids page (router.push has no Promise return)
+  const [isNavigating, setIsNavigating] = useState(false);
 
   const handleReset = () => {
     startTransition(async () => {
@@ -21,10 +23,18 @@ export function DevClient({ testUser }: Props) {
     });
   };
 
+  const handlePlayAsTestUser = () => {
+    setIsNavigating(true);
+    router.push(`/kids/${testUser.id}`);
+    // Fallback: reset flag after 8s in case navigation stalls
+    // (component will normally unmount on successful navigation anyway).
+    setTimeout(() => setIsNavigating(false), 8000);
+  };
+
   return (
     <main className="min-h-screen bg-slate-900 text-slate-100 px-4 py-10">
       <div className="mx-auto max-w-md space-y-6">
-        {/* ヘッダー */}
+        {/* header */}
         <div className="text-center">
           <p className="text-4xl">🧪</p>
           <h1 className="mt-2 text-2xl font-extrabold text-amber-300">
@@ -35,7 +45,7 @@ export function DevClient({ testUser }: Props) {
           </p>
         </div>
 
-        {/* テストユーザー情報 */}
+        {/* test user info */}
         <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-5 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-bold text-amber-200">ユーザー名</span>
@@ -55,7 +65,7 @@ export function DevClient({ testUser }: Props) {
           </div>
         </div>
 
-        {/* 注意書き */}
+        {/* notes */}
         <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-xs text-rose-200 space-y-1">
           <p className="font-bold">⚠️ DEVモードの仕様</p>
           <p>・ガチャ・クレーンゲームでコインを消費しません</p>
@@ -64,14 +74,15 @@ export function DevClient({ testUser }: Props) {
           <p>・Bank の残高一覧には表示されません</p>
         </div>
 
-        {/* ボタン群 */}
+        {/* buttons */}
         <div className="space-y-3">
           <button
             type="button"
-            onClick={() => router.push(`/kids/${testUser.id}`)}
-            className="w-full rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 py-4 text-lg font-extrabold text-white shadow-xl transition hover:brightness-110 active:scale-[0.97]"
+            onClick={handlePlayAsTestUser}
+            disabled={isNavigating}
+            className="w-full rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 py-4 text-lg font-extrabold text-white shadow-xl transition hover:brightness-110 active:scale-[0.97] disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            🎮 テストユーザーで遊ぶ
+            {isNavigating ? "読みこみちゅう" : "🎮 テストユーザーで遊ぶ"}
           </button>
 
           <button
@@ -80,7 +91,7 @@ export function DevClient({ testUser }: Props) {
             disabled={isPending}
             className="w-full rounded-2xl border border-slate-600 bg-slate-800 py-3 text-sm font-bold text-slate-300 transition hover:bg-slate-700 disabled:opacity-50"
           >
-            {resetDone ? "✅ リセット完了！" : isPending ? "リセット中…" : "🔄 コイン・スタミナをリセット（99999枚に戻す）"}
+            {resetDone ? "リセット完了！" : isPending ? "リセット中" : "🔄 コイン・スタミナをリセット（99999枚に戻す）"}
           </button>
 
           <button

@@ -288,6 +288,8 @@ model CaughtAnimal {
   expiresAt      DateTime? @map("expires_at")
   // 生存フラグ。寿命を過ぎたら false に更新（または画面上で動的判定）。
   isAlive        Boolean   @default(true) @map("is_alive")
+  isGraduated    Boolean   @default(false) @map("is_graduated")
+  rewardClaimed  Boolean   @default(false) @map("reward_claimed")
 
   @@index([animalId])
   @@index([caughtByUserId])

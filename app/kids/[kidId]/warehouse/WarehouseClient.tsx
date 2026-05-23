@@ -129,21 +129,8 @@ export function WarehouseClient({
   const trapParts = inventory.filter((i) => i.itemType === "TRAP_PART");
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-sky-100 via-indigo-50 to-violet-100 px-4 py-6">
+    <main className="min-h-[calc(100vh-52px)] bg-gradient-to-b from-sky-100 via-indigo-50 to-violet-100 px-4 py-4">
       <div className="mx-auto max-w-3xl space-y-6">
-        {/* ヘッダー */}
-        <div className="flex items-center justify-between">
-          <Link
-            href={`/kids/${kidId}`}
-            className="rounded-full bg-white/80 px-4 py-2 text-sm font-bold text-indigo-800 shadow ring-1 ring-indigo-200 transition hover:bg-white active:scale-95"
-          >
-            ← ワールドマップ
-          </Link>
-          <p className="text-sm font-extrabold text-indigo-700/80 tracking-widest">
-            📦 博物 倉庫
-          </p>
-        </div>
-
         {/* ヒーロー：コンプリート率 */}
         <section className="rounded-[2rem] bg-gradient-to-br from-sky-400 via-indigo-400 to-violet-400 p-1 shadow-xl ring-4 ring-white">
           <div className="rounded-[1.7rem] bg-white/95 px-6 py-6 text-center backdrop-blur">

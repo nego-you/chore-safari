@@ -4,7 +4,6 @@
 // 素材（UserMaterial）を消費して道具（UserTool）を作る。
 // レシピカードを TRAP / SPEAR / BOW / WEAPON タブで分類。
 
-import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import type { Recipe } from "@/lib/recipes";
 import { craftItem } from "../../actions";
@@ -56,7 +55,6 @@ export function CraftClient({
   materials,
   ownedTools,
 }: Props) {
-  const portalHref = `/kids/${kidId}`;
   const [mats, setMats] = useState<MaterialRow[]>(materials);
   const [tools, setTools] = useState<ToolRow[]>(ownedTools);
   const [toast, setToast] = useState<Toast | null>(null);
@@ -139,23 +137,12 @@ export function CraftClient({
   );
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-amber-50 via-orange-50 to-yellow-50 px-4 py-6">
+    <main className="min-h-[calc(100vh-52px)] bg-gradient-to-b from-amber-50 via-orange-50 to-yellow-50 px-4 py-4">
       <div className="mx-auto max-w-2xl space-y-4">
-        {/* ヘッダー */}
-        <div className="flex items-center justify-between">
-          <Link
-            href={portalHref}
-            className="rounded-full bg-white/90 px-4 py-2 text-sm font-bold text-amber-700 shadow ring-1 ring-amber-200 transition active:scale-95"
-          >
-            ← ポータルへ
-          </Link>
-          <p className="text-sm font-bold text-amber-700/80">
-            ⚙️ クラフト こうじょう ⚙️
-          </p>
-          <p className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-700">
-            {kidName}
-          </p>
-        </div>
+        {/* ページタイトル */}
+        <p className="text-center text-sm font-bold text-amber-700/80">
+          ⚙️ クラフト こうじょう ⚙️
+        </p>
 
         {/* 素材一覧 */}
         <section className="rounded-3xl bg-white/95 p-4 shadow ring-2 ring-amber-200">
@@ -301,12 +288,6 @@ export function CraftClient({
           })}
         </div>
 
-        <Link
-          href={portalHref}
-          className="block text-center text-sm font-bold text-amber-600 underline"
-        >
-          ← ポータルへ もどる
-        </Link>
       </div>
 
       {/* トースト */}

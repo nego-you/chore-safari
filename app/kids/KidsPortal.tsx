@@ -128,8 +128,14 @@ export function KidsPortal({
   const [activePenalty, setActivePenalty] = useState<PenaltyNotification | null>(null);
 
   useEffect(() => setChildList(children), [children]);
-  useEffect(() => setNotifications(initialNotifications), [initialNotifications]);
-  useEffect(() => setPenalties(initialPenalties), [initialPenalties]);
+  // initialNotifications / initialPenalties は初回のみ使用
+  // 毎回新しいオブジェクトが渡されるため、dependency から外す
+  useEffect(() => {
+    setNotifications(initialNotifications);
+  }, []); // 初回のみ
+  useEffect(() => {
+    setPenalties(initialPenalties);
+  }, []); // 初回のみ
 
   // ボーナス通知：選択中の子に未読があれば表示
   useEffect(() => {
@@ -435,11 +441,15 @@ function BonusCelebrationModal({
           >
             ありがとう！
           </button>
+          <p className="mt-2 text-[10px] text-slate-500">
+            つぎは きをつけよう！
+          </p>
         </div>
       </div>
     </div>
   );
 }
+
 
 // ───────────── ペナルティ警告モーダル ─────────────
 function PenaltyWarningModal({
@@ -539,4 +549,3 @@ function PenaltyWarningModal({
     </div>
   );
 }
-

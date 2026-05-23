@@ -607,38 +607,25 @@ export function DictionaryClient({ kidId, kidName, animals }: Props) {
   const progressPct = totalCount > 0 ? Math.round((caughtCount / totalCount) * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
-      {/* ヘッダー */}
-      <header className="sticky top-0 z-30 border-b border-white/10 bg-slate-900/80 backdrop-blur-md px-4 py-3">
-        <div className="mx-auto flex max-w-2xl items-center justify-between">
-          <Link
-            href={`/kids/${kidId}`}
-            className="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-white/20"
-          >
-            ← もどる
-          </Link>
-          <h1 className="text-sm font-extrabold text-white">
+    <div className="min-h-[calc(100vh-52px)] bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
+      {/* コンプリート進捗バー（ページ上部に配置） */}
+      <div className="mx-auto max-w-2xl px-4 pt-3 pb-1">
+        <div className="flex items-center justify-between mb-1">
+          <h1 className="text-xs font-extrabold text-white">
             📖 {kidReading} の どうぶつ図鑑
           </h1>
-          <div className="text-right">
-            <p className="text-[10px] font-bold text-slate-400">コンプリート</p>
-            <p className="text-sm font-black text-white">
-              {caughtCount} <span className="text-slate-400 font-normal text-xs">/ {totalCount}</span>
-            </p>
-          </div>
+          <p className="text-xs font-black text-white">
+            {caughtCount}
+            <span className="text-slate-400 font-normal text-[10px]"> / {totalCount}</span>
+          </p>
         </div>
-
-        {/* 進捗バー */}
-        <div className="mx-auto mt-2 max-w-2xl">
-          <div className="h-2 overflow-hidden rounded-full bg-slate-700">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-400 transition-all duration-700"
-              style={{ width: `${progressPct}%` }}
-            />
-          </div>
-          <p className="mt-0.5 text-right text-[10px] text-slate-400">{progressPct}%</p>
+        <div className="h-1.5 overflow-hidden rounded-full bg-slate-700">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-400 transition-all duration-700"
+            style={{ width: `${progressPct}%` }}
+          />
         </div>
-      </header>
+      </div>
 
       {/* フィルタータブ */}
       <div className="mx-auto max-w-2xl px-4 pt-4 pb-2">

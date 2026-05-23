@@ -16,7 +16,7 @@ const nextConfig: NextConfig = {
       // 一致しない場合は CSRF として弾く。Cloudflare Tunnel 経由だと
       // Origin=外部ドメイン / Host=コンテナ側 になって不一致になるため、
       // ここで「このドメインからの Server Action は信用してよい」と宣言する。
-      // 念のため apex / wildcard / ポート付き / 暗黙的なローカルもまとめて許可。
+      // localhost はプロトコル (http/https) を含めて許可。
       allowedOrigins: [
         "chore-safari.negoyou.com",
         "negoyou.com",
@@ -24,6 +24,10 @@ const nextConfig: NextConfig = {
         "chore-safari.negoyou.com:443",
         "localhost:3000",
         "127.0.0.1:3000",
+        "http://localhost:3000",
+        "https://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://127.0.0.1:3000",
       ],
     },
   },

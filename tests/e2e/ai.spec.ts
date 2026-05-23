@@ -51,7 +51,7 @@ test.describe('AI Integration: LLMを活用したミニゲーム', () => {
 
     // 1. レース画面へ
     await page.goto(`${kidPath}/race`);
-    await expect(page.locator('text=レース')).first()).toBeVisible();
+    await expect(page.locator('text=レース').first()).toBeVisible();
 
     // 2. レース開始ボタンを押す
     const startRaceButton = page.getByRole('button', { name: /レース開始|スタート/ }).first();

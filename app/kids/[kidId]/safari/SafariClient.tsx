@@ -515,25 +515,12 @@ export function SafariClient({
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-sky-200 via-emerald-100 to-amber-50 px-4 py-6">
+    <main className="min-h-[calc(100vh-52px)] bg-gradient-to-b from-sky-200 via-emerald-100 to-amber-50 px-4 py-4">
       <style>{FIELD_KEYFRAMES}</style>
 
       <div className="mx-auto max-w-3xl space-y-4">
-        {/* ヘッダー */}
-        <div className="flex items-center justify-between">
-          <Link
-            href={`/kids/${selectedKid.id}`}
-            className="rounded-full bg-white/90 px-4 py-2 text-sm font-bold text-emerald-700 shadow ring-1 ring-emerald-200 transition active:scale-95"
-          >
-            ← ワールドマップ
-          </Link>
-          <p className="text-sm font-bold text-emerald-700/80">
-            🦁 罠スタイル
-          </p>
-          <p className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-bold text-emerald-700">
-            <NameRuby name={selectedKid.name} />
-          </p>
-        </div>
+        {/* ページタイトル */}
+        <p className="text-center text-sm font-bold text-emerald-700/80">🦁 罠スタイル</p>
 
         {/* サファリフィールド */}
         <SafariField

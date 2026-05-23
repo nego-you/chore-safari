@@ -92,7 +92,10 @@ export default async function KidsHomePage({ params }: { params: Params }) {
 
   const [children, inventory, notifications, penaltyNotifications] = await Promise.all([
     prisma.user.findMany({
-      where: { role: "CHILD" },
+      // isTestAccount: true のユーザーは子供ピッカーから隠す（/kids/page.tsx と同じ条件）。
+      // テストユーザーで /kids/[kidId] を開いても、ピッカーに戻った際に
+      // テストユーザーが一覧に混入しないようにするための修正。
+      where: { role: "CHILD", isTestAccount: false },
       orderBy: { birthDate: "asc" },
       select: { id: true, name: true, coinBalance: true },
     }),

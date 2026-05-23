@@ -378,23 +378,12 @@ export function CraneClient({ initialKidId, kids }: Props) {
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-fuchsia-100 via-pink-100 to-amber-100 px-4 py-6">
+    <main className="min-h-[calc(100vh-52px)] bg-gradient-to-b from-fuchsia-100 via-pink-100 to-amber-100 px-4 py-4">
       <style>{CSS_KEYFRAMES}</style>
       <div className="mx-auto max-w-2xl space-y-5">
 
-        {/* ヘッダー */}
-        <div className="flex items-center justify-between">
-          <Link
-            href={`/kids/${selectedKid.id}`}
-            className="rounded-full bg-white/90 px-4 py-2 text-sm font-bold text-fuchsia-700 shadow ring-1 ring-fuchsia-200 transition active:scale-95"
-          >
-            ← ポータルへ
-          </Link>
-          <p className="text-sm font-bold text-fuchsia-700/80">クレーンゲーム</p>
-          <p className="rounded-full bg-amber-200 px-3 py-1 text-xs font-extrabold text-amber-900">
-            <NameRuby name={selectedKid.name} />：{coinBalance.toLocaleString()} 🪙
-          </p>
-        </div>
+        {/* ページタイトル */}
+        <p className="text-center text-sm font-bold text-fuchsia-700/80">🎯 クレーンゲーム</p>
 
         {/* 筐体 */}
         <section className="rounded-[2rem] bg-gradient-to-br from-pink-300 via-fuchsia-300 to-violet-300 p-2 shadow-2xl">

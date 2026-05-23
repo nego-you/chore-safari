@@ -9,6 +9,7 @@
 
 import { useRouter } from "next/navigation";
 import React, { useEffect, useRef, useState } from "react";
+import { useWeather, type WeatherInfo } from "./[kidId]/WeatherContext";
 
 // ── CSS アニメーション（一度だけ <head> に注入） ──────────────
 const MAP_CSS = `
@@ -42,28 +43,6 @@ const NAME_READING: Record<string, string> = {
   "叶泰": "かなた",
 };
 
-// ── 天気 ──────────────────────────────────────────────────────
-const WEATHER_OPTIONS = [
-  {
-    id: "sunny",
-    label: "☀️ はれ",
-    bgGrad:
-      "linear-gradient(155deg,#86efac 0%,#fde68a 35%,#fed7aa 65%,#86efac 100%)",
-  },
-  {
-    id: "hot",
-    label: "🔥 もうしょ",
-    bgGrad:
-      "linear-gradient(155deg,#fde68a 0%,#fb923c 40%,#fde68a 70%,#fed7aa 100%)",
-  },
-  {
-    id: "typhoon",
-    label: "🌀 たいふう",
-    bgGrad:
-      "linear-gradient(155deg,#bae6fd 0%,#93c5fd 30%,#a5f3fc 65%,#67e8f9 100%)",
-  },
-];
-type Weather = (typeof WEATHER_OPTIONS)[number];
 
 // ── マップピン型 ───────────────────────────────────────────────
 type MapPin = {
@@ -106,6 +85,7 @@ const MAP_PINS: MapPin[] = [
     y: 14,
     color: "#c084fc",
     route: "guild",
+    route: "quests",
     action: "route",
     ready: true,
   },
@@ -246,6 +226,19 @@ const MAP_PINS: MapPin[] = [
     ready: true,
     isNew: true,
   },
+  // ── 中央：自分の家（トリアージハブ）
+  {
+    id: "house",
+    icon: "🏠",
+    label: "自分の家",
+    sub: "つかまえた どうぶつが まってるよ！",
+    x: 57,
+    y: 36,
+    color: "#f97316",
+    route: "house",
+    action: "route",
+    ready: true,
+  },
 ];
 
 // ── PATHS（新ピン配置に合わせた自然なルート） ─────────────────
@@ -270,6 +263,11 @@ const PATHS = [
   { from: "dictionary",     to: "warehouse"      },
   // 動物園 → ゲームセンター
   { from: "zoo",            to: "arcade"         },
+  // サファリ → 自分の家 → 牧場・動物園
+  { from: "safari-passive", to: "house"          },
+  { from: "safari-active",  to: "house"          },
+  { from: "house",          to: "ranch"          },
+  { from: "house",          to: "zoo"            },
 ];
 
 // ── ゲームセンター内ゲーム ─────────────────────────────────────
@@ -304,9 +302,9 @@ function buildPlayers(children: ChildLite[]): Player[] {
   });
 }
 
-// ── 天気エフェクト ─────────────────────────────────────────────
-function WeatherEffect({ weather }: { weather: Weather }) {
-  if (weather.id === "sunny") return null;
+// ── 天気エフェクト（WeatherContext から WeatherInfo を受け取る） ──
+function WeatherEffect({ weather }: { weather: WeatherInfo }) {
+  if (weather.id === "sunny" || weather.id === "cloudy") return null;
   if (weather.id === "hot")
     return (
       <div style={{
@@ -316,6 +314,7 @@ function WeatherEffect({ weather }: { weather: Weather }) {
         animation: "heatWave 3s ease-in-out infinite",
       }} />
     );
+  // rainy / typhoon — 雨粒
   return (
     <div style={{ position: "absolute", inset: 0, borderRadius: "inherit", pointerEvents: "none", zIndex: 10, overflow: "hidden" }}>
       {Array.from({ length: 20 }, (_, i) => (
@@ -328,7 +327,7 @@ function WeatherEffect({ weather }: { weather: Weather }) {
           animation: `rainDrop ${0.65 + (i % 5) * 0.18}s linear ${(i * 0.11) % 1}s infinite`,
         }} />
       ))}
-      {["🍃", "🌿", "🍂", "🍀"].map((l, i) => (
+      {weather.id === "typhoon" && ["🍃", "🌿", "🍂", "🍀"].map((l, i) => (
         <div key={i} style={{
           position: "absolute", fontSize: 16,
           left: ((i * 27) % 78) + "%",
@@ -336,22 +335,6 @@ function WeatherEffect({ weather }: { weather: Weather }) {
           animation: `leafSpin ${3 + i * 0.7}s linear ${i * 0.8}s infinite`,
         }}>{l}</div>
       ))}
-    </div>
-  );
-}
-
-function WeatherBoard({ weather }: { weather: Weather }) {
-  return (
-    <div style={{
-      position: "absolute", top: 12, right: 12, zIndex: 20,
-      background: "linear-gradient(135deg,#fffbeb,#fef3c7)",
-      border: "3px solid #f59e0b", borderRadius: 18,
-      padding: "6px 12px", boxShadow: "3px 3px 0 #d97706",
-      textAlign: "center", minWidth: 72,
-    }}>
-      <div style={{ fontSize: 9, fontWeight: 800, color: "#92400e", letterSpacing: 1, marginBottom: 1 }}>おてんき</div>
-      <div style={{ fontSize: 22 }}>{weather.label.split(" ")[0]}</div>
-      <div style={{ fontSize: 10, fontWeight: 700, color: "#b45309" }}>{weather.label.split(" ").slice(1).join("")}</div>
     </div>
   );
 }
@@ -446,10 +429,12 @@ export function WorldMapPortal({
   children,
   selectedId,
   onBack,
+  houseAnimalCount = 0,
 }: {
   children: ChildLite[];
   selectedId: string;
   onBack: () => void;
+  houseAnimalCount?: number;
 }) {
   const router = useRouter();
   const mapRef = useRef<HTMLDivElement>(null);
@@ -459,7 +444,9 @@ export function WorldMapPortal({
   const players = buildPlayers(children);
   const activePlayer = Math.max(0, players.findIndex((p) => p.id === selectedId));
 
-  const [weather, setWeather] = useState<Weather | null>(null);
+  // WeatherContext からグローバル天気を取得（ページ遷移をまたいで一貫した値）
+  const weather = useWeather();
+
   // アバターの現在位置（%）
   const [avatarPos, setAvatarPos] = useState({ x: MAP_PINS[0].x, y: MAP_PINS[0].y });
   const [walking, setWalking] = useState(false);
@@ -468,10 +455,6 @@ export function WorldMapPortal({
   const [pendingPin, setPendingPin] = useState<MapPin | null>(null);
   const [arcadeOpen, setArcadeOpen] = useState(false);
   const [comingSoon, setComingSoon] = useState<MapPin | null>(null);
-
-  useEffect(() => {
-    setWeather(WEATHER_OPTIONS[Math.floor(Math.random() * WEATHER_OPTIONS.length)]);
-  }, []);
 
   const player = players[activePlayer] ?? players[0];
 
@@ -545,58 +528,23 @@ export function WorldMapPortal({
     "--ey-end": walking ? `${deltaYpx}px` : "0px",
   } as React.CSSProperties;
 
-  if (!weather) {
-    return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40 }}>🌍</div>
-    );
-  }
-
   return (
     <div style={{
-      minHeight: "100vh",
       background: "linear-gradient(135deg,#fef9c3,#dcfce7 40%,#dbeafe)",
       fontFamily: "'Segoe UI',sans-serif",
+      minHeight: "calc(100vh - 52px)",
     }}>
       {/* ── maxWidth 1024px でタブレット全幅を活用 ── */}
       <div style={{ maxWidth: 1024, margin: "0 auto", padding: "14px 16px 36px" }}>
 
-        {/* ── ヘッダー ── */}
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "10px 16px", background: "rgba(255,255,255,.85)",
-          backdropFilter: "blur(10px)", borderRadius: 24, marginBottom: 14,
-          border: "1.5px solid rgba(255,255,255,.95)",
-          boxShadow: "0 2px 16px rgba(0,0,0,.07)",
-        }}>
-          {/* もどる + 現プレイヤー */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <button onClick={onBack} aria-label="プレイヤー選択にもどる"
-              style={{
-                background: "rgba(0,0,0,.07)", border: "none", borderRadius: 14,
-                padding: "6px 14px", fontSize: 14, cursor: "pointer",
-                fontWeight: 800, color: "#374151",
-              }}>←</button>
-            <span style={{ fontSize: 26 }}>{player.avatar}</span>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 15, color: "#374151" }}>{player.yomi}</div>
-              <div style={{ fontSize: 12, color: "#d97706" }}>💰 {player.coins.toLocaleString()}</div>
-            </div>
-          </div>
-
-          {/* タイトル */}
-          <p style={{ fontWeight: 900, fontSize: 15, color: "#374151", letterSpacing: 2 }}>🗺️ ワールドマップ</p>
-
-        </div>
-
-        {/* ── マップ本体（75vh、最大 680px） ── */}
+        {/* ── マップ本体（GlobalHeader 分を引いた高さ） ── */}
         <div ref={mapRef} style={{
           position: "relative", borderRadius: 32, overflow: "hidden",
-          height: "min(75vh, 680px)",
+          height: "min(calc(76vh - 52px), 680px)",
           background: weather.bgGrad,
           boxShadow: "0 10px 40px rgba(0,0,0,.18)",
         }}>
           <WeatherEffect weather={weather} />
-          <WeatherBoard weather={weather} />
 
           {/* 地形デコレーション（広域に散らす） */}
           {[
@@ -700,6 +648,16 @@ export function WorldMapPortal({
                       background: "#9ca3af", color: "#fff",
                       fontSize: 8, fontWeight: 800, borderRadius: 8, padding: "2px 5px",
                     }}>準備中</div>
+                  )}
+                  {pin.id === "house" && houseAnimalCount > 0 && (
+                    <div style={{
+                      position: "absolute", top: -10, right: -10,
+                      background: "#ef4444", color: "#fff",
+                      fontSize: 9, fontWeight: 900, borderRadius: 10,
+                      padding: "2px 6px", whiteSpace: "nowrap",
+                      boxShadow: "0 2px 6px rgba(239,68,68,.5)",
+                      border: "2px solid white", zIndex: 5,
+                    }}>🔴 {houseAnimalCount}</div>
                   )}
                 </div>
                 {/* ラベル */}

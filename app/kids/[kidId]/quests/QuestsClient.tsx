@@ -177,21 +177,8 @@ export function QuestsClient({
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-lime-100 via-amber-50 to-pink-50 px-4 py-8">
+    <main className="min-h-[calc(100vh-52px)] bg-gradient-to-b from-lime-100 via-amber-50 to-pink-50 px-4 py-4">
       <div className="mx-auto max-w-3xl space-y-8">
-        {/* ヘッダー */}
-        <div className="flex items-center justify-between">
-          <Link
-            href={`/kids/${selectedKid.id}`}
-            className="rounded-full bg-white/90 px-4 py-2 text-sm font-bold text-emerald-700 shadow ring-1 ring-emerald-200 transition active:scale-95"
-          >
-            ← ポータルへ
-          </Link>
-          <p className="text-sm font-bold text-emerald-700/80">
-            クエスト ボード
-          </p>
-        </div>
-
         {/* タイトル */}
         <section className="rounded-[2rem] bg-gradient-to-br from-lime-300 via-amber-200 to-pink-200 p-1 shadow-xl">
           <div className="rounded-[1.75rem] bg-white/95 p-6 text-center">

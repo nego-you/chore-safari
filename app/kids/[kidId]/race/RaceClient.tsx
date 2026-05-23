@@ -37,7 +37,6 @@ const RARITY_PILL: Record<Rarity, string> = {
 };
 
 export function RaceClient({ animals, kidId = null }: Props) {
-  const portalHref = kidId ? `/kids/${kidId}` : "/kids";
   const [aId, setAId] = useState<string>(animals[0]?.animalId ?? "");
   const [bId, setBId] = useState<string>(animals[1]?.animalId ?? "");
   const [text, setText] = useState<string>("");
@@ -125,7 +124,7 @@ export function RaceClient({ animals, kidId = null }: Props) {
 
   if (animals.length < 2) {
     return (
-      <main className="min-h-screen bg-gradient-to-b from-rose-100 via-orange-100 to-amber-100 px-4 py-10">
+      <main className="min-h-[calc(100vh-52px)] bg-gradient-to-b from-rose-100 via-orange-100 to-amber-100 px-4 py-10">
         <div className="mx-auto max-w-3xl space-y-4 text-center">
           <p className="text-5xl">🔥🏟️🔥</p>
           <h1 className="text-2xl font-extrabold text-rose-700">
@@ -136,33 +135,14 @@ export function RaceClient({ animals, kidId = null }: Props) {
             <br />
             さきに <Link className="font-bold underline" href="/kids/safari">サファリ</Link> で 2ひき いじょう つかまえてきてね！
           </p>
-          <Link
-            href={portalHref}
-            className="inline-block rounded-full bg-white/90 px-5 py-2 text-sm font-bold text-rose-700 shadow ring-1 ring-rose-200"
-          >
-            ← ポータルへ もどる
-          </Link>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-rose-100 via-orange-100 to-amber-100 px-4 py-8">
+    <main className="min-h-[calc(100vh-52px)] bg-gradient-to-b from-rose-100 via-orange-100 to-amber-100 px-4 py-4">
       <div className="mx-auto max-w-3xl space-y-8">
-        {/* ヘッダー */}
-        <div className="flex items-center justify-between">
-          <Link
-            href={portalHref}
-            className="rounded-full bg-white/90 px-4 py-2 text-sm font-bold text-rose-700 shadow ring-1 ring-rose-200 transition hover:bg-white"
-          >
-            ← ポータルへ
-          </Link>
-          <p className="text-sm font-bold text-rose-700/80">
-            ねっけつ レース きじょう
-          </p>
-        </div>
-
         {/* タイトル */}
         <section className="rounded-[2rem] bg-gradient-to-br from-rose-400 via-orange-400 to-amber-400 p-1 shadow-2xl">
           <div className="rounded-[1.75rem] bg-white/95 p-6 text-center">
