@@ -1,305 +1,453 @@
 "use client";
 
-// クラフト画面クライアント本体。
-// 素材（UserMaterial）を消費して道具（UserTool）を作る。
-// レシピカードを TRAP / SPEAR / BOW / WEAPON タブで分類。
+import { useState, useRef } from "react";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
-import type { Recipe } from "@/lib/recipes";
-import { craftItem } from "../../actions";
+// ── 型定義 ──────────────────────────────────────────────
+type MaterialId = "wood" | "stone" | "iron" | "thread" | "gunpowder";
+type EffectType = "success" | "fail" | "failBonus" | null;
 
-type MaterialRow = {
-  materialId: string;
-  materialName: string;
+interface Material {
+  id: MaterialId;
+  name: string;
   emoji: string;
-  quantity: number;
-};
+}
 
-type ToolRow = {
-  toolId: string;
-  toolName: string;
+interface ResultItem {
+  id: string;
+  name: string;
   emoji: string;
-  toolType: "TRAP" | "BOW" | "SPEAR" | "WEAPON";
-  quantity: number;
-};
+  hint: string;
+}
 
-type Props = {
-  kidId: string;
-  kidName: string;
-  recipes: Recipe[];
-  materials: MaterialRow[];
-  ownedTools: ToolRow[];
-};
+interface Recipe {
+  ingredients: MaterialId[];
+  result: ResultItem;
+}
 
-type Toast = { message: string; ok: boolean };
-type Tab = "TRAP" | "SPEAR" | "BOW" | "WEAPON";
+type Inventory = Record<MaterialId, number>;
+type SlotState = (MaterialId | null)[];
+type DiscoveredState = Record<string, boolean>;
 
-const TAB_LABELS: Record<Tab, string> = {
-  TRAP:   "🪤 パッシブわな",
-  SPEAR:  "🗡️ とうしゃぶき",
-  BOW:    "🏹 ゆみ",
-  WEAPON: "🔪 ナイフ・じゅう",
-};
+// ── 定数 ────────────────────────────────────────────────
+const RECIPES: Recipe[] = [
+  { ingredients: ["wood", "thread"],     result: { id: "bow",   name: "ながゆみ",   emoji: "🏹", hint: "きのえだ と いと をつかうみたいだ…" } },
+  { ingredients: ["wood", "stone"],      result: { id: "spear", name: "いしのやり", emoji: "🗡️", hint: "きのえだ と いし をつかうみたいだ…" } },
+  { ingredients: ["iron", "gunpowder"],  result: { id: "bomb",  name: "ばくだん",   emoji: "💣", hint: "てつ と かやく をつかうみたいだ…" } },
+  { ingredients: ["iron", "thread"],     result: { id: "trap",  name: "トラバサミ", emoji: "🪤", hint: "てつ と いと をつかうみたいだ…" } },
+];
 
-const TOOL_TYPE_BADGE: Record<Tab, string> = {
-  TRAP:   "bg-amber-100 text-amber-800 ring-amber-300",
-  SPEAR:  "bg-sky-100 text-sky-800 ring-sky-300",
-  BOW:    "bg-violet-100 text-violet-800 ring-violet-300",
-  WEAPON: "bg-rose-100 text-rose-800 ring-rose-300",
-};
+const ALL_ITEMS: ResultItem[] = RECIPES.map(r => r.result);
 
-export function CraftClient({
-  kidId,
-  kidName,
-  recipes,
-  materials,
-  ownedTools,
-}: Props) {
-  const [mats, setMats] = useState<MaterialRow[]>(materials);
-  const [tools, setTools] = useState<ToolRow[]>(ownedTools);
-  const [toast, setToast] = useState<Toast | null>(null);
-  const [pendingId, setPendingId] = useState<string | null>(null);
-  const [errorByRecipe, setErrorByRecipe] = useState<Record<string, string>>({});
-  const [activeTab, setActiveTab] = useState<Tab>("TRAP");
-  const [isPending, startTransition] = useTransition();
+const MATERIALS: Material[] = [
+  { id: "wood",      name: "きのえだ", emoji: "🪵" },
+  { id: "stone",     name: "いし",     emoji: "🪨" },
+  { id: "iron",      name: "てつ",     emoji: "⚙️" },
+  { id: "thread",    name: "いと",     emoji: "🧵" },
+  { id: "gunpowder", name: "かやく",   emoji: "💥" },
+];
 
-  useEffect(() => setMats(materials), [materials]);
-  useEffect(() => setTools(ownedTools), [ownedTools]);
+const INIT_INVENTORY: Inventory = { wood: 10, stone: 5, iron: 3, thread: 5, gunpowder: 2 };
 
-  useEffect(() => {
-    if (!toast) return;
-    const id = setTimeout(() => setToast(null), 3500);
-    return () => clearTimeout(id);
-  }, [toast]);
+// ── コンポーネント ───────────────────────────────────────
+export default function CraftClient() {
+  const [inventory, setInventory]           = useState<Inventory>(INIT_INVENTORY);
+  const [slots, setSlots]                   = useState<SlotState>([null, null, null]);
+  const [inspirationFrags, setInspirationFrags] = useState<number>(0);
+  const [discovered, setDiscovered]         = useState<DiscoveredState>({});
+  const [hintShown, setHintShown]           = useState<DiscoveredState>({});
+  const [effect, setEffect]                 = useState<EffectType>(null);
+  const [resultItem, setResultItem]         = useState<ResultItem | null>(null);
+  const _shakeRef = useRef<HTMLDivElement>(null);
 
-  // materialId → 所持数
-  const matQty = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const mat of mats) m.set(mat.materialId, mat.quantity);
-    return m;
-  }, [mats]);
-
-  // toolId → 所持数
-  const toolQty = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const t of tools) m.set(t.toolId, t.quantity);
-    return m;
-  }, [tools]);
-
-  const handleCraft = (recipe: Recipe) => {
-    setErrorByRecipe((prev) => ({ ...prev, [recipe.id]: "" }));
-    setPendingId(recipe.id);
-    startTransition(async () => {
-      const result = await craftItem(recipe.id, kidId);
-      setPendingId(null);
-      if (!result.success) {
-        setErrorByRecipe((prev) => ({ ...prev, [recipe.id]: result.error }));
-        return;
-      }
-      // 素材の楽観的更新
-      setMats((prev) =>
-        prev.map((m) => {
-          const updated = result.updatedMaterials.find(
-            (u) => u.materialId === m.materialId,
-          );
-          return updated ? { ...m, quantity: updated.quantity } : m;
-        }),
-      );
-      // 道具の楽観的更新
-      const { toolId, toolName, toolType, totalQuantity } = result.product;
-      setTools((prev) => {
-        const existing = prev.find((t) => t.toolId === toolId);
-        if (existing) {
-          return prev.map((t) =>
-            t.toolId === toolId ? { ...t, quantity: totalQuantity } : t,
-          );
-        }
-        // 新規取得
-        const recipe2 = recipes.find((r) => r.resultToolId === toolId);
-        return [
-          ...prev,
-          {
-            toolId,
-            toolName,
-            toolType,
-            emoji: recipe2?.emoji ?? "🛠️",
-            quantity: totalQuantity,
-          },
-        ];
-      });
-      setToast({ message: `${recipe.emoji} ${recipe.name} を つくった！`, ok: true });
-    });
+  // ── ハンドラ ───────────────────────────────────────────
+  const addToSlot = (materialId: MaterialId): void => {
+    if (inventory[materialId] <= 0) return;
+    const emptyIdx = slots.findIndex(s => s === null);
+    if (emptyIdx === -1) return;
+    const newSlots: SlotState = [...slots];
+    newSlots[emptyIdx] = materialId;
+    setSlots(newSlots);
+    setInventory(prev => ({ ...prev, [materialId]: prev[materialId] - 1 }));
   };
 
-  const tabRecipes = useMemo(
-    () => recipes.filter((r) => r.resultToolType === activeTab),
-    [recipes, activeTab],
-  );
+  const removeFromSlot = (idx: number): void => {
+    const mat = slots[idx];
+    if (!mat) return;
+    const newSlots: SlotState = [...slots];
+    newSlots[idx] = null;
+    setSlots(newSlots);
+    setInventory(prev => ({ ...prev, [mat]: prev[mat] + 1 }));
+  };
 
+  const tryCraft = (): void => {
+    const used = slots.filter((s): s is MaterialId => s !== null);
+    if (used.length === 0) return;
+
+    const sorted = [...used].sort();
+    const match = RECIPES.find(r => {
+      const rs = [...r.ingredients].sort();
+      return rs.length === sorted.length && rs.every((v, i) => v === sorted[i]);
+    });
+
+    if (match) {
+      setEffect("success");
+      setResultItem(match.result);
+      setDiscovered(prev => ({ ...prev, [match.result.id]: true }));
+      setSlots([null, null, null]);
+      setTimeout(() => { setEffect(null); setResultItem(null); }, 3200);
+    } else {
+      setEffect("fail");
+      used.forEach(mat => {
+        setInventory(prev => ({ ...prev, [mat]: prev[mat] + 1 }));
+      });
+      setSlots([null, null, null]);
+      setTimeout(() => {
+        setEffect("failBonus");
+        setInspirationFrags(p => p + 1);
+        setTimeout(() => { setEffect(null); }, 2200);
+      }, 1600);
+    }
+  };
+
+  const showHint = (itemId: string): void => {
+    if (inspirationFrags < 1) return;
+    setInspirationFrags(p => p - 1);
+    setHintShown(prev => ({ ...prev, [itemId]: true }));
+  };
+
+  const getMaterialEmoji = (id: MaterialId): string =>
+    MATERIALS.find(m => m.id === id)?.emoji ?? "❓";
+
+  // ── JSX ───────────────────────────────────────────────
   return (
-    <main className="min-h-[calc(100vh-52px)] bg-gradient-to-b from-amber-50 via-orange-50 to-yellow-50 px-4 py-4">
-      <div className="mx-auto max-w-2xl space-y-4">
-        {/* ページタイトル */}
-        <p className="text-center text-sm font-bold text-amber-700/80">
-          ⚙️ クラフト こうじょう ⚙️
-        </p>
+    <div style={{
+      minHeight: "100vh",
+      background: "linear-gradient(160deg, #1a0e06 0%, #2d1a0a 40%, #1c1008 100%)",
+      display: "flex",
+      justifyContent: "center",
+      padding: "16px 0 40px",
+      fontFamily: "'Zen Maru Gothic', 'Noto Sans JP', sans-serif",
+    }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;700;900&display=swap');
 
-        {/* 素材一覧 */}
-        <section className="rounded-3xl bg-white/95 p-4 shadow ring-2 ring-amber-200">
-          <p className="mb-3 text-xs font-extrabold text-amber-800">
-            🪵 もっている そざい（クレーンで あつめよう！）
-          </p>
-          {mats.length === 0 ? (
-            <p className="text-center text-xs text-amber-600">
-              まだ そざいが ないよ。クレーンゲームで あつめてね！
-            </p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {mats.map((m) => (
-                <div
-                  key={m.materialId}
-                  className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-bold shadow ring-1 ${
-                    m.quantity > 0
-                      ? "bg-amber-50 ring-amber-200 text-amber-800"
-                      : "bg-gray-100 ring-gray-200 text-gray-400"
-                  }`}
-                >
-                  <span>{m.emoji}</span>
-                  <span>{m.materialName}</span>
-                  <span
-                    className={`ml-1 rounded-full px-1.5 text-[10px] font-black ${
-                      m.quantity > 0
-                        ? "bg-amber-400 text-white"
-                        : "bg-gray-300 text-gray-500"
-                    }`}
+        @keyframes shake {
+          0%,100%{transform:translateX(0)}
+          15%{transform:translateX(-8px) rotate(-2deg)}
+          30%{transform:translateX(8px) rotate(2deg)}
+          45%{transform:translateX(-6px)}
+          60%{transform:translateX(6px)}
+          75%{transform:translateX(-3px)}
+          90%{transform:translateX(3px)}
+        }
+        @keyframes puff {
+          0%{opacity:1;transform:scale(0.8)}
+          40%{opacity:0.9;transform:scale(1.3)}
+          100%{opacity:0;transform:scale(2.2)}
+        }
+        @keyframes sparkle {
+          0%{opacity:0;transform:scale(0.5) rotate(0deg)}
+          30%{opacity:1;transform:scale(1.2) rotate(20deg)}
+          60%{opacity:1;transform:scale(1.0) rotate(-10deg)}
+          100%{opacity:0;transform:scale(1.5) rotate(30deg)}
+        }
+        @keyframes bounceIn {
+          0%{transform:scale(0);opacity:0}
+          50%{transform:scale(1.3);opacity:1}
+          70%{transform:scale(0.9)}
+          100%{transform:scale(1)}
+        }
+        @keyframes glow {
+          0%,100%{box-shadow:0 0 10px #ffd700,0 0 20px #ffd700}
+          50%{box-shadow:0 0 25px #ffe066,0 0 50px #ffa500}
+        }
+        .btn-craft {
+          background: linear-gradient(135deg, #c8860a 0%, #e8a020 50%, #c8860a 100%);
+          border: 2px solid #ffd700;
+          color: #fff7e0;
+          font-weight: 900;
+          font-family: inherit;
+          font-size: 17px;
+          padding: 14px 28px;
+          border-radius: 12px;
+          cursor: pointer;
+          letter-spacing: 1px;
+          transition: transform 0.1s, box-shadow 0.2s;
+          text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+          box-shadow: 0 4px 16px rgba(200,134,10,0.5);
+          width: 100%;
+        }
+        .btn-craft:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(200,134,10,0.7); }
+        .btn-craft:active { transform: scale(0.97); }
+        .btn-craft:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .mat-btn {
+          background: linear-gradient(135deg, #3d2510 0%, #5a3818 100%);
+          border: 1.5px solid #8b5e2f;
+          border-radius: 10px;
+          padding: 8px 4px;
+          cursor: pointer;
+          transition: transform 0.1s, border-color 0.2s;
+          color: #f0dbb0;
+          font-family: inherit;
+          font-size: 13px;
+          text-align: center;
+        }
+        .mat-btn:hover:not(:disabled) { transform: scale(1.05); border-color: #d4a055; }
+        .mat-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .slot-box {
+          background: radial-gradient(circle, #2e1b0a 0%, #1a0f05 100%);
+          border: 2px dashed #7a5230;
+          border-radius: 12px;
+          width: 72px; height: 72px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: border-color 0.2s, background 0.2s;
+          font-size: 28px;
+          position: relative;
+        }
+        .slot-box.filled {
+          border: 2px solid #d4a055;
+          background: radial-gradient(circle, #3d2510 0%, #2a1508 100%);
+          box-shadow: inset 0 0 8px rgba(212,160,85,0.2);
+        }
+        .slot-box.filled:hover { border-color: #ff9944; background: radial-gradient(circle, #4a2d14 0%, #2a1508 100%); }
+        .notebook-item {
+          background: linear-gradient(135deg, #2a1c0c 0%, #3a260f 100%);
+          border: 1px solid #6b4820;
+          border-radius: 10px;
+          padding: 10px 12px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .hint-btn {
+          background: linear-gradient(135deg, #1a3a5c, #1e4a70);
+          border: 1.5px solid #4a8fc0;
+          color: #a0d4ff;
+          font-family: inherit;
+          font-size: 12px;
+          padding: 4px 10px;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: opacity 0.2s;
+        }
+        .hint-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+      `}</style>
+
+      <div style={{ width: "100%", maxWidth: 480 }}>
+
+        {/* ── ヘッダー ── */}
+        <div style={{
+          background: "linear-gradient(135deg, #3d1f05 0%, #5a2d08 50%, #3d1f05 100%)",
+          border: "2px solid #a06020",
+          borderRadius: "0 0 16px 16px",
+          padding: "16px 20px 12px",
+          textAlign: "center",
+          marginBottom: 16,
+          boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+        }}>
+          <div style={{ fontSize: 11, color: "#c49050", letterSpacing: 3, marginBottom: 4 }}>⚗️ CRAFT WORKSHOP ⚗️</div>
+          <div style={{ fontSize: 26, fontWeight: 900, color: "#ffd880", textShadow: "0 0 20px rgba(255,200,50,0.5)" }}>
+            はつめい工房
+          </div>
+          <div style={{ marginTop: 8, display: "flex", justifyContent: "center" }}>
+            <div style={{ background: "#1a0e06", border: "1px solid #7a5230", borderRadius: 8, padding: "4px 14px", fontSize: 14, color: "#ffd060" }}>
+              💡 ひらめきのカケラ: <strong>{inspirationFrags}</strong>
+            </div>
+          </div>
+        </div>
+
+        {/* ── エフェクト：失敗（煙） ── */}
+        {effect === "fail" && (
+          <div style={{
+            position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            zIndex: 999, pointerEvents: "none",
+          }}>
+            <div style={{ fontSize: 100, animation: "puff 1.5s ease-out forwards" }}>💨</div>
+          </div>
+        )}
+
+        {/* ── エフェクト：大成功 ── */}
+        {effect === "success" && resultItem && (
+          <div style={{
+            position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+            background: "rgba(0,0,0,0.75)",
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+            zIndex: 999, pointerEvents: "none",
+          }}>
+            <div style={{ fontSize: 90, animation: "sparkle 2s ease-out" }}>{resultItem.emoji}</div>
+            <div style={{
+              marginTop: 16, fontSize: 22, fontWeight: 900, color: "#ffd060",
+              textShadow: "0 0 20px rgba(255,200,50,0.8)",
+              animation: "bounceIn 0.6s 0.3s both",
+              textAlign: "center", padding: "0 20px",
+            }}>
+              ✨ だいせいこう！<br />「{resultItem.emoji} {resultItem.name}」を はつめいした！
+            </div>
+          </div>
+        )}
+
+        {/* ── エフェクト：ひらめきボーナス ── */}
+        {effect === "failBonus" && (
+          <div style={{
+            position: "fixed", bottom: 80, left: "50%", transform: "translateX(-50%)",
+            background: "#1e3a5c", border: "2px solid #4a8fc0", borderRadius: 12,
+            padding: "12px 20px", color: "#a0d4ff", fontSize: 15, fontWeight: 700,
+            animation: "bounceIn 0.5s ease-out", zIndex: 999,
+            textAlign: "center", pointerEvents: "none",
+          }}>
+            あ！かわりに「💡 ひらめきのカケラ」を てにいれた！
+          </div>
+        )}
+
+        {/* ── 作業台エリア ── */}
+        <div style={{
+          margin: "0 12px",
+          background: "linear-gradient(180deg, #2a1608 0%, #1e1005 100%)",
+          border: "2px solid #7a5230",
+          borderRadius: 16,
+          padding: 16,
+          boxShadow: "inset 0 2px 8px rgba(0,0,0,0.5)",
+          animation: effect === "fail" ? "shake 0.5s ease-in-out" : undefined,
+        }}>
+
+          {/* 失敗メッセージ */}
+          {effect === "fail" && (
+            <div style={{
+              textAlign: "center", color: "#ff9966", fontWeight: 700,
+              fontSize: 16, marginBottom: 10, animation: "bounceIn 0.4s ease-out",
+            }}>
+              ボフッ！💨 ガラクタになっちゃった…
+            </div>
+          )}
+
+          {/* ざいりょう */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ color: "#c49050", fontSize: 12, letterSpacing: 2, marginBottom: 8 }}>📦 ざいりょう</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6 }}>
+              {MATERIALS.map((mat: Material) => {
+                const count = inventory[mat.id];
+                const slotsFull = slots.filter(Boolean).length >= 3;
+                return (
+                  <button
+                    key={mat.id}
+                    className="mat-btn"
+                    onClick={() => addToSlot(mat.id)}
+                    disabled={count <= 0 || slotsFull}
                   >
-                    ×{m.quantity}
-                  </span>
+                    <div style={{ fontSize: 26 }}>{mat.emoji}</div>
+                    <div style={{ fontSize: 10, marginTop: 2, color: "#d4a055" }}>{mat.name}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: count <= 0 ? "#6b3820" : "#ffd060", marginTop: 1 }}>
+                      ×{count}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* スロット */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ color: "#c49050", fontSize: 12, letterSpacing: 2, marginBottom: 8 }}>🔧 さぎょうだい（タップでもどせるよ）</div>
+            <div style={{ display: "flex", justifyContent: "center", gap: 12 }}>
+              {slots.map((slot: MaterialId | null, idx: number) => (
+                <div
+                  key={idx}
+                  className={`slot-box${slot ? " filled" : ""}`}
+                  onClick={() => slot && removeFromSlot(idx)}
+                  title={slot ? "タップでもどす" : ""}
+                >
+                  {slot ? (
+                    <>
+                      <div style={{ fontSize: 32 }}>{getMaterialEmoji(slot)}</div>
+                      <div style={{ fontSize: 9, color: "#d4a055", marginTop: 2 }}>
+                        {MATERIALS.find(m => m.id === slot)?.name}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 28, opacity: 0.25 }}>＋</div>
+                  )}
                 </div>
               ))}
             </div>
-          )}
-        </section>
+          </div>
 
-        {/* タブ */}
-        <div className="flex gap-1.5 overflow-x-auto pb-1">
-          {(["TRAP", "SPEAR", "BOW", "WEAPON"] as Tab[]).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setActiveTab(tab)}
-              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-extrabold shadow transition active:scale-95 ${
-                activeTab === tab
-                  ? "bg-amber-500 text-white ring-2 ring-amber-300"
-                  : "bg-white/90 text-amber-700 ring-1 ring-amber-200 hover:bg-amber-50"
-              }`}
-            >
-              {TAB_LABELS[tab]}
-            </button>
-          ))}
+          {/* 合成ボタン */}
+          <button
+            className="btn-craft"
+            onClick={tryCraft}
+            disabled={slots.every(s => s === null) || !!effect}
+          >
+            💡 これで つくってみる！
+          </button>
         </div>
 
-        {/* レシピカード一覧 */}
-        <div className="space-y-3">
-          {tabRecipes.map((recipe) => {
-            const canCraft = recipe.materials.every(
-              (m) => (matQty.get(m.materialId) ?? 0) >= m.quantity,
-            );
-            const isPendingThis = pendingId === recipe.id;
-            const errMsg = errorByRecipe[recipe.id];
-            const owned = toolQty.get(recipe.resultToolId) ?? 0;
-
-            return (
-              <div
-                key={recipe.id}
-                className="rounded-2xl bg-white/95 p-4 shadow ring-1 ring-amber-100"
-              >
-                <div className="flex items-start gap-3">
-                  <span className="text-4xl shrink-0">{recipe.emoji}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-base font-black text-slate-800">
-                        {recipe.name}
-                      </p>
-                      <span
-                        className={`rounded-full px-2 py-0 text-[9px] font-extrabold ring-1 ${
-                          TOOL_TYPE_BADGE[recipe.resultToolType as Tab]
-                        }`}
+        {/* ── はつめいノート ── */}
+        <div style={{
+          margin: "16px 12px 0",
+          background: "linear-gradient(180deg, #1a1205 0%, #120d03 100%)",
+          border: "2px solid #6b4820",
+          borderRadius: 16,
+          padding: 16,
+        }}>
+          <div style={{
+            color: "#e8c060", fontSize: 16, fontWeight: 900,
+            marginBottom: 12, letterSpacing: 1,
+            borderBottom: "1px solid #4a3010", paddingBottom: 8,
+          }}>
+            📖 はつめいノート
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {ALL_ITEMS.map((item: ResultItem) => {
+              const found: boolean = !!discovered[item.id];
+              const hinted: boolean = !!hintShown[item.id];
+              return (
+                <div key={item.id} className="notebook-item">
+                  <div style={{
+                    fontSize: 36, width: 44, textAlign: "center",
+                    filter: found ? "none" : "brightness(0) opacity(0.5)",
+                    flexShrink: 0,
+                  }}>
+                    {found ? item.emoji : "⬛"}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 15, color: found ? "#ffd060" : "#555" }}>
+                      {found ? item.name : "？？？"}
+                    </div>
+                    {found ? (
+                      <div style={{ fontSize: 11, color: "#8b6030", marginTop: 2 }}>✅ はつめいずみ</div>
+                    ) : hinted ? (
+                      <div style={{ fontSize: 12, color: "#80c4e8", marginTop: 3 }}>
+                        💭 {item.hint}
+                      </div>
+                    ) : (
+                      <button
+                        className="hint-btn"
+                        onClick={() => showHint(item.id)}
+                        disabled={inspirationFrags < 1}
+                        style={{ marginTop: 4 }}
                       >
-                        {TAB_LABELS[recipe.resultToolType as Tab]}
-                      </span>
-                      {owned > 0 && (
-                        <span className="rounded-full bg-emerald-100 px-2 py-0 text-[9px] font-extrabold text-emerald-700 ring-1 ring-emerald-300">
-                          ✅ もっている ×{owned}
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-1 text-xs text-slate-500">{recipe.description}</p>
-
-                    {/* 必要素材 */}
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {recipe.materials.map((mat) => {
-                        const have = matQty.get(mat.materialId) ?? 0;
-                        const enough = have >= mat.quantity;
-                        return (
-                          <span
-                            key={mat.materialId}
-                            className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ${
-                              enough
-                                ? "bg-emerald-50 ring-emerald-200 text-emerald-800"
-                                : "bg-rose-50 ring-rose-200 text-rose-700"
-                            }`}
-                          >
-                            {mat.emoji} {mat.materialName} ×{mat.quantity}
-                            <span className="ml-0.5 text-[9px] opacity-70">
-                              （いま{have}）
-                            </span>
-                          </span>
-                        );
-                      })}
-                    </div>
-
-                    {errMsg && (
-                      <p className="mt-1 text-xs font-bold text-rose-600">
-                        ⚠️ {errMsg}
-                      </p>
+                        💡 ヒントをみる（カケラ×1）
+                      </button>
                     )}
                   </div>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => handleCraft(recipe)}
-                  disabled={!canCraft || isPendingThis || isPending}
-                  className={`mt-3 w-full rounded-xl px-4 py-3 text-sm font-black text-white shadow transition active:scale-[0.98] ${
-                    canCraft && !isPendingThis
-                      ? "bg-gradient-to-r from-amber-500 via-orange-500 to-yellow-500 hover:brightness-110"
-                      : "cursor-not-allowed bg-gray-300 text-gray-500 shadow-none"
-                  }`}
-                >
-                  {isPendingThis
-                    ? "⚙️ つくっています…"
-                    : canCraft
-                    ? `⚙️ ${recipe.name} を つくる！`
-                    : "そざいが たりない…"}
-                </button>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+          <div style={{
+            marginTop: 12, fontSize: 11, color: "#5a3a1a",
+            textAlign: "center", borderTop: "1px solid #3a2010", paddingTop: 8,
+          }}>
+            ごうせいに しっぱいするたびに「ひらめきのカケラ」がもらえるよ！
+          </div>
         </div>
 
       </div>
-
-      {/* トースト */}
-      {toast && (
-        <div
-          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-full px-6 py-3 text-sm font-extrabold text-white shadow-xl transition ${
-            toast.ok ? "bg-emerald-500" : "bg-rose-500"
-          }`}
-        >
-          {toast.message}
-        </div>
-      )}
-    </main>
+    </div>
   );
 }

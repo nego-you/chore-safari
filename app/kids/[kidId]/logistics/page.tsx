@@ -1,18 +1,18 @@
-// /kids/[kidId]/safari/hunt — アクティブ狩りミニゲーム
+// /kids/[kidId]/logistics — 物流センターミニゲーム
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import HuntClient from "./HuntClient";
+import LogisticsClient from "./LogisticsClient";
 
 export const dynamic = "force-dynamic";
 
 type Params = Promise<{ kidId: string }>;
 
-export default async function HuntPage({ params }: { params: Params }) {
+export default async function LogisticsPage({ params }: { params: Params }) {
   const { kidId } = await params;
   const kid = await prisma.user.findFirst({
     where: { id: kidId, role: "CHILD" },
     select: { id: true, name: true },
   });
   if (!kid) notFound();
-  return <HuntClient />;
+  return <LogisticsClient />;
 }

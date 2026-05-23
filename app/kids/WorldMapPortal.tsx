@@ -67,12 +67,12 @@ type MapPin = {
 //   左上  ──── ギルド（出発点）
 //   中上  ──── クラフト工房（制作ゾーン）
 //   右上  ──── アクティブ狩り（山岳・開けた野原 ゾーン）
-//   左中  ──── 農場（comingSoon）
+//   左中  ──── 農場
 //   中中  ──── 罠スタイル（密林ゾーン）・物流センター
-//   右中  ──── 牧場（comingSoon）
+//   右中  ──── 牧場
 //   左下  ──── 博物図鑑
 //   中下  ──── カオスレース
-//   右下  ──── 動物園（comingSoon）・ゲームセンター
+//   右下  ──── 動物園・ゲームセンター
 //
 const MAP_PINS: MapPin[] = [
   // ── 左上：ギルド（スタート地点）
@@ -89,7 +89,7 @@ const MAP_PINS: MapPin[] = [
     action: "route",
     ready: true,
   },
-  // ── 左中：農場（準備中）
+  // ── 左中：農場
   {
     id: "farm",
     icon: "🌾",
@@ -98,10 +98,10 @@ const MAP_PINS: MapPin[] = [
     x: 14,
     y: 46,
     color: "#86efac",
-    route: null,
+    route: "farm",
     action: "route",
-    ready: false,
-    comingSoon: true,
+    ready: true,
+    isNew: true,
   },
   // ── 中左上：クラフト工房
   {
@@ -144,7 +144,7 @@ const MAP_PINS: MapPin[] = [
     action: "route",
     ready: true,
   },
-  // ── 右中：牧場（準備中）
+  // ── 右中：牧場
   {
     id: "ranch",
     icon: "🐄",
@@ -153,12 +153,12 @@ const MAP_PINS: MapPin[] = [
     x: 76,
     y: 38,
     color: "#fde68a",
-    route: null,
+    route: "ranch",
     action: "route",
-    ready: false,
-    comingSoon: true,
+    ready: true,
+    isNew: true,
   },
-  // ── 右下寄り：動物園（準備中）
+  // ── 右下寄り：動物園
   {
     id: "zoo",
     icon: "🐘",
@@ -167,23 +167,24 @@ const MAP_PINS: MapPin[] = [
     x: 82,
     y: 60,
     color: "#f472b6",
-    route: null,
+    route: "zoo",
     action: "route",
-    ready: false,
-    comingSoon: true,
+    ready: true,
+    isNew: true,
   },
   // ── 中央下：物流センター（罠スタイルの南）
   {
-    id: "warehouse",
+    id: "logistics",
     icon: "📦",
     label: "物流センター",
     sub: "えさをはこぶ・はいそう",
     x: 52,
     y: 72,
     color: "#60a5fa",
-    route: "warehouse",
+    route: "logistics",
     action: "route",
     ready: true,
+    isNew: true,
   },
   // ── 左下：博物図鑑
   {
@@ -246,21 +247,23 @@ const PATHS = [
   // ギルド → 農場 → クラフト（左辺の縦軸）
   { from: "guild",          to: "farm"           },
   { from: "farm",           to: "craft"          },
+  // 農場 → 牧場（素材の流れ）
+  { from: "farm",           to: "ranch"          },
   // クラフト → 2 つのサファリ（分岐）
   { from: "craft",          to: "safari-passive" },
   { from: "craft",          to: "safari-active"  },
   // 罠スタイル → 倉庫・牧場
-  { from: "safari-passive", to: "warehouse"      },
+  { from: "safari-passive", to: "logistics"      },
   { from: "safari-passive", to: "ranch"          },
   // アクティブ → 牧場（右辺）
   { from: "safari-active",  to: "ranch"          },
   // 牧場 → 動物園
   { from: "ranch",          to: "zoo"            },
   // 倉庫からの接続
-  { from: "warehouse",      to: "zoo"            },
-  { from: "warehouse",      to: "race"           },
+  { from: "logistics",      to: "zoo"            },
+  { from: "logistics",      to: "race"           },
   // 図鑑 → 倉庫
-  { from: "dictionary",     to: "warehouse"      },
+  { from: "dictionary",     to: "logistics"      },
   // 動物園 → ゲームセンター
   { from: "zoo",            to: "arcade"         },
   // サファリ → 自分の家 → 牧場・動物園

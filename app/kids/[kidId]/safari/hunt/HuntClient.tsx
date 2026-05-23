@@ -1,1030 +1,1139 @@
 "use client";
 
-// アクティブ狩り（投槍器・複合弓）のクライアント。
-// フロー（state machine）:
-//   idle        : ステージと道具を選ぶ。残り回数を大きく表示。
-//   encounter   : 「〇〇が あらわれた！」道具に応じた行動選択 (2-3択)
-//   captured    : 行動正解 → 「つかまえた！どんな どうぶつか よんでみよう」
-//                 説明文を読ませながら裏で /api/quiz/generate を叩く
-//   readingQuiz : 読解クイズ (Ollama 3択)
-//   result      : 結果モーダル（だいせいかい / ざんねん）
+import { useState, useEffect, useRef, useCallback } from "react";
 
-import Link from "next/link";
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { startActiveHunt, resolveActiveHunt, getHuntStamina } from "../../../actions";
+// ════════════════════════════════════════════════════════════════
+//  型定義
+// ════════════════════════════════════════════════════════════════
 
-type ToolEntry = {
-  id: string;
-  toolId: string;
-  name: string;
+type RouteTag =
+  | "large" | "fast" | "flying" | "water"
+  | "carnivore" | "herbivore" | "legendary"
+  | "poop" | "recovery" | "hazard" | "neutral";
+
+interface EventWeight {
+  large:      number;
+  fast:       number;
+  flying:     number;
+  water:      number;
+  legendary:  number;
+  carnivore:  number;
+  herbivore:  number;
+  poop:       number;
+  recovery:   number;
+  hazard:     number;
+  encounter:  number;
+}
+
+interface RouteOption {
+  id:          string;
+  hintEmoji:   string;
+  hintText:    string;
+  dirLabel:    string;
+  staminaCost: number;
+  eventWeight: EventWeight;
+  tags:        RouteTag[];
+  logText:     string;
+  btnClass:    string;
+}
+
+type RouteTemplate = Omit<RouteOption, "id" | "dirLabel">;
+
+interface Quiz {
+  q:       string;
+  choices: string[];
+  ans:     number;
+}
+
+interface Animal {
+  id:          string;
+  name:        string;
+  emoji:       string;
+  trait:       "FAST" | "LARGE" | "FLYING";
+  traitName:   string;
+  rarity:      "COMMON" | "RARE" | "EPIC" | "LEGENDARY";
+  activeTime:  "DAY" | "NIGHT" | "ANY";
+  waterAnimal: boolean;
+  quiz:        Quiz;
+}
+
+interface HappeningItem {
   emoji: string;
-  description: string;
-  historicalContext: string;
-  type: "BOW" | "SPEAR" | "WEAPON";
-  successRateBonus: number;
-  inventoryItemId: string | null;
-  consumable: boolean;
-};
+  name:  string;
+}
 
-type StageEntry = {
-  id: string;
-  stageId: string;
+interface Happening {
+  id:           string;
+  baseWeight:   number;
+  tag:          RouteTag;
+  staminaDelta: number;
+  fx:           "poop" | "bigshake" | "shake" | "rainbow" | "none";
+  color:        string;
+  text:         string;
+  item:         HappeningItem | null;
+}
+
+interface TimeState {
+  id:       string;
+  name:     string;
+  skyTop:   string;
+  skyMid:   string;
+  skyBot:   string;
+  vignet:   number;
+  fogAlpha: number;
+}
+
+interface Weather {
+  id:   string;
   name: string;
-  emoji: string;
-  description: string;
-  animalCount: number;
+  icon: string;
+}
+
+interface LogEntry {
+  text:  string;
+  color: string | undefined;
+}
+
+interface Footprint {
+  id: number;
+  x:  number;
+}
+
+interface CombatResult {
+  hit:    boolean;
+  animal: Animal;
+  bonus:  string | null;
+}
+
+interface TimingResult {
+  label: string;
+  score: number;
+}
+
+// ════════════════════════════════════════════════════════════════
+//  マスターデータ
+// ════════════════════════════════════════════════════════════════
+
+const ANIMALS: Animal[] = [
+  { id:"rabbit",    name:"ウサギ",          emoji:"🐰", trait:"FAST",   traitName:"すばやい",   rarity:"COMMON",    activeTime:"DAY",   waterAnimal:false,
+    quiz:{ q:"ウサギの ながい みみは なんの ため？", choices:["おとを よくきくため","かざりのため","まくらに なるため"], ans:0 } },
+  { id:"deer",      name:"シカ",            emoji:"🦌", trait:"FAST",   traitName:"すばやい",   rarity:"COMMON",    activeTime:"DAY",   waterAnimal:false,
+    quiz:{ q:"シカの つので わかること は？", choices:["オスかメスか","なんさいか","なにを たべるか"], ans:1 } },
+  { id:"lion",      name:"ライオン",        emoji:"🦁", trait:"LARGE",  traitName:"おおきい",   rarity:"EPIC",      activeTime:"ANY",   waterAnimal:false,
+    quiz:{ q:"ライオンの むれの リーダーは？", choices:["いちばん おおきい オス","メスたち","いちばん つよい コ"], ans:1 } },
+  { id:"crocodile", name:"ワニ",            emoji:"🐊", trait:"LARGE",  traitName:"おおきい",   rarity:"RARE",      activeTime:"ANY",   waterAnimal:true,
+    quiz:{ q:"ワニが じっと うごかない りゆうは？", choices:["ねむっている","たいおんを あげるため","こわいから"], ans:1 } },
+  { id:"hippo",     name:"カバ",            emoji:"🦛", trait:"LARGE",  traitName:"おおきい",   rarity:"RARE",      activeTime:"NIGHT", waterAnimal:true,
+    quiz:{ q:"カバが あかい あせを かく りゆうは？", choices:["あつくて あせが でる","ひふを まもるため","おこっているサイン"], ans:1 } },
+  { id:"owl",       name:"ワシミミズク",    emoji:"🦉", trait:"FLYING", traitName:"そらをとぶ", rarity:"RARE",      activeTime:"NIGHT", waterAnimal:false,
+    quiz:{ q:"フクロウは くびを どのくらい まわせる？", choices:["90ど","180ど","270ど"], ans:2 } },
+  { id:"eagle",     name:"ワシ",            emoji:"🦅", trait:"FLYING", traitName:"そらをとぶ", rarity:"RARE",      activeTime:"DAY",   waterAnimal:false,
+    quiz:{ q:"ワシの しりょく は ひとの なんばい？", choices:["２ばい","５ばい","８ばい"], ans:2 } },
+  { id:"frog",      name:"アマガエル",      emoji:"🐸", trait:"FAST",   traitName:"すばやい",   rarity:"COMMON",    activeTime:"ANY",   waterAnimal:true,
+    quiz:{ q:"カエルは ひふで なにを するの？", choices:["こきゅうする","みずをのむ","りょうほう"], ans:2 } },
+  { id:"yeti",      name:"イエティ",        emoji:"🦍", trait:"LARGE",  traitName:"おおきい",   rarity:"LEGENDARY", activeTime:"ANY",   waterAnimal:false,
+    quiz:{ q:"イエティが すむ といわれるのは？", choices:["アマゾン","ヒマラヤさんみゃく","しんかい"], ans:1 } },
+  { id:"trex",      name:"ティラノサウルス",emoji:"🦖", trait:"LARGE",  traitName:"おおきい",   rarity:"LEGENDARY", activeTime:"ANY",   waterAnimal:false,
+    quiz:{ q:"ティラノサウルスの うでは なぜ みじかい？", choices:["そだたなかった","こうかがえきだった","たべものを とるため"], ans:1 } },
+];
+
+const RARITY_COLOR: Record<string, string> = {
+  COMMON:"#6b7280", RARE:"#3b82f6", EPIC:"#8b5cf6", LEGENDARY:"#f59e0b",
+};
+const RARITY_JP: Record<string, string> = {
+  COMMON:"ふつう", RARE:"めずらしい", EPIC:"すごい！", LEGENDARY:"でんせつ！！",
 };
 
-type AnimalLite = {
-  id: string;
-  animalId: string;
-  name: string;
-  genericName: string;
-  specificName: string;
-  emoji: string;
-  rarity: "COMMON" | "RARE" | "EPIC" | "LEGENDARY";
-  description: string;
-  imageUrl: string | null;
-  isExtinct: boolean;
-};
+const TIMES: TimeState[] = [
+  { id:"MORNING", name:"よあけ",   skyTop:"#1a0a2e", skyMid:"#2d1b69", skyBot:"#7c3aed", vignet:0.35, fogAlpha:0.15 },
+  { id:"NOON",    name:"ひるま",   skyTop:"#0c4a6e", skyMid:"#0369a1", skyBot:"#38bdf8", vignet:0.15, fogAlpha:0.05 },
+  { id:"EVENING", name:"ゆうがた", skyTop:"#1c0a0a", skyMid:"#7f1d1d", skyBot:"#ea580c", vignet:0.55, fogAlpha:0.25 },
+  { id:"NIGHT",   name:"よる",     skyTop:"#000000", skyMid:"#0a0a1a", skyBot:"#0f172a", vignet:0.85, fogAlpha:0.55 },
+];
 
-type StaminaInfo = {
-  used: number;
-  remaining: number;
-  limit: number;
-  lastHuntDate: string | null;
-};
+const WEATHERS: Weather[] = [
+  { id:"SUNNY", name:"はれ", icon:"☀️" },
+  { id:"RAIN",  name:"あめ", icon:"🌧" },
+  { id:"SNOW",  name:"ゆき", icon:"❄️" },
+];
 
-type ActiveHunt = {
-  id: string;
-  huntType: "BOW" | "SPEAR" | "WEAPON";
-  toolName: string;
-  toolEmoji: string;
-  targetAnimal: AnimalLite;
-};
-
-type Props = {
-  kidId: string;
-  kidName: string;
-  tools: ToolEntry[];
-  stages: StageEntry[];
-  noTools: boolean;
-  initialStamina: StaminaInfo;
-};
-
-const NAME_READING: Record<string, string> = {
-  "美琴": "みこと",
-  "幸仁": "ゆきと",
-  "叶泰": "かなた",
-};
-
-const RARITY_LABEL: Record<AnimalLite["rarity"], string> = {
-  COMMON: "ふつう",
-  RARE: "レア",
-  EPIC: "すごレア",
-  LEGENDARY: "でんせつ",
-};
-
-const RARITY_TONE: Record<AnimalLite["rarity"], string> = {
-  COMMON: "from-slate-200 to-slate-300 text-slate-800",
-  RARE: "from-sky-200 to-blue-300 text-sky-900",
-  EPIC: "from-fuchsia-200 to-purple-300 text-fuchsia-900",
-  LEGENDARY: "from-amber-200 via-yellow-300 to-orange-300 text-amber-900",
-};
-
-// ─────────────────────────────────────────────
-// 道具ごとの「状況判断」クイズ（行動選択）
-// 子供向けに簡潔・教育的な選択肢を用意。
-// ─────────────────────────────────────────────
-type ActionChoice = { label: string; correct: boolean; emoji: string };
-type ActionQuiz = { question: string; choices: ActionChoice[] };
-
-const TOOL_ACTION_QUIZ: Record<string, ActionQuiz> = {
-  atlatl: {
-    question: "アトラトル（投槍器）で どう ねらう？",
-    choices: [
-      { emoji: "🤫", label: "こっそり ちかづいて なげる", correct: true },
-      { emoji: "📢", label: "おおごえを だして はしる", correct: false },
-      { emoji: "🎯", label: "とおくから やみくもに なげまくる", correct: false },
-    ],
+const ROUTE_TEMPLATES: RouteTemplate[] = [
+  {
+    hintEmoji:"🐾", hintText:"じめんに おおきな あしあとが ある",
+    staminaCost:5, tags:["large","legendary"], btnClass:"amber",
+    logText:"おおきな あしあとを たどって すすんだ。",
+    eventWeight:{ large:2.5, fast:0.6, flying:0.4, water:0.3, legendary:1.8, carnivore:1.2, herbivore:0.8, poop:0.5, recovery:0.5, hazard:0.4, encounter:1.6 },
   },
-  harpoon: {
-    question: "もり で どう ねらう？",
-    choices: [
-      { emoji: "🌊", label: "みずの ちかくで しずかに かまえる", correct: true },
-      { emoji: "🏃", label: "おおあわてで はしりよる", correct: false },
-    ],
+  {
+    hintEmoji:"🐾", hintText:"ちいさな あしあとが ちらばっている",
+    staminaCost:5, tags:["fast","herbivore"], btnClass:"",
+    logText:"ちいさな あしあとを たどって すすんだ。",
+    eventWeight:{ large:0.4, fast:2.2, flying:0.8, water:0.5, legendary:0.4, carnivore:0.5, herbivore:2.0, poop:0.8, recovery:1.2, hazard:0.5, encounter:1.4 },
   },
-  compound_bow: {
-    question: "複合弓 で どう ねらう？",
-    choices: [
-      { emoji: "🌬️", label: "かぜを よんで しずかに ねらう", correct: true },
-      { emoji: "🎉", label: "おおさわぎして ちゅういを ひく", correct: false },
-      { emoji: "🏹", label: "とりあえず ぜんぶ うちまくる", correct: false },
-    ],
+  {
+    hintEmoji:"💧", hintText:"むこうから みずの おとが する",
+    staminaCost:6, tags:["water","fast"], btnClass:"blue",
+    logText:"みずの おとを たよりに すすんだ。",
+    eventWeight:{ large:1.0, fast:1.5, flying:0.6, water:3.5, legendary:0.6, carnivore:1.0, herbivore:1.0, poop:0.8, recovery:1.5, hazard:0.6, encounter:1.3 },
   },
-  longbow: {
-    question: "長弓 で どう ねらう？",
-    choices: [
-      { emoji: "🌳", label: "きのかげに かくれて ねらう", correct: true },
-      { emoji: "🚪", label: "ひらけた ばしょで まっすぐ あるく", correct: false },
-    ],
+  {
+    hintEmoji:"💩", hintText:"くさい ニオイが プンプンする…",
+    staminaCost:4, tags:["poop","large"], btnClass:"",
+    logText:"においを かぎながら すすんだ。",
+    eventWeight:{ large:1.8, fast:0.7, flying:0.3, water:0.5, legendary:0.8, carnivore:1.5, herbivore:0.8, poop:3.0, recovery:0.3, hazard:0.8, encounter:1.2 },
   },
-};
-
-// WEAPON（刃物・銃）用クイズ
-const WEAPON_ACTION_QUIZ_MAP: Record<string, ActionQuiz> = {
-  flint_knife: {
-    question: "せっきの ナイフで どう ちかづく？",
-    choices: [
-      { emoji: "🤫", label: "しずかに はらって えものに ちかづく", correct: true },
-      { emoji: "🏃", label: "ダッシュして ながら きる", correct: false },
-      { emoji: "📢", label: "おおごえで おどかしてから きる", correct: false },
-    ],
+  {
+    hintEmoji:"🌿", hintText:"おいしそうな きのみが なっている",
+    staminaCost:3, tags:["herbivore","recovery"], btnClass:"green",
+    logText:"きのみを たべながら のんびり すすんだ。",
+    eventWeight:{ large:0.5, fast:1.2, flying:1.0, water:0.8, legendary:0.3, carnivore:0.4, herbivore:2.5, poop:0.5, recovery:3.0, hazard:0.3, encounter:1.0 },
   },
-  survival_knife: {
-    question: "サバイバルナイフで どう ねらう？",
-    choices: [
-      { emoji: "🌿", label: "くさに かくれて えものを まつ", correct: true },
-      { emoji: "🔊", label: "さけびながら とびかかる", correct: false },
-    ],
+  {
+    hintEmoji:"⚠️", hintText:"しげみが ガサガサ はげしく ゆれている！",
+    staminaCost:7, tags:["carnivore","hazard"], btnClass:"danger",
+    logText:"ガサガサいう しげみの ほうへ ふみこんだ…！",
+    eventWeight:{ large:1.8, fast:1.2, flying:0.5, water:0.3, legendary:1.5, carnivore:3.0, herbivore:0.3, poop:0.4, recovery:0.2, hazard:2.5, encounter:1.8 },
   },
-  arquebus: {
-    question: "ひなわじゅうで うつ まえに なにを する？",
-    choices: [
-      { emoji: "🎯", label: "しっかり たいせいを ととのえて ねらいを さだめる", correct: true },
-      { emoji: "💨", label: "いそいで てきとうに うつ", correct: false },
-      { emoji: "🏃", label: "はしりながら うつ", correct: false },
-    ],
+  {
+    hintEmoji:"🌑", hintText:"くらい かげが おちている…",
+    staminaCost:5, tags:["flying","legendary"], btnClass:"purple",
+    logText:"かげを たよりに うす暗いほうへ すすんだ。",
+    eventWeight:{ large:1.0, fast:0.8, flying:3.0, water:0.4, legendary:2.0, carnivore:1.2, herbivore:0.5, poop:0.3, recovery:0.4, hazard:1.0, encounter:1.5 },
   },
-  hunting_rifle: {
-    question: "りょうじゅうで とおくの えものを ねらう とき、どうする？",
-    choices: [
-      { emoji: "🌬️", label: "かぜの むきを よんで、しずかに こきゅうを ととのえる", correct: true },
-      { emoji: "🎉", label: "おおさわぎして ちゅういを ひく", correct: false },
-      { emoji: "⏩", label: "はやく うてば あたる", correct: false },
-    ],
+  {
+    hintEmoji:"🍄", hintText:"ふしぎな きのこが はえている",
+    staminaCost:4, tags:["recovery","hazard"], btnClass:"purple",
+    logText:"きのこの においに さそわれて すすんだ。",
+    eventWeight:{ large:0.6, fast:0.9, flying:0.8, water:0.6, legendary:0.8, carnivore:0.5, herbivore:1.0, poop:0.5, recovery:2.0, hazard:2.0, encounter:1.1 },
   },
-};
+  {
+    hintEmoji:"🪶", hintText:"はねが おちている",
+    staminaCost:5, tags:["flying"], btnClass:"",
+    logText:"はねを みつけて その ほうへ すすんだ。",
+    eventWeight:{ large:0.5, fast:0.8, flying:3.5, water:0.5, legendary:1.0, carnivore:0.6, herbivore:0.8, poop:0.4, recovery:0.8, hazard:0.5, encounter:1.4 },
+  },
+  {
+    hintEmoji:"🌬️", hintText:"つめたい かぜが ふいてくる",
+    staminaCost:8, tags:["legendary","hazard"], btnClass:"danger",
+    logText:"つめたい かぜの むこうへ すすんだ。",
+    eventWeight:{ large:1.5, fast:0.7, flying:1.0, water:0.4, legendary:2.5, carnivore:1.5, herbivore:0.5, poop:0.3, recovery:0.4, hazard:1.8, encounter:1.3 },
+  },
+];
 
-// デフォルト（未知の道具用）
-const DEFAULT_ACTION_QUIZ: ActionQuiz = {
-  question: "どう ねらう？",
-  choices: [
-    { emoji: "🤫", label: "そっと ちかづいて ねらう", correct: true },
-    { emoji: "📢", label: "おおごえで おどかす", correct: false },
-  ],
-};
+const HAPPENINGS: Happening[] = [
+  { id:"poop",             baseWeight:12, tag:"poop",      staminaDelta:0,   fx:"poop",     color:"#d97706",
+    text:"💩 どうぶつの フンを みつけた！ のうじょうで つかえそう！", item:{ emoji:"💩", name:"フン" } },
+  { id:"trip",             baseWeight:14, tag:"hazard",    staminaDelta:-8,  fx:"bigshake", color:"#f87171",
+    text:"💥 きのねっこに つまずいた！ いたた…！", item:null },
+  { id:"carnivore_scare",  baseWeight:8,  tag:"carnivore", staminaDelta:-6,  fx:"shake",    color:"#ef4444",
+    text:"😱 なにかに おどかされた！ こわくて にげまわった…！", item:null },
+  { id:"mushroom_lucky",   baseWeight:7,  tag:"recovery",  staminaDelta:+18, fx:"rainbow",  color:"#86efac",
+    text:"🍄 ふしぎな きのこを たべた！ げんきが でてきた！", item:null },
+  { id:"mushroom_dizzy",   baseWeight:6,  tag:"hazard",    staminaDelta:-5,  fx:"rainbow",  color:"#c084fc",
+    text:"🍄 きのこを たべたら めが まわる～！", item:null },
+  { id:"berries",          baseWeight:10, tag:"recovery",  staminaDelta:+10, fx:"none",     color:"#818cf8",
+    text:"🫐 きのみを たべた！ あまくて おいしい！ たいりょく かいふく！", item:null },
+  { id:"water_drink",      baseWeight:9,  tag:"water",     staminaDelta:+8,  fx:"none",     color:"#67e8f9",
+    text:"💧 きれいな みずを のんだ！ さっぱりした！", item:null },
+  { id:"bird",             baseWeight:11, tag:"neutral",   staminaDelta:0,   fx:"none",     color:"#67e8f9",
+    text:"🐦 きれいな とりが とんでいった。", item:null },
+  { id:"mudhole",          baseWeight:9,  tag:"hazard",    staminaDelta:-4,  fx:"shake",    color:"#a8a29e",
+    text:"💦 どろみずに はまった！ くつが どろどろだ…", item:null },
+  { id:"feather",          baseWeight:8,  tag:"flying",    staminaDelta:0,   fx:"none",     color:"#e2e8f0",
+    text:"🪶 おおきな はねが おちていた！ どんな とりの ものだろう？", item:{ emoji:"🪶", name:"はね" } },
+  { id:"nothing",          baseWeight:35, tag:"neutral",   staminaDelta:0,   fx:"none",     color:"",
+    text:"", item:null },
+];
 
-type Phase =
-  | { kind: "idle" }
-  | { kind: "encounter"; hunt: ActiveHunt; tool: ToolEntry }
-  | { kind: "captured"; hunt: ActiveHunt; tool: ToolEntry }
-  | { kind: "readingQuiz"; hunt: ActiveHunt; tool: ToolEntry; quiz: GeneratedQuiz }
-  | { kind: "result"; outcome: "caught" | "escaped"; animal: AnimalLite; tool: ToolEntry; reason: string };
+// ════════════════════════════════════════════════════════════════
+//  ユーティリティ
+// ════════════════════════════════════════════════════════════════
 
-type GeneratedQuiz = {
-  question: string;
-  options: string[];
-  answer: string;
-  source: "ollama" | "fallback";
-};
+function weightedRandom<T>(items: T[], weightFn: (item: T) => number): T {
+  const total = items.reduce((s, i) => s + weightFn(i), 0);
+  let r = Math.random() * total;
+  for (const item of items) {
+    r -= weightFn(item);
+    if (r <= 0) return item;
+  }
+  return items[items.length - 1];
+}
 
-export function HuntClient({
-  kidId,
-  kidName,
-  tools,
-  stages,
-  noTools,
-  initialStamina,
-}: Props) {
-  const reading = NAME_READING[kidName] ?? kidName;
+function generateRoutes(turn: number): RouteOption[] {
+  const dirs = ["みぎ", "ひだり", "まえ", "けわしい みち", "ひろい みち"];
+  const shuffled = [...ROUTE_TEMPLATES].sort(() => Math.random() - 0.5);
+  const count = Math.random() < 0.4 ? 2 : 3;
+  return shuffled.slice(0, count).map((tpl, i) => ({
+    ...tpl,
+    id: `route_${turn}_${i}`,
+    dirLabel: dirs[i] ?? "まえ",
+  }));
+}
 
-  const [selectedStage, setSelectedStage] = useState<StageEntry | null>(
-    stages[0] ?? null,
-  );
-  const [stamina, setStamina] = useState<StaminaInfo>(initialStamina);
-  const [phase, setPhase] = useState<Phase>({ kind: "idle" });
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-  const [isLoadingQuiz, setIsLoadingQuiz] = useState(false);
+function rollHappening(ew: EventWeight): Happening {
+  return weightedRandom(HAPPENINGS, (h) => {
+    const mult = (ew as Record<string, number>)[h.tag] ?? 1.0;
+    return Math.max(0.1, h.baseWeight * mult);
+  });
+}
 
-  // 起動から少し経過していたら最新のスタミナを取り直す（日付変わりに対応）
+function rollAnimal(ew: EventWeight, isNight: boolean, weatherId: string): Animal | null {
+  const candidates = ANIMALS.filter((a) => {
+    const timeOk =
+      a.activeTime === "ANY" ||
+      (a.activeTime === "NIGHT" && isNight) ||
+      (a.activeTime === "DAY" && !isNight);
+    const wOk = !a.waterAnimal || weatherId === "RAIN" || weatherId === "SNOW" || ew.water > 1.5;
+    return timeOk && wOk;
+  });
+  if (!candidates.length) return null;
+  return weightedRandom(candidates, (a) => {
+    let w = 1.0;
+    if (a.trait === "LARGE")      w *= ew.large;
+    if (a.trait === "FAST")       w *= ew.fast;
+    if (a.trait === "FLYING")     w *= ew.flying;
+    if (a.waterAnimal)            w *= ew.water;
+    if (a.rarity === "LEGENDARY") w *= ew.legendary;
+    return Math.max(0.1, w);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+//  フック
+// ════════════════════════════════════════════════════════════════
+
+function useTypewriter(text: string | null, speed = 26): { displayed: string; done: boolean } {
+  const [displayed, setDisplayed] = useState("");
+  const [done, setDone] = useState(false);
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const fresh = await getHuntStamina(kidId);
-      if (!cancelled) setStamina(fresh);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [kidId]);
+    setDisplayed(""); setDone(false);
+    if (!text) return;
+    let i = 0;
+    const id = setInterval(() => {
+      i++;
+      setDisplayed(text.slice(0, i));
+      if (i >= text.length) { clearInterval(id); setDone(true); }
+    }, speed);
+    return () => clearInterval(id);
+  }, [text, speed]);
+  return { displayed, done };
+}
 
-  const handleStartHunt = (tool: ToolEntry) => {
-    if (!selectedStage) {
-      setErrorMsg("ステージを えらんでね");
-      return;
-    }
-    if (stamina.remaining <= 0) {
-      setErrorMsg("きょうの かりは おわり！あしたまた チャレンジしよう");
-      return;
-    }
-    setErrorMsg(null);
-    startTransition(async () => {
-      const r = await startActiveHunt(kidId, tool.id, selectedStage.id);
-      if (!r.success) {
-        setErrorMsg(r.error);
-        if (r.stamina) setStamina(r.stamina);
-        return;
-      }
-      setStamina(r.stamina);
-      setPhase({
-        kind: "encounter",
-        tool,
-        hunt: {
-          id: r.hunt.id,
-          huntType: r.hunt.huntType,
-          toolName: r.hunt.toolName,
-          toolEmoji: r.hunt.toolEmoji,
-          targetAnimal: r.hunt.targetAnimal,
-        },
-      });
-    });
-  };
+// ════════════════════════════════════════════════════════════════
+//  CSS
+// ════════════════════════════════════════════════════════════════
 
-  // 行動選択で「不正解」を選んだ時：その場で逃げられた扱い
-  const handleActionFail = (hunt: ActiveHunt, tool: ToolEntry, reason: string) => {
-    setPhase({
-      kind: "result",
-      outcome: "escaped",
-      animal: hunt.targetAnimal,
-      tool,
-      reason,
-    });
-    // サーバ側にも結果を伝える（precision=0 → ESCAPED）
-    void resolveActiveHunt(hunt.id, 0);
-  };
+const CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=DotGothic16&family=Kosugi+Maru&display=swap');
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+  :root{
+    --green:#00ff88;--amber:#ffb020;--red:#ff4444;
+    --yellow:#ffd700;--blue:#60a5fa;--purple:#c084fc;
+    --dim:#4a5568;--border:rgba(0,255,136,0.18);
+    --font-dot:'DotGothic16',monospace;--font-kids:'Kosugi Maru',sans-serif;
+  }
+  body{background:#000;}
+  .scanlines::after{content:"";position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(to bottom,transparent 0,transparent 2px,rgba(0,0,0,0.07) 2px,rgba(0,0,0,0.07) 4px);z-index:100;}
+  .forest-wrap{position:relative;width:100%;height:100%;overflow:hidden;}
+  .log-line{padding:3px 0;line-height:1.75;border-bottom:1px solid rgba(0,255,136,0.04);animation:logFadeIn 0.3s ease;font-size:12px;}
+  .log-line:last-child{border-bottom:none;}
+  .cursor{display:inline-block;width:7px;height:1em;background:var(--green);margin-left:2px;vertical-align:middle;animation:blink 0.75s step-end infinite;}
+  .route-btn{background:rgba(0,0,0,0.4);border:1px solid rgba(0,255,136,0.22);color:rgba(0,255,136,0.9);
+    font-family:var(--font-kids);font-size:13px;padding:0;cursor:pointer;text-align:left;
+    transition:background 0.18s,border-color 0.18s,transform 0.1s;border-radius:3px;overflow:hidden;width:100%;display:flex;flex-direction:column;}
+  .route-btn:hover{background:rgba(0,255,136,0.08);border-color:var(--green);}
+  .route-btn:active{transform:scale(0.985);}
+  .route-btn:disabled{opacity:0.35;cursor:not-allowed;pointer-events:none;}
+  .route-hint{display:flex;align-items:center;gap:8px;padding:8px 12px 4px;font-size:13px;font-weight:bold;line-height:1.4;}
+  .route-meta{padding:3px 12px 7px;font-size:10px;color:rgba(0,255,136,0.45);border-top:1px solid rgba(0,255,136,0.08);display:flex;justify-content:space-between;align-items:center;}
+  .route-btn.amber{border-color:rgba(255,176,32,0.35);color:var(--amber);}
+  .route-btn.amber:hover{background:rgba(255,176,32,0.08);border-color:var(--amber);}
+  .route-btn.blue{border-color:rgba(96,165,250,0.35);color:var(--blue);}
+  .route-btn.blue:hover{background:rgba(96,165,250,0.08);border-color:var(--blue);}
+  .route-btn.green{border-color:rgba(0,255,136,0.40);color:#86efac;}
+  .route-btn.green:hover{background:rgba(0,255,136,0.12);border-color:var(--green);}
+  .route-btn.danger{border-color:rgba(255,68,68,0.35);color:#ff8888;}
+  .route-btn.danger:hover{background:rgba(255,68,68,0.08);border-color:var(--red);}
+  .route-btn.purple{border-color:rgba(192,132,252,0.35);color:var(--purple);}
+  .route-btn.purple:hover{background:rgba(192,132,252,0.08);border-color:var(--purple);}
+  .tag-badge{display:inline-block;font-size:9px;padding:1px 6px;border-radius:2px;border:1px solid;opacity:0.75;}
+  .cmd-btn{background:transparent;border:1px solid var(--border);color:var(--green);font-family:var(--font-kids);
+    font-size:13px;padding:10px 14px;cursor:pointer;text-align:left;transition:background 0.15s,border-color 0.15s;border-radius:2px;width:100%;}
+  .cmd-btn::before{content:"▶ ";color:var(--dim);}
+  .cmd-btn:hover{background:rgba(0,255,136,0.08);border-color:var(--green);color:#fff;}
+  .cmd-btn.danger{border-color:rgba(255,68,68,0.3);color:#ff8888;}
+  .cmd-btn.danger::before{color:rgba(255,68,68,0.5);}
+  .cmd-btn.danger:hover{background:rgba(255,68,68,0.08);border-color:var(--red);}
+  .cmd-btn.yellow{border-color:rgba(255,215,0,0.4);color:var(--yellow);}
+  .cmd-btn.yellow::before{color:var(--yellow);}
+  .cmd-btn.yellow:hover{background:rgba(255,215,0,0.08);}
+  .cmd-btn.amber{border-color:rgba(255,176,32,0.4);color:var(--amber);}
+  .cmd-btn.amber::before{color:var(--amber);}
+  .cmd-btn.amber:hover{background:rgba(255,176,32,0.08);}
+  .cmd-btn:disabled{opacity:0.35;cursor:not-allowed;pointer-events:none;}
+  .hp-bar-track{width:100%;height:7px;background:rgba(255,255,255,0.08);border-radius:4px;overflow:hidden;margin-top:3px;}
+  .hp-bar-fill{height:100%;border-radius:4px;transition:width 0.4s,background 0.4s;}
+  .timing-bar-outer{width:100%;height:28px;background:rgba(0,0,0,0.5);border:1px solid rgba(0,255,136,0.25);border-radius:4px;overflow:hidden;position:relative;}
+  .timing-cursor{position:absolute;top:0;bottom:0;width:4px;background:#fff;border-radius:2px;box-shadow:0 0 8px #fff;}
+  .timing-zone{position:absolute;top:0;bottom:0;background:rgba(255,215,0,0.3);border-left:2px solid #ffd700;border-right:2px solid #ffd700;}
+  .timing-btn{background:rgba(0,255,136,0.1);border:1px solid var(--green);color:var(--green);font-family:var(--font-kids);font-size:15px;padding:10px;cursor:pointer;border-radius:3px;width:100%;}
+  .timing-btn:active{background:rgba(0,255,136,0.22);transform:scale(0.97);}
+  .quiz-btn{background:rgba(0,255,136,0.04);border:1px solid rgba(0,255,136,0.18);color:rgba(0,255,136,0.88);
+    font-family:var(--font-kids);font-size:13px;padding:9px 12px;cursor:pointer;border-radius:3px;text-align:left;width:100%;transition:background 0.15s;}
+  .quiz-btn:hover{background:rgba(0,255,136,0.1);border-color:var(--green);}
+  .quiz-btn.correct{background:rgba(0,255,136,0.2);border-color:var(--green);color:#fff;}
+  .quiz-btn.wrong{background:rgba(255,68,68,0.1);border-color:var(--red);color:#ff8888;}
+  .panel-slide{animation:panelSlide 0.22s ease-out;}
+  .result-reveal{animation:resultReveal 0.35s ease;}
+  .fx-bigshake{animation:bigShake 0.5s ease-out;}
+  .fx-shake{animation:stepShake 0.38s ease-out;}
+  .fx-rainbow{animation:rainbowFilter 2.6s ease forwards;}
+  .fx-poop-bounce{position:absolute;font-size:28px;pointer-events:none;z-index:80;animation:poopBounce 1.1s cubic-bezier(0.22,1,0.36,1) forwards;}
+  .route-selecting{animation:routePulse 0.3s ease;}
+  @keyframes blink{0%,100%{opacity:1;}50%{opacity:0;}}
+  @keyframes logFadeIn{from{opacity:0;transform:translateX(-4px);}to{opacity:1;transform:none;}}
+  @keyframes stepShake{0%{transform:translateY(0);}20%{transform:translateY(4px) scale(0.993);}50%{transform:translateY(-2px);}80%{transform:translateY(1px);}100%{transform:translateY(0);}}
+  @keyframes bigShake{0%{transform:translate(0,0)rotate(0);}15%{transform:translate(-6px,5px)rotate(-2deg);}30%{transform:translate(6px,-4px)rotate(2deg);}45%{transform:translate(-5px,3px)rotate(-1deg);}60%{transform:translate(4px,-3px)rotate(1deg);}75%{transform:translate(-3px,2px);}100%{transform:none;}}
+  @keyframes encounterFlash{0%{filter:brightness(1);}18%{filter:brightness(4) saturate(0);}38%{filter:brightness(1.2);}55%{filter:brightness(0.6);}75%{filter:brightness(1.3);}100%{filter:brightness(1);}}
+  @keyframes animalPop{0%{transform:scale(0.05)translateY(30px);opacity:0;filter:brightness(5);}55%{transform:scale(1.18)translateY(-8px);opacity:1;filter:brightness(1.4);}100%{transform:scale(1)translateY(0);opacity:1;filter:brightness(1);}}
+  @keyframes poopBounce{0%{transform:translateY(40px)scale(0.2);opacity:0;}35%{transform:translateY(-60px)scale(1.3);opacity:1;}55%{transform:translateY(-30px)scale(0.9);}70%{transform:translateY(-50px)scale(1.1);}85%{transform:translateY(-38px)scale(0.95);}100%{transform:translateY(-44px)scale(1);opacity:0;}}
+  @keyframes rainbowFilter{0%{filter:hue-rotate(0deg)saturate(1);}20%{filter:hue-rotate(90deg)saturate(2);}40%{filter:hue-rotate(180deg)saturate(2.5);}60%{filter:hue-rotate(270deg)saturate(2);}80%{filter:hue-rotate(320deg)saturate(1.5);}100%{filter:hue-rotate(360deg)saturate(1);}}
+  @keyframes panelSlide{from{transform:translateY(10px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+  @keyframes resultReveal{from{opacity:0;transform:scale(0.92)translateY(8px);}to{opacity:1;transform:none;}}
+  @keyframes footprint{0%{opacity:0.9;transform:scale(1);}100%{opacity:0;transform:scale(1.9)translateY(-5px);}}
+  @keyframes rainDrop{0%{transform:translateY(-10px);opacity:0;}15%{opacity:0.7;}85%{opacity:0.7;}100%{transform:translateY(260px);opacity:0;}}
+  @keyframes snowDrift{0%{transform:translateY(-8px)translateX(0)rotate(0deg);opacity:0;}20%{opacity:0.85;}100%{transform:translateY(260px)translateX(24px)rotate(360deg);opacity:0;}}
+  @keyframes pulseGlow{0%,100%{box-shadow:0 0 6px rgba(0,255,136,0.12);}50%{box-shadow:0 0 18px rgba(0,255,136,0.28);}}
+  @keyframes routePulse{0%{transform:scale(1);}40%{transform:scale(1.02);}100%{transform:scale(1);}}
+  @keyframes starPop{0%{transform:scale(0)rotate(-20deg);opacity:0;}60%{transform:scale(1.3)rotate(5deg);opacity:1;}100%{transform:scale(1)rotate(0);opacity:1;}}
+  @keyframes tagFadeIn{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:none;}}
+`;
 
-  // 行動選択で「正解」を選んだ時：一時捕獲 → 読解フェーズへ
-  const handleActionPass = (hunt: ActiveHunt, tool: ToolEntry) => {
-    setPhase({ kind: "captured", hunt, tool });
-    // 裏で Ollama にクイズを生成させる
-    setIsLoadingQuiz(true);
-    void (async () => {
-      try {
-        const res = await fetch("/api/quiz/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            specificName: hunt.targetAnimal.specificName,
-            description: hunt.targetAnimal.description,
-          }),
-        });
-        const json = (await res.json()) as GeneratedQuiz;
-        setIsLoadingQuiz(false);
-        setPhase((cur) => {
-          if (cur.kind !== "captured") return cur;
-          return { kind: "readingQuiz", hunt, tool, quiz: json };
-        });
-      } catch {
-        setIsLoadingQuiz(false);
-        // ネットワーク失敗時のフォールバック: 説明文の冒頭を使った簡易クイズ
-        const fb: GeneratedQuiz = {
-          question: `${hunt.targetAnimal.specificName} は どんな どうぶつ？`,
-          options: [
-            hunt.targetAnimal.description.split(/[。．]/)[0]?.slice(0, 40) ||
-              "せつめいに かいてある とおり",
-            "そらを とぶ きかい",
-            "あまい たべもの",
-          ],
-          answer:
-            hunt.targetAnimal.description.split(/[。．]/)[0]?.slice(0, 40) ||
-            "せつめいに かいてある とおり",
-          source: "fallback",
-        };
-        setPhase((cur) => {
-          if (cur.kind !== "captured") return cur;
-          return { kind: "readingQuiz", hunt, tool, quiz: fb };
-        });
-      }
-    })();
-  };
+// ════════════════════════════════════════════════════════════════
+//  ForestView
+// ════════════════════════════════════════════════════════════════
 
-  // 読解クイズの結果
-  const handleReadingAnswer = (
-    hunt: ActiveHunt,
-    tool: ToolEntry,
-    selectedOption: string,
-    quiz: GeneratedQuiz,
-  ) => {
-    const isCorrect = selectedOption.trim() === quiz.answer.trim();
-    if (isCorrect) {
-      // サーバに「捕獲成功」を確定
-      void resolveActiveHunt(hunt.id, 1.0);
-      setPhase({
-        kind: "result",
-        outcome: "caught",
-        animal: hunt.targetAnimal,
-        tool,
-        reason: "せつめいを よく よめたね！",
-      });
-    } else {
-      void resolveActiveHunt(hunt.id, 0);
-      setPhase({
-        kind: "result",
-        outcome: "escaped",
-        animal: hunt.targetAnimal,
-        tool,
-        reason: "ちしきが たりなくて にげられちゃった…",
-      });
-    }
-  };
+interface ForestViewProps {
+  timeState:   TimeState;
+  weather:     Weather;
+  isEncounter: boolean;
+  isEncFlash:  boolean;
+  animal:      Animal | null;
+  shakeFx:     string;
+  rainbowFx:   boolean;
+}
 
-  const closeResult = () => {
-    setPhase({ kind: "idle" });
-  };
+function ForestView({ timeState, weather, isEncounter, isEncFlash, animal, shakeFx, rainbowFx }: ForestViewProps) {
+  const isNight   = timeState.id === "NIGHT";
+  const isEvening = timeState.id === "EVENING";
+  const fxClass   = shakeFx === "bigshake" ? "fx-bigshake" : shakeFx === "shake" ? "fx-shake" : "";
+  const flashStyle: React.CSSProperties = isEncFlash ? { animation: "encounterFlash 0.45s ease-out" } : {};
 
-  const remaining = stamina.remaining;
-  const dailyDisabled = remaining <= 0;
+  const treeLayers = [
+    { z:0, scale:0.28, opacity:0.35, bottom:"50%", trees:11, color:"#000" },
+    { z:1, scale:0.42, opacity:0.55, bottom:"42%", trees:9,  color:"#040d04" },
+    { z:2, scale:0.62, opacity:0.75, bottom:"32%", trees:7,  color:"#071207" },
+    { z:3, scale:0.88, opacity:0.90, bottom:"18%", trees:5,  color:"#0a1a0a" },
+    { z:4, scale:1.20, opacity:1.00, bottom:"0%",  trees:3,  color:"#0d200d" },
+  ];
 
   return (
-    <main className="min-h-[calc(100vh-52px)] bg-gradient-to-b from-emerald-100 via-teal-100 to-sky-100 px-4 py-4">
-      <div className="mx-auto max-w-3xl space-y-5">
-        {/* ページタイトル */}
-        <p className="text-center text-sm font-extrabold text-emerald-700/80 tracking-widest">
-          🏹 アクティブ 狩り
-        </p>
+    <div
+      className={`forest-wrap scanlines ${fxClass} ${rainbowFx ? "fx-rainbow" : ""}`}
+      style={{ transition: "all 1.2s ease", ...flashStyle }}
+    >
+      <div style={{ position:"absolute", inset:0,
+        background:`linear-gradient(to bottom,${timeState.skyTop} 0%,${timeState.skyMid} 55%,${timeState.skyBot} 100%)`,
+        transition:"background 2s ease" }} />
 
-        {/* スタミナヒーロー（あと ◯ かい） */}
-        <section
-          className={`rounded-[2rem] p-1 shadow-xl ring-4 ring-white ${
-            dailyDisabled
-              ? "bg-gradient-to-br from-slate-300 to-slate-400"
-              : "bg-gradient-to-br from-emerald-400 via-teal-400 to-cyan-400"
-          }`}
-        >
-          <div className="rounded-[1.7rem] bg-white/95 px-6 py-5 text-center backdrop-blur">
-            <p className="text-[10px] font-bold tracking-[0.4em] text-emerald-600">
-              きょうの かり
-            </p>
-            <p className="mt-1 font-mono text-6xl font-black tracking-tight text-emerald-800 leading-none sm:text-7xl">
-              あと <span className={dailyDisabled ? "text-rose-500" : ""}>{remaining}</span> <span className="text-3xl">かい</span>
-            </p>
-            {/* スタミナ・トークン */}
-            <div className="mt-3 flex justify-center gap-1.5">
-              {Array.from({ length: stamina.limit }).map((_, i) => {
-                const used = i < stamina.used;
-                return (
-                  <span
-                    key={i}
-                    aria-hidden
-                    className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs ring-2 ${
-                      used
-                        ? "bg-slate-200 text-slate-400 ring-slate-300"
-                        : "bg-gradient-to-br from-amber-300 to-orange-400 text-white ring-amber-500 shadow"
-                    }`}
-                  >
-                    {used ? "✗" : "🏹"}
-                  </span>
-                );
-              })}
-            </div>
-            <p className="mt-2 text-[11px] font-bold text-emerald-700/80">
-              {reading}、しんちょうに ねらおう！
-              {dailyDisabled && (
-                <span className="block text-rose-500 mt-1">
-                  きょうは おしまい。あした 0:00 に リセット
-                </span>
-              )}
-            </p>
+      {(isNight || isEvening) && Array.from({ length: 26 }).map((_, i) => (
+        <div key={i} style={{ position:"absolute", left:`${(i*37+11)%100}%`, top:`${(i*23+7)%55}%`,
+          width:i%5===0?3:2, height:i%5===0?3:2, borderRadius:"50%", background:"#fff",
+          opacity:isNight?0.7:0.3, animation:`blink ${1.5+(i%7)*0.4}s ${(i*0.17)%2}s step-end infinite` }} />
+      ))}
+      {(isNight || isEvening) && (
+        <div style={{ position:"absolute", top:"8%", right:"14%", width:28, height:28, borderRadius:"50%",
+          background:isNight?"#e2e8f0":"#fde68a",
+          boxShadow:isNight?"0 0 20px rgba(226,232,240,0.4)":"0 0 24px rgba(253,230,138,0.5)", opacity:0.9 }} />
+      )}
+
+      <div style={{ position:"absolute", bottom:0, left:0, right:0, height:"28%",
+        background:"linear-gradient(to top,#0a1a0a 0%,rgba(10,20,10,0) 100%)" }} />
+
+      {treeLayers.map(layer => (
+        <div key={layer.z} style={{ position:"absolute", bottom:layer.bottom, width:"100%",
+          display:"flex", justifyContent:"center", gap:`${8+layer.z*4}px` }}>
+          {Array.from({ length: layer.trees }).map((_, ti) => {
+            const h = (80 + layer.z*30 + (ti%3)*18) * layer.scale;
+            const w = (30 + layer.z*14 + (ti%2)*8)  * layer.scale;
+            const tilt = (ti - Math.floor(layer.trees/2)) * 1.8;
+            return (
+              <div key={ti} style={{ display:"flex", flexDirection:"column", alignItems:"center",
+                transform:`rotate(${tilt}deg)`, transformOrigin:"bottom center",
+                opacity:layer.opacity - (ti%3)*0.05 }}>
+                <div style={{ width:0, height:0,
+                  borderLeft:`${w*0.6}px solid transparent`, borderRight:`${w*0.6}px solid transparent`,
+                  borderBottom:`${h*0.45}px solid ${layer.color}`,
+                  filter:`drop-shadow(0 ${layer.z*2}px ${layer.z*6}px rgba(0,0,0,0.5))` }} />
+                <div style={{ width:0, height:0,
+                  borderLeft:`${w*0.5}px solid transparent`, borderRight:`${w*0.5}px solid transparent`,
+                  borderBottom:`${h*0.4}px solid ${layer.color}`, marginTop:`-${h*0.15}px` }} />
+                <div style={{ width:w*0.14, height:h*0.22, background:layer.color, borderRadius:"1px" }} />
+              </div>
+            );
+          })}
+        </div>
+      ))}
+
+      <div style={{ position:"absolute", bottom:"14%", left:0, right:0, height:"22%",
+        background:`linear-gradient(to top,rgba(200,220,200,${timeState.fogAlpha}) 0%,rgba(200,220,200,0) 100%)`,
+        transition:"opacity 2s ease" }} />
+
+      {weather.id !== "SUNNY" && Array.from({ length: 18 }).map((_, i) => {
+        const isRain = weather.id === "RAIN";
+        return (
+          <div key={i} style={{ position:"absolute", left:`${(i*6.2+3)%100}%`, top:"-12px",
+            width:isRain?1.5:5, height:isRain?14:5,
+            background:isRain?"rgba(180,220,255,0.55)":"rgba(255,255,255,0.8)", borderRadius:isRain?1:"50%",
+            animation:`${isRain?"rainDrop":"snowDrift"} ${isRain?0.75+(i%4)*0.12:2.4+(i%6)*0.35}s linear ${(i*0.11)%1.8}s infinite` }} />
+        );
+      })}
+
+      {isEncounter && animal && (
+        <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", zIndex:20 }}>
+          <div style={{ fontSize:96, lineHeight:1,
+            filter:"drop-shadow(0 0 32px rgba(255,80,0,0.65)) drop-shadow(0 0 64px rgba(255,160,0,0.3))",
+            animation:"animalPop 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards" }}>
+            {animal.emoji}
           </div>
-        </section>
+        </div>
+      )}
 
-        {noTools && (
-          <div className="rounded-2xl bg-yellow-100 px-4 py-3 text-sm font-bold text-yellow-900 ring-1 ring-yellow-300">
-            ⚠️ つかえる どうぐが ありません。
-            クラフト工場で BOW・とうしゃぶき・ぶき を つくってね！
+      <div style={{ position:"absolute", inset:0, pointerEvents:"none", zIndex:10,
+        background:`radial-gradient(ellipse at center,transparent 30%,rgba(0,0,0,${timeState.vignet}) 100%)` }} />
+      <div style={{ position:"absolute", inset:0, pointerEvents:"none", boxShadow:"inset 0 0 40px rgba(0,0,0,0.7)", zIndex:11 }} />
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════
+//  ログ行
+// ════════════════════════════════════════════════════════════════
+
+interface LogLineProps {
+  text:     string;
+  color:    string | undefined;
+  isLatest: boolean;
+}
+
+function LogLine({ text, color, isLatest }: LogLineProps) {
+  const { displayed, done } = useTypewriter(isLatest ? text : null, 24);
+  const shown = isLatest ? displayed : text;
+  return (
+    <div className="log-line" style={{ color: color || "rgba(0,255,136,0.82)", fontFamily:"var(--font-kids)" }}>
+      <span style={{ color:"rgba(0,255,136,0.28)", marginRight:6 }}>{">"}</span>
+      {shown}{isLatest && !done && <span className="cursor" />}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════
+//  ルートカード
+// ════════════════════════════════════════════════════════════════
+
+const TAG_LABELS: Record<RouteTag, string> = {
+  large:"おおきい", fast:"すばやい", flying:"そら", water:"みずべ",
+  carnivore:"にくしょく", herbivore:"くさしょく", legendary:"でんせつ",
+  poop:"フン", recovery:"かいふく", hazard:"きけん", neutral:"ふつう",
+};
+const TAG_COLOR: Record<RouteTag, string> = {
+  large:"#f59e0b", fast:"#34d399", flying:"#818cf8", water:"#60a5fa",
+  carnivore:"#f87171", herbivore:"#86efac", legendary:"#fbbf24",
+  poop:"#d97706", recovery:"#4ade80", hazard:"#ef4444", neutral:"#6b7280",
+};
+
+interface RouteCardProps {
+  route:      RouteOption;
+  onClick:    (r: RouteOption) => void;
+  disabled:   boolean;
+  isSelected: boolean;
+}
+
+function RouteCard({ route, onClick, disabled, isSelected }: RouteCardProps) {
+  return (
+    <button
+      className={`route-btn ${route.btnClass} ${isSelected ? "route-selecting" : ""}`}
+      onClick={() => onClick(route)}
+      disabled={disabled}
+    >
+      <div className="route-hint">
+        <span style={{ fontSize:20, flexShrink:0 }}>{route.hintEmoji}</span>
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:13, lineHeight:1.4 }}>{route.hintText}</div>
+        </div>
+      </div>
+      <div className="route-meta">
+        <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
+          {route.tags.slice(0, 2).map(t => (
+            <span key={t} className="tag-badge"
+              style={{ color:TAG_COLOR[t], borderColor:TAG_COLOR[t], animation:"tagFadeIn 0.3s ease" }}>
+              {TAG_LABELS[t]}
+            </span>
+          ))}
+        </div>
+        <span style={{ opacity:0.55, fontSize:10 }}>
+          {route.dirLabel}　たいりょく -{route.staminaCost}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════
+//  タイミングゲーム
+// ════════════════════════════════════════════════════════════════
+
+interface TimingGameProps {
+  onResult: (score: number) => void;
+}
+
+function TimingGame({ onResult }: TimingGameProps) {
+  const [pos,    setPos]    = useState(0);
+  const [result, setResult] = useState<TimingResult | null>(null);
+  const dirRef  = useRef(1);
+  const posRef  = useRef(0);
+  const rafRef  = useRef<number>(0);
+  const prevRef = useRef<number | null>(null);
+  const SPEED   = 0.115;
+
+  useEffect(() => {
+    function tick(now: number) {
+      const dt = prevRef.current != null ? now - prevRef.current : 16;
+      prevRef.current = now;
+      posRef.current += SPEED * dt * dirRef.current;
+      if (posRef.current >= 100) { posRef.current = 100; dirRef.current = -1; }
+      if (posRef.current <= 0)   { posRef.current = 0;   dirRef.current = 1; }
+      setPos(posRef.current);
+      rafRef.current = requestAnimationFrame(tick);
+    }
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, []);
+
+  const handleTap = useCallback(() => {
+    if (result) return;
+    cancelAnimationFrame(rafRef.current);
+    const p = posRef.current;
+    const hit  = p >= 35 && p <= 65;
+    const near = (p >= 20 && p < 35) || (p > 65 && p <= 80);
+    const label = hit ? "ちょうどいい！" : near ? "おしい！" : "はずれ…";
+    const score = hit ? 2 : near ? 1 : 0;
+    setResult({ label, score });
+    setTimeout(() => onResult(score), 900);
+  }, [result, onResult]);
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+      <div style={{ fontFamily:"var(--font-kids)", fontSize:11, color:"rgba(0,255,136,0.5)" }}>
+        きいろの ゾーンで タップ！
+      </div>
+      <div className="timing-bar-outer">
+        <div className="timing-zone" style={{ left:"35%", width:"30%" }} />
+        {!result && <div className="timing-cursor" style={{ left:`calc(${pos}% - 2px)` }} />}
+        {result && (
+          <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center",
+            fontFamily:"var(--font-kids)", fontSize:13, fontWeight:"bold",
+            color:result.score===2?"#ffd700":result.score===1?"#86efac":"#f87171" }}>
+            {result.label}
           </div>
         )}
-
-        {/* ステージ選択 */}
-        <section className="rounded-3xl bg-white/85 p-5 shadow ring-1 ring-emerald-200">
-          <h2 className="flex items-center gap-2 text-base font-extrabold text-emerald-800">
-            <span aria-hidden>🌍</span> ステージを えらぶ
-          </h2>
-          <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
-            {stages.map((s) => {
-              const isSelected = selectedStage?.id === s.id;
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => setSelectedStage(s)}
-                  className={`rounded-2xl p-2 ring-2 transition active:scale-95 ${
-                    isSelected
-                      ? "bg-gradient-to-br from-emerald-300 to-teal-300 ring-emerald-500 shadow"
-                      : "bg-slate-50 ring-transparent hover:bg-slate-100"
-                  }`}
-                >
-                  <p className="text-2xl" aria-hidden>{s.emoji}</p>
-                  <p className="text-[10px] font-extrabold leading-tight text-slate-700">
-                    {s.name}
-                  </p>
-                  <p className="text-[9px] text-slate-500">{s.animalCount}種</p>
-                </button>
-              );
-            })}
-          </div>
-          {selectedStage && (
-            <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-[11px] text-emerald-900 leading-relaxed">
-              {selectedStage.description}
-            </p>
-          )}
-        </section>
-
-        {/* 道具選択 */}
-        <section className="rounded-3xl bg-white/85 p-5 shadow ring-1 ring-emerald-200">
-          <h2 className="flex items-center gap-2 text-base font-extrabold text-emerald-800">
-            <span aria-hidden>🛠️</span> 道具を かまえる
-          </h2>
-          {tools.length === 0 ? (
-            <p className="mt-3 text-xs text-slate-500">
-              使える 道具が ありません。クラフトで つくろう。
-            </p>
-          ) : (
-            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {tools.map((t) => {
-                const disabled = dailyDisabled || isPending;
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => handleStartHunt(t)}
-                    disabled={disabled}
-                    className={`text-left rounded-2xl p-3 ring-2 transition active:scale-95 ${
-                      disabled
-                        ? "bg-slate-100 ring-slate-200 opacity-50 cursor-not-allowed"
-                        : t.type === "BOW"
-                          ? "bg-gradient-to-br from-emerald-100 to-teal-100 ring-emerald-300 hover:scale-[1.02]"
-                          : t.type === "SPEAR"
-                            ? "bg-gradient-to-br from-sky-100 to-indigo-100 ring-sky-300 hover:scale-[1.02]"
-                            : "bg-gradient-to-br from-rose-100 to-orange-100 ring-rose-300 hover:scale-[1.02]"
-                    }`}
-                  >
-                    <div className="flex items-start gap-2">
-                      <span className="text-4xl shrink-0" aria-hidden>{t.emoji}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-black leading-tight text-slate-800">
-                          {t.name}
-                        </p>
-                        <p className="text-[10px] font-bold text-slate-600 mt-0.5">
-                          {t.type === "BOW" ? "🏹 弓" : t.type === "SPEAR" ? "🗡️ 投擲" : "🔪 ぶき"} ／ 命中 +{Math.round(t.successRateBonus * 100)}%
-                        </p>
-                        <p className="text-[10px] text-slate-500 mt-1 line-clamp-2">
-                          {t.description}
-                        </p>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          {errorMsg && (
-            <p className="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700 ring-1 ring-rose-200">
-              {errorMsg}
-            </p>
-          )}
-        </section>
-
-        <p className="text-center text-[11px] font-bold text-emerald-600/70 tracking-widest">
-          🏹 よく かんがえ、よく よむ。それが ハンター！ 🏹
-        </p>
       </div>
-
-      {/* 行動選択モーダル */}
-      {phase.kind === "encounter" && (
-        <EncounterModal
-          hunt={phase.hunt}
-          tool={phase.tool}
-          onPass={handleActionPass}
-          onFail={(reason) => handleActionFail(phase.hunt, phase.tool, reason)}
-        />
+      {!result && (
+        <button className="timing-btn" onClick={handleTap}>
+          🎯 いま だ！ タップ！
+        </button>
       )}
-
-      {/* 一時捕獲＋読解中（クイズ生成待ち） */}
-      {phase.kind === "captured" && (
-        <CapturedReadingModal
-          hunt={phase.hunt}
-          isLoadingQuiz={isLoadingQuiz}
-        />
-      )}
-
-      {/* 読解クイズ */}
-      {phase.kind === "readingQuiz" && (
-        <ReadingQuizModal
-          hunt={phase.hunt}
-          tool={phase.tool}
-          quiz={phase.quiz}
-          onAnswer={(opt) =>
-            handleReadingAnswer(phase.hunt, phase.tool, opt, phase.quiz)
-          }
-        />
-      )}
-
-      {/* 結果 */}
-      {phase.kind === "result" && (
-        <ResultModal
-          outcome={phase.outcome}
-          animal={phase.animal}
-          tool={phase.tool}
-          reason={phase.reason}
-          onClose={closeResult}
-        />
-      )}
-
-      <style jsx>{`
-        @keyframes box-shake {
-          0%, 100% { transform: rotate(0deg) translateX(0); }
-          15% { transform: rotate(-6deg) translateX(-3px); }
-          30% { transform: rotate(7deg) translateX(4px); }
-          45% { transform: rotate(-5deg) translateX(-3px); }
-          60% { transform: rotate(6deg) translateX(3px); }
-          75% { transform: rotate(-3deg) translateX(-2px); }
-        }
-        :global(.box-gatagata) {
-          animation: box-shake 0.45s ease-in-out infinite;
-          display: inline-block;
-        }
-        @keyframes burst-spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        :global(.burst-spin) {
-          animation: burst-spin 8s linear infinite;
-        }
-      `}</style>
-    </main>
+    </div>
   );
 }
 
-// ─────────────────────────────────────────
-// 行動選択モーダル（状況判断クイズ）
-// ─────────────────────────────────────────
-function EncounterModal({
-  hunt,
-  tool,
-  onPass,
-  onFail,
-}: {
-  hunt: ActiveHunt;
-  tool: ToolEntry;
-  onPass: (hunt: ActiveHunt, tool: ToolEntry) => void;
-  onFail: (reason: string) => void;
-}) {
-  const quiz =
-    TOOL_ACTION_QUIZ[tool.toolId] ??
-    WEAPON_ACTION_QUIZ_MAP[tool.toolId] ??
-    DEFAULT_ACTION_QUIZ;
-  const [picked, setPicked] = useState<number | null>(null);
+// ════════════════════════════════════════════════════════════════
+//  クイズ
+// ════════════════════════════════════════════════════════════════
 
-  const handlePick = (idx: number) => {
-    if (picked !== null) return;
-    setPicked(idx);
-    const c = quiz.choices[idx];
-    setTimeout(() => {
-      if (c.correct) {
-        onPass(hunt, tool);
-      } else {
-        onFail("おどろかせて にげられちゃった…");
-      }
-    }, 900);
-  };
+interface QuizPanelProps {
+  animal:   Animal;
+  onResult: (correct: boolean) => void;
+}
+
+function QuizPanel({ animal, onResult }: QuizPanelProps) {
+  const [selected, setSelected] = useState<number | null>(null);
+  const q = animal.quiz;
+  const handleSelect = useCallback((i: number) => {
+    if (selected !== null) return;
+    setSelected(i);
+    setTimeout(() => onResult(i === q.ans), 1000);
+  }, [selected, q.ans, onResult]);
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4"
-    >
-      <div className="w-full max-w-md rounded-[2rem] bg-gradient-to-br from-emerald-300 via-teal-300 to-sky-300 p-1 shadow-2xl">
-        <div className="rounded-[1.75rem] bg-slate-900 px-6 py-7 text-center text-white">
-          <p className="text-[10px] font-bold tracking-[0.4em] text-amber-300 animate-pulse">
-            ✨ そうぐう ✨
-          </p>
+    <div style={{ display:"flex", flexDirection:"column", gap:6 }} className="panel-slide">
+      <div style={{ fontFamily:"var(--font-kids)", fontSize:12, color:"rgba(0,255,136,0.65)",
+        padding:"6px 8px", background:"rgba(0,255,136,0.04)", border:"1px solid rgba(0,255,136,0.1)",
+        borderRadius:2, lineHeight:1.55 }}>
+        {q.q}
+      </div>
+      {q.choices.map((c, i) => (
+        <button key={i}
+          className={`quiz-btn${selected===i ? (i===q.ans ? " correct" : " wrong") : ""}`}
+          onClick={() => handleSelect(i)}>
+          {["①","②","③"][i]} {c}
+        </button>
+      ))}
+    </div>
+  );
+}
 
-          {/* 動物のシルエット */}
-          <div className="mt-3 relative mx-auto flex h-28 w-28 items-center justify-center rounded-full bg-emerald-900/60 ring-2 ring-emerald-400/40">
-            <span
-              aria-hidden
-              className="text-7xl"
-              style={{ filter: "brightness(0)", opacity: 0.9 }}
-            >
-              {hunt.targetAnimal.emoji}
-            </span>
-          </div>
+// ════════════════════════════════════════════════════════════════
+//  HP バー
+// ════════════════════════════════════════════════════════════════
 
-          <p className="mt-3 text-sm text-slate-300">
-            <span className="font-bold text-white">
-              {hunt.targetAnimal.genericName || "なにか"}
-            </span>
-            が あらわれた！
-          </p>
-          <span className="mt-1 inline-block rounded-full bg-emerald-700/40 px-2 py-0.5 text-[10px] font-bold text-emerald-100">
-            {RARITY_LABEL[hunt.targetAnimal.rarity]}
-          </span>
-
-          <div className="mt-5 rounded-2xl bg-emerald-950/60 p-4 ring-1 ring-emerald-600/30">
-            <p className="text-[11px] font-bold text-emerald-300">
-              {tool.emoji} {tool.name}
-            </p>
-            <p className="mt-1 text-sm font-extrabold text-white">{quiz.question}</p>
-          </div>
-
-          {/* 行動の選択肢 */}
-          <div className="mt-4 flex flex-col gap-2">
-            {quiz.choices.map((c, i) => {
-              const isPicked = picked === i;
-              const showResult = picked !== null;
-              const isCorrect = c.correct;
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  disabled={picked !== null}
-                  onClick={() => handlePick(i)}
-                  className={`w-full rounded-2xl px-4 py-3 text-left font-bold transition active:scale-95 ${
-                    showResult
-                      ? isPicked
-                        ? isCorrect
-                          ? "bg-emerald-500 text-white ring-4 ring-emerald-300"
-                          : "bg-rose-500 text-white ring-4 ring-rose-300"
-                        : "bg-slate-800 text-slate-400 opacity-50"
-                      : "bg-white text-slate-800 hover:bg-emerald-100 ring-2 ring-emerald-300"
-                  }`}
-                >
-                  <span className="text-2xl mr-2">{c.emoji}</span>
-                  <span className="text-sm">{c.label}</span>
-                  {showResult && isPicked && (
-                    <span className="ml-2 text-xs font-extrabold">
-                      {isCorrect ? "○ せいかい！" : "✗ ふせいかい"}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+function StaminaBar({ stamina }: { stamina: number }) {
+  const pct   = Math.max(0, stamina);
+  const color = pct > 60 ? "#00ff88" : pct > 30 ? "#ffb020" : "#ff4444";
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", fontFamily:"var(--font-kids)",
+        fontSize:11, color:"rgba(0,255,136,0.6)", marginBottom:2 }}>
+        <span>たいりょく</span><span style={{ color }}>{stamina}/100</span>
+      </div>
+      <div className="hp-bar-track">
+        <div className="hp-bar-fill" style={{ width:`${pct}%`, background:color }} />
       </div>
     </div>
   );
 }
 
-// ─────────────────────────────────────────
-// 一時捕獲＋読解（クイズ生成中）
-// ─────────────────────────────────────────
-function CapturedReadingModal({
-  hunt,
-  isLoadingQuiz,
-}: {
-  hunt: ActiveHunt;
-  isLoadingQuiz: boolean;
-}) {
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4"
-    >
-      <div className="w-full max-w-md rounded-[2rem] bg-gradient-to-br from-amber-300 via-orange-300 to-rose-300 p-1 shadow-2xl">
-        <div className="rounded-[1.75rem] bg-white px-6 py-6 text-center">
-          <p className="text-[10px] font-bold tracking-[0.4em] text-amber-600">
-            ✨ いちじ ほかく ✨
-          </p>
-          <h2 className="mt-2 text-2xl font-black text-slate-800 leading-tight">
-            つかまえた！
-          </h2>
-          <p className="mt-1 text-sm text-slate-700">
-            どんな どうぶつか よんでみよう
-          </p>
+// ════════════════════════════════════════════════════════════════
+//  メインコンポーネント
+// ════════════════════════════════════════════════════════════════
 
-          {/* 動物の正体 */}
-          <div className="mt-4 flex items-center justify-center">
-            {hunt.targetAnimal.imageUrl ? (
-              <img
-                src={hunt.targetAnimal.imageUrl}
-                alt={hunt.targetAnimal.specificName}
-                className="h-24 w-24 rounded-2xl object-cover shadow-lg ring-2 ring-white"
-              />
-            ) : (
-              <span className="text-7xl drop-shadow-lg">
-                {hunt.targetAnimal.emoji}
-              </span>
-            )}
-          </div>
-          <p className="mt-2 text-[11px] font-bold text-slate-500">
-            {hunt.targetAnimal.genericName}
-          </p>
-          <p className="text-lg font-black text-slate-800">
-            {hunt.targetAnimal.specificName}
-          </p>
-          {hunt.targetAnimal.isExtinct && (
-            <span className="mt-1 inline-block rounded-full bg-gray-800 px-2 py-0.5 text-[9px] font-bold text-gray-200">
-              💀 絶滅種
-            </span>
-          )}
+type Phase = "EXPLORE" | "ENCOUNTER" | "QUIZ" | "TIMING" | "RESULT" | "GAMEOVER";
 
-          {/* 説明文：100文字 */}
-          <div className="mt-4 rounded-2xl bg-amber-50 p-4 ring-1 ring-amber-200 text-left">
-            <p className="text-[10px] font-extrabold tracking-widest text-amber-700">
-              📖 ずかんの せつめい
-            </p>
-            <p className="mt-2 text-sm leading-relaxed text-slate-800">
-              {hunt.targetAnimal.description}
-            </p>
-          </div>
+export default function HuntClient() {
+  const [phase,         setPhase]        = useState<Phase>("EXPLORE");
+  const [stamina,       setStamina]      = useState(100);
+  const [turn,          setTurn]         = useState(0);
+  const [weather,       setWeather]      = useState<Weather>(WEATHERS[0]);
+  const [caught,        setCaught]       = useState<string[]>([]);
+  const [items,         setItems]        = useState<string[]>([]);
+  const [animal,        setAnimal]       = useState<Animal | null>(null);
+  const [logs,          setLogs]         = useState<LogEntry[]>([
+    { text:"みちが まえに つづいている。どこへ すすむ？", color:"rgba(0,255,136,0.6)" },
+  ]);
+  const [routes,        setRoutes]       = useState<RouteOption[]>(() => generateRoutes(0));
+  const [selectedRoute, setSelectedRoute]= useState<string | null>(null);
+  const [shakeFx,       setShakeFx]      = useState("");
+  const [isEncFlash,    setIsEncFlash]   = useState(false);
+  const [isEncounter,   setIsEncounter]  = useState(false);
+  const [rainbowFx,     setRainbowFx]    = useState(false);
+  const [footprints,    setFootprints]   = useState<Footprint[]>([]);
+  const [poopFx,        setPoopFx]       = useState<Footprint[]>([]);
+  const [combatResult,  setCombatResult] = useState<CombatResult | null>(null);
+  const [busy,          setBusy]         = useState(false);
 
-          {/* ローディング演出：箱がガタガタ */}
-          <div className="mt-5 rounded-2xl bg-gradient-to-br from-violet-100 to-fuchsia-100 p-4 ring-1 ring-violet-200">
-            <div className="flex items-center justify-center gap-3">
-              <span className="text-5xl box-gatagata" aria-hidden>📦</span>
-              <div className="text-left">
-                <p className="text-xs font-extrabold text-violet-700">
-                  AI が クイズを つくっているよ…
-                </p>
-                <p className="text-[10px] text-violet-600 mt-0.5">
-                  はこが ガタガタ ゆれている！
-                </p>
-                <div className="mt-1 flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-violet-500 animate-bounce" style={{ animationDelay: "0ms" }} />
-                  <span className="h-1.5 w-1.5 rounded-full bg-violet-500 animate-bounce" style={{ animationDelay: "120ms" }} />
-                  <span className="h-1.5 w-1.5 rounded-full bg-violet-500 animate-bounce" style={{ animationDelay: "240ms" }} />
-                </div>
-              </div>
-            </div>
-            {!isLoadingQuiz && (
-              <p className="mt-2 text-[10px] text-violet-500">
-                よみおわった？クイズ いくよ！
-              </p>
-            )}
-          </div>
+  const logRef = useRef<HTMLDivElement>(null);
+  const currentTime = TIMES[turn % 4];
 
-          <p className="mt-4 text-[10px] text-slate-400">
-            ※ 説明文を よく よんで！クイズに ですよ！
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────
-// 読解クイズ（Ollama 生成 3択）
-// ─────────────────────────────────────────
-function ReadingQuizModal({
-  hunt,
-  tool: _tool,
-  quiz,
-  onAnswer,
-}: {
-  hunt: ActiveHunt;
-  tool: ToolEntry;
-  quiz: GeneratedQuiz;
-  onAnswer: (opt: string) => void;
-}) {
-  const [picked, setPicked] = useState<string | null>(null);
-
-  const handlePick = (opt: string) => {
-    if (picked !== null) return;
-    setPicked(opt);
-    setTimeout(() => onAnswer(opt), 700);
-  };
-
-  const isCorrect = (opt: string) => opt.trim() === quiz.answer.trim();
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/85 backdrop-blur-sm p-4"
-    >
-      <div className="w-full max-w-md rounded-[2rem] bg-gradient-to-br from-violet-400 via-fuchsia-400 to-rose-400 p-1 shadow-2xl">
-        <div className="rounded-[1.75rem] bg-white px-6 py-6">
-          <p className="text-[10px] font-bold tracking-[0.4em] text-violet-600 text-center">
-            🧠 どっかい クイズ 🧠
-          </p>
-
-          <div className="mt-2 flex items-center justify-center gap-2">
-            <span className="text-3xl">{hunt.targetAnimal.emoji}</span>
-            <span className="text-sm font-extrabold text-slate-700">
-              {hunt.targetAnimal.specificName} クイズ
-            </span>
-          </div>
-
-          {quiz.source === "fallback" && (
-            <p className="mt-1 text-center text-[9px] text-amber-600">
-              ⚠️ AI が おやすみちゅう。かんたんクイズで チャレンジ
-            </p>
-          )}
-
-          <div className="mt-4 rounded-2xl bg-violet-50 p-4 ring-1 ring-violet-200">
-            <p className="text-sm font-extrabold text-slate-800 leading-relaxed">
-              {quiz.question}
-            </p>
-          </div>
-
-          <div className="mt-4 flex flex-col gap-2">
-            {quiz.options.map((opt, i) => {
-              const isPicked = picked === opt;
-              const showResult = picked !== null;
-              const ok = isCorrect(opt);
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  disabled={picked !== null}
-                  onClick={() => handlePick(opt)}
-                  className={`w-full rounded-2xl px-4 py-3 text-left text-sm font-bold transition active:scale-95 ${
-                    showResult
-                      ? isPicked
-                        ? ok
-                          ? "bg-emerald-500 text-white ring-4 ring-emerald-300"
-                          : "bg-rose-500 text-white ring-4 ring-rose-300"
-                        : ok
-                          ? "bg-emerald-100 text-emerald-800 ring-2 ring-emerald-300"
-                          : "bg-slate-100 text-slate-500 opacity-60"
-                      : "bg-white text-slate-800 ring-2 ring-violet-300 hover:bg-violet-50"
-                  }`}
-                >
-                  <span className="font-mono mr-2 text-violet-500">
-                    {String.fromCharCode(65 + i)}.
-                  </span>
-                  {opt}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────
-// 結果モーダル
-// ─────────────────────────────────────────
-function ResultModal({
-  outcome,
-  animal,
-  tool,
-  reason,
-  onClose,
-}: {
-  outcome: "caught" | "escaped";
-  animal: AnimalLite;
-  tool: ToolEntry;
-  reason: string;
-  onClose: () => void;
-}) {
-  const isCaught = outcome === "caught";
-
-  // 捕獲成功時は派手な confetti
   useEffect(() => {
-    if (!isCaught) return;
-    let cancelled = false;
-    (async () => {
-      const mod = await import("canvas-confetti");
-      const confetti = mod.default;
-      if (cancelled) return;
-      const palette = ["#fbbf24", "#f59e0b", "#a78bfa", "#34d399", "#f472b6"];
-      confetti({
-        particleCount: 200,
-        spread: 100,
-        origin: { x: 0.5, y: 0.4 },
-        colors: palette,
-        zIndex: 9999,
-      });
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [logs]);
+
+  const addLog = useCallback((text: string, color?: string) => {
+    setLogs(prev => [...prev.slice(-20), { text, color }]);
+  }, []);
+
+  const triggerShake = useCallback((type = "shake") => {
+    setShakeFx(type);
+    setTimeout(() => setShakeFx(""), 500);
+  }, []);
+
+  const spawnFootprint = useCallback(() => {
+    const id = Date.now(); const x = 30 + Math.random() * 40;
+    setFootprints(prev => [...prev, { id, x }]);
+    setTimeout(() => setFootprints(prev => prev.filter(f => f.id !== id)), 900);
+  }, []);
+
+  const spawnPoop = useCallback(() => {
+    const id = Date.now(); const x = 20 + Math.random() * 60;
+    setPoopFx(prev => [...prev, { id, x }]);
+    setTimeout(() => setPoopFx(prev => prev.filter(p => p.id !== id)), 1200);
+  }, []);
+
+  // ── ルート選択 ──
+  const chooseRoute = useCallback((route: RouteOption) => {
+    if (busy) return;
+    setBusy(true);
+    setSelectedRoute(route.id);
+
+    const newStamina = stamina - route.staminaCost;
+    if (newStamina <= 0) {
+      setStamina(0);
+      addLog("たいりょくが なくなった…", "rgba(255,68,68,0.9)");
+      setTimeout(() => { setPhase("GAMEOVER"); setBusy(false); }, 600);
+      return;
+    }
+    setStamina(newStamina);
+
+    const nextTurn = turn + 1;
+    setTurn(nextTurn);
+    spawnFootprint();
+    addLog(`${route.hintEmoji} ${route.logText}`);
+
+    if (Math.random() < 0.2) {
+      const r = Math.random();
+      const nw = r < 0.6 ? WEATHERS[0] : r < 0.85 ? WEATHERS[1] : WEATHERS[2];
+      if (nw.id !== weather.id) {
+        setWeather(nw);
+        setTimeout(() => addLog(`${nw.icon} てんきが ${nw.name}に なった。`, "rgba(100,180,255,0.8)"), 350);
+      }
+    }
+
+    const nextTime = TIMES[nextTurn % 4];
+    if (turn % 4 === 3) setTimeout(() => addLog(`── ${nextTime.name}に なった。 ──`, "rgba(0,255,136,0.4)"), 400);
+
+    const isNight = nextTime.id === "NIGHT";
+    const ew = route.eventWeight;
+    const happening = rollHappening(ew);
+
+    let happeningDelay = 0;
+    if (happening.id !== "nothing" && happening.text) {
+      happeningDelay = 250;
       setTimeout(() => {
-        confetti({
-          particleCount: 120,
-          angle: 60,
-          spread: 70,
-          origin: { x: 0, y: 0.6 },
-          colors: palette,
-          zIndex: 9999,
-        });
-      }, 250);
-      setTimeout(() => {
-        confetti({
-          particleCount: 120,
-          angle: 120,
-          spread: 70,
-          origin: { x: 1, y: 0.6 },
-          colors: palette,
-          zIndex: 9999,
-        });
-      }, 420);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [isCaught]);
+        if (happening.fx === "poop")         { triggerShake("shake"); setTimeout(spawnPoop, 100); }
+        else if (happening.fx === "bigshake") triggerShake("bigshake");
+        else if (happening.fx === "shake")    triggerShake("shake");
+        else if (happening.fx === "rainbow")  { setRainbowFx(true); setTimeout(() => setRainbowFx(false), 2700); }
+        addLog(happening.text, happening.color || "#ffd700");
+        if (happening.item) {
+          setItems(prev => [...prev, happening.item!.emoji]);
+          setTimeout(() => addLog(`　→「${happening.item!.name}」を ゲット！`, "rgba(217,119,6,0.9)"), 600);
+        }
+        if (happening.staminaDelta !== 0) {
+          setStamina(prev => Math.min(100, Math.max(0, prev + happening.staminaDelta)));
+        }
+      }, happeningDelay);
+    }
+
+    const baseChance = isNight ? 0.50 : 0.38;
+    const chance = Math.min(baseChance * (ew.encounter ?? 1), 0.92);
+
+    setTimeout(() => {
+      if (Math.random() < chance) {
+        const enc = rollAnimal(ew, isNight, weather.id);
+        if (enc) {
+          setAnimal(enc);
+          setIsEncFlash(true); setTimeout(() => setIsEncFlash(false), 500);
+          setIsEncounter(true);
+          setTimeout(() => {
+            addLog(`！！  野生の ${enc.name}が あらわれた！`, "rgba(255,80,80,1)");
+            addLog(`とくちょう: ${enc.traitName}　／　${RARITY_JP[enc.rarity]}`, `${RARITY_COLOR[enc.rarity]}cc`);
+            setPhase("ENCOUNTER"); setBusy(false); setSelectedRoute(null);
+          }, 300);
+          return;
+        }
+      }
+      const next = generateRoutes(nextTurn);
+      setRoutes(next);
+      const msgs = [
+        `みちが ${next.length}つに わかれている。どっちに すすむ？`,
+        `${next.length}つの みちが ひろがっている。よく かんがえて えらぼう！`,
+        `あたらしい わかれみち。どの てがかりが きになる？`,
+      ];
+      addLog(msgs[Math.floor(Math.random() * msgs.length)], "rgba(0,255,136,0.5)");
+      setPhase("EXPLORE"); setBusy(false); setSelectedRoute(null);
+    }, Math.max(happeningDelay + 650, 700));
+  }, [busy, stamina, turn, weather, triggerShake, spawnFootprint, spawnPoop, addLog]);
+
+  // ── キャンプへ ──
+  const doRetreat = useCallback(() => {
+    addLog("── キャンプへ かえった。 ──", "rgba(0,255,136,0.5)");
+    setTimeout(() => setPhase("GAMEOVER"), 500);
+  }, [addLog]);
+
+  // ── よくみる ──
+  const doLook = useCallback(() => {
+    if (!animal) return;
+    addLog(`👀 ${animal.name}を じっくり みつめた！`, "rgba(100,200,255,0.9)");
+    setPhase("QUIZ");
+  }, [animal, addLog]);
+
+  const onQuizResult = useCallback((correct: boolean) => {
+    if (!animal) return;
+    if (correct) {
+      setCaught(prev => [...prev, animal.emoji]);
+      addLog(`⭐ せいかい！ ${animal.name}を かんさつ ゲット！`, "#ffd700");
+      setCombatResult({ hit:true, animal, bonus:"quiz" });
+    } else {
+      addLog(`❌ ざんねん… ${animal.name}は にげていった。`, "rgba(255,68,68,0.8)");
+      setCombatResult({ hit:false, animal, bonus:null });
+    }
+    setIsEncounter(false); setPhase("RESULT");
+  }, [animal, addLog]);
+
+  // ── わなをしかける ──
+  const doTrap = useCallback(() => {
+    if (!animal) return;
+    const ns = stamina - 8;
+    if (ns <= 0) {
+      setStamina(0);
+      addLog("たいりょくが なくなった…", "rgba(255,68,68,0.9)");
+      setTimeout(() => setPhase("GAMEOVER"), 400); return;
+    }
+    setStamina(ns);
+    addLog("🪤 わなを しかけた！ タイミングを あわせろ！", "rgba(0,255,136,0.8)");
+    setPhase("TIMING");
+  }, [animal, stamina, addLog]);
+
+  const onTimingResult = useCallback((score: number) => {
+    if (!animal) return;
+    const hitChance = score === 2 ? 0.85 : score === 1 ? 0.50 : 0.15;
+    if (Math.random() < hitChance) {
+      setCaught(prev => [...prev, animal.emoji]);
+      addLog(`🎉 やった！ ${animal.name}を つかまえた！`, "#ffd700");
+      setCombatResult({ hit:true, animal, bonus:`timing_${score}` });
+    } else {
+      addLog(`💨 おしい！ ${animal.name}は にげてしまった…`, "rgba(255,68,68,0.8)");
+      setCombatResult({ hit:false, animal, bonus:null });
+    }
+    setIsEncounter(false); setPhase("RESULT");
+  }, [animal, addLog]);
+
+  // ── にげる ──
+  const doFlee = useCallback(() => {
+    addLog("🏃 にげた！ ふりかえらずに はしった。");
+    setIsEncounter(false); setAnimal(null);
+    const next = generateRoutes(turn);
+    setRoutes(next);
+    addLog("みちが まえに つづいている。どっちへ すすむ？", "rgba(0,255,136,0.5)");
+    setPhase("EXPLORE");
+  }, [addLog, turn]);
+
+  // ── つづける ──
+  const doContinue = useCallback(() => {
+    setCombatResult(null); setAnimal(null);
+    const next = generateRoutes(turn);
+    setRoutes(next);
+    addLog("みちが まえに つづいている。どっちへ すすむ？", "rgba(0,255,136,0.5)");
+    setPhase("EXPLORE");
+  }, [addLog, turn]);
+
+  // ── リスタート ──
+  const doRestart = useCallback(() => {
+    setPhase("EXPLORE"); setStamina(100); setTurn(0);
+    setWeather(WEATHERS[0]); setCaught([]); setItems([]);
+    setAnimal(null); setCombatResult(null);
+    setIsEncounter(false); setIsEncFlash(false);
+    setShakeFx(""); setRainbowFx(false); setSelectedRoute(null);
+    setBusy(false); setRoutes(generateRoutes(0));
+    setLogs([{ text:"あたらしい たんけんが はじまった！ どこへ すすむ？", color:"rgba(0,255,136,0.6)" }]);
+  }, []);
+
+  const CORNER_STYLES: React.CSSProperties[] = [
+    { top:0,    left:0,    borderTop:"1px solid rgba(0,255,136,0.22)", borderLeft:"1px solid rgba(0,255,136,0.22)" },
+    { top:0,    right:0,   borderTop:"1px solid rgba(0,255,136,0.22)", borderRight:"1px solid rgba(0,255,136,0.22)" },
+    { bottom:0, left:0,    borderBottom:"1px solid rgba(0,255,136,0.22)", borderLeft:"1px solid rgba(0,255,136,0.22)" },
+    { bottom:0, right:0,   borderBottom:"1px solid rgba(0,255,136,0.22)", borderRight:"1px solid rgba(0,255,136,0.22)" },
+  ];
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-      className={`fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-md ${
-        isCaught
-          ? "bg-gradient-to-br from-amber-300/50 via-rose-300/40 to-fuchsia-300/50"
-          : "bg-black/70"
-      }`}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className={`w-full max-w-sm rounded-[2rem] bg-gradient-to-br ${RARITY_TONE[animal.rarity]} p-1 shadow-2xl`}
-      >
-        <div className="rounded-[1.75rem] bg-white px-6 py-7 text-center">
-          <p
-            className={`text-[10px] font-bold tracking-[0.4em] ${
-              isCaught ? "text-amber-600 animate-pulse" : "text-slate-500"
-            }`}
-          >
-            {isCaught ? "🎉 だいせいかい 🎉" : "💨 ざんねん 💨"}
-          </p>
+    <div style={{ width:"100%", minHeight:"100vh", background:"#000", display:"flex", alignItems:"center", justifyContent:"center" }}>
+      <style>{CSS}</style>
 
-          <h2
-            className={`mt-2 text-2xl font-black leading-tight ${
-              isCaught
-                ? "bg-gradient-to-r from-amber-500 via-rose-500 to-fuchsia-500 bg-clip-text text-transparent"
-                : "text-slate-700"
-            }`}
-          >
-            {isCaught ? "ずかんに とうろく！" : "にげられた…"}
-          </h2>
+      <div style={{ width:"100%", maxWidth:420, height:"100svh", display:"flex", flexDirection:"column",
+        background:"#050c06", border:"1px solid rgba(0,255,136,0.12)",
+        boxShadow:"0 0 60px rgba(0,0,0,0.9),inset 0 0 80px rgba(0,0,0,0.3)",
+        position:"relative", overflow:"hidden", animation:"pulseGlow 4s ease infinite" }}>
 
-          <div className="mt-4 flex items-center justify-center">
-            {isCaught ? (
-              <span className="text-8xl drop-shadow-lg animate-bounce">
-                {animal.emoji}
-              </span>
-            ) : (
-              <span
-                className="text-8xl"
-                style={{ filter: "brightness(0)", opacity: 0.6 }}
-              >
-                {animal.emoji}
-              </span>
-            )}
-          </div>
-
-          <p className="mt-2 text-[11px] font-bold text-slate-500">
-            {animal.genericName}
-          </p>
-          <p className="text-lg font-black text-slate-800">
-            {isCaught ? animal.specificName : "？？？"}
-          </p>
-
-          <div className="mt-2 flex justify-center gap-1 flex-wrap">
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700">
-              {RARITY_LABEL[animal.rarity]}
+        {/* ── 上部：森ビュー ── */}
+        <div style={{ flex:"0 0 34%", position:"relative", borderBottom:"2px solid rgba(0,255,136,0.15)", overflow:"hidden" }}>
+          <ForestView
+            timeState={currentTime} weather={weather}
+            isEncounter={isEncounter && ["ENCOUNTER","QUIZ","TIMING"].includes(phase)}
+            isEncFlash={isEncFlash} animal={animal} shakeFx={shakeFx} rainbowFx={rainbowFx}
+          />
+          <div style={{ position:"absolute", top:0, left:0, right:0, display:"flex",
+            justifyContent:"space-between", alignItems:"flex-start", padding:"7px 10px", zIndex:30,
+            background:"linear-gradient(to bottom,rgba(0,0,0,0.62) 0%,transparent 100%)" }}>
+            <div style={{ display:"flex", gap:7, flexWrap:"wrap" }}>
+              {[
+                { label:currentTime.name, style:{color:"rgba(0,255,136,0.9)",border:"1px solid rgba(0,255,136,0.2)"} },
+                { label:`${weather.icon}${weather.name}`, style:{color:"rgba(180,210,255,0.9)",border:"1px solid rgba(100,150,255,0.2)"} },
+              ].map((b,i)=>(
+                <span key={i} style={{ fontFamily:"var(--font-kids)", fontSize:11, background:"rgba(0,0,0,0.65)",
+                  padding:"3px 8px", borderRadius:2, ...b.style }}>{b.label}</span>
+              ))}
+            </div>
+            <span style={{ fontFamily:"var(--font-kids)", fontSize:11, color:"rgba(0,255,136,0.7)",
+              background:"rgba(0,0,0,0.65)", padding:"3px 8px", borderRadius:2, border:"1px solid rgba(0,255,136,0.15)" }}>
+              {turn}ターンめ
             </span>
-            {isCaught && animal.isExtinct && (
-              <span className="rounded-full bg-gray-800 px-2 py-0.5 text-[10px] font-bold text-gray-200">
-                💀 絶滅種
-              </span>
-            )}
           </div>
 
-          <p className={`mt-4 text-sm leading-relaxed ${isCaught ? "text-emerald-700" : "text-rose-600"} font-bold`}>
-            {reason}
-          </p>
+          {footprints.map(fp => (
+            <div key={fp.id} style={{ position:"absolute", bottom:"12%", left:`${fp.x}%`,
+              fontSize:14, animation:"footprint 0.85s ease-out forwards", zIndex:25, pointerEvents:"none" }}>👣</div>
+          ))}
+          {poopFx.map(pp => (
+            <div key={pp.id} className="fx-poop-bounce" style={{ left:`${pp.x}%`, bottom:"15%" }}>💩</div>
+          ))}
+          {isEncounter && animal && (
+            <div style={{ position:"absolute", bottom:7, left:0, right:0, textAlign:"center", zIndex:35,
+              fontFamily:"var(--font-kids)", fontSize:12,
+              color:RARITY_COLOR[animal.rarity] ?? "#ffb020", letterSpacing:"0.12em",
+              textShadow:`0 0 12px ${RARITY_COLOR[animal.rarity] ?? "#ffb020"}`,
+              animation:"blink 0.6s step-end infinite" }}>
+              ！！  エンカウント  ！！
+            </div>
+          )}
+        </div>
 
-          {isCaught && (
-            <div className="mt-3 rounded-2xl bg-amber-50 p-3 ring-1 ring-amber-200 text-left">
-              <p className="text-[10px] font-extrabold text-amber-700 tracking-widest">
-                📜 {tool.name} の 歴史
-              </p>
-              <p className="mt-1 text-[11px] text-amber-900 leading-relaxed">
-                {tool.historicalContext}
-              </p>
+        {/* ── 中部：テキストログ ── */}
+        <div ref={logRef} style={{ flex:"0 0 26%", background:"rgba(0,4,2,0.97)",
+          borderBottom:"2px solid rgba(0,255,136,0.15)", overflowY:"auto", padding:"7px 12px",
+          scrollbarWidth:"thin", scrollbarColor:"rgba(0,255,136,0.2) transparent" }}>
+          <div style={{ fontFamily:"var(--font-dot)", fontSize:9, color:"rgba(0,255,136,0.26)",
+            borderBottom:"1px solid rgba(0,255,136,0.1)", paddingBottom:4, marginBottom:5, letterSpacing:"0.1em" }}>
+            ━━ たんけん にっき ━━━━━━━━━━━━━━━━━━━━━━
+          </div>
+          {logs.map((l, i) => (
+            <LogLine key={i} text={l.text} color={l.color} isLatest={i === logs.length - 1} />
+          ))}
+        </div>
+
+        {/* ── 下部：コマンドパネル ── */}
+        <div style={{ flex:1, background:"rgba(2,8,3,0.98)", display:"flex", flexDirection:"column",
+          padding:"9px 12px 12px", gap:7, overflow:"hidden" }}>
+
+          <div style={{ display:"flex", gap:10, alignItems:"center", paddingBottom:7,
+            borderBottom:"1px solid rgba(0,255,136,0.1)" }}>
+            <div style={{ flex:1 }}><StaminaBar stamina={stamina} /></div>
+            <div style={{ fontFamily:"var(--font-kids)", fontSize:10, color:"rgba(0,255,136,0.5)",
+              textAlign:"right", lineHeight:1.6, flexShrink:0 }}>
+              <div>🎒 {caught.length}ひき</div>
+              {items.length > 0 && <div style={{ fontSize:9, opacity:0.65 }}>{items.slice(-5).join("")}</div>}
+            </div>
+          </div>
+
+          {phase === "EXPLORE" && (
+            <div className="panel-slide" style={{ display:"flex", flexDirection:"column", gap:5, flex:1, overflowY:"auto" }}>
+              <div style={{ fontFamily:"var(--font-kids)", fontSize:10, color:"rgba(0,255,136,0.3)", letterSpacing:"0.08em", marginBottom:1 }}>
+                ─ みちを えらぼう ─
+              </div>
+              {routes.map(r => (
+                <RouteCard key={r.id} route={r} onClick={chooseRoute}
+                  disabled={busy} isSelected={selectedRoute === r.id} />
+              ))}
+              <button className="cmd-btn danger" onClick={doRetreat} disabled={busy} style={{ marginTop:"auto" }}>
+                キャンプへ にげる
+              </button>
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={onClose}
-            className={`mt-6 w-full rounded-full px-6 py-3 text-sm font-extrabold text-white transition active:scale-95 ${
-              isCaught
-                ? "bg-gradient-to-r from-amber-500 via-rose-500 to-fuchsia-500 hover:brightness-110"
-                : "bg-slate-700 hover:bg-slate-600"
-            }`}
-          >
-            {isCaught ? "やったー！" : "つぎは ぜったい よむ"}
-          </button>
+          {phase === "ENCOUNTER" && animal && (
+            <div className="panel-slide" style={{ display:"flex", flexDirection:"column", gap:6 }}>
+              <div style={{ fontFamily:"var(--font-kids)", fontSize:10,
+                color:RARITY_COLOR[animal.rarity] ?? "rgba(255,176,32,0.8)", letterSpacing:"0.08em",
+                animation:"blink 1s step-end infinite", marginBottom:1 }}>
+                ─ {animal.name}が あらわれた！ ─
+              </div>
+              <button className="cmd-btn yellow" onClick={doLook}>
+                👀 よくみる　（クイズに チャレンジ！）
+              </button>
+              <button className="cmd-btn amber" onClick={doTrap}>
+                🪤 わなを しかける　　たいりょく -8
+              </button>
+              <button className="cmd-btn danger" onClick={doFlee}>
+                🏃 にげる
+              </button>
+            </div>
+          )}
+
+          {phase === "QUIZ" && animal && (
+            <div style={{ flex:1, overflow:"hidden" }}>
+              <div style={{ fontFamily:"var(--font-kids)", fontSize:10, color:"rgba(100,200,255,0.7)", marginBottom:5 }}>
+                ─ {animal.name}の クイズ！ ─
+              </div>
+              <QuizPanel animal={animal} onResult={onQuizResult} />
+            </div>
+          )}
+
+          {phase === "TIMING" && animal && (
+            <div style={{ flex:1 }}>
+              <div style={{ fontFamily:"var(--font-kids)", fontSize:10, color:"rgba(0,255,136,0.6)", marginBottom:5 }}>
+                ─ タイミングを あわせて わなを とばせ！ ─
+              </div>
+              <TimingGame onResult={onTimingResult} />
+            </div>
+          )}
+
+          {phase === "RESULT" && combatResult && (
+            <div className="result-reveal" style={{ flex:1, display:"flex", flexDirection:"column",
+              alignItems:"center", justifyContent:"center", gap:8 }}>
+              <div style={{ fontFamily:"var(--font-kids)", fontSize:combatResult.hit ? 28 : 20,
+                color:combatResult.hit ? "#ffd700" : "rgba(255,68,68,0.85)", textAlign:"center",
+                letterSpacing:"0.06em",
+                textShadow:combatResult.hit ? "0 0 20px rgba(255,215,0,0.5)" : "none",
+                animation:combatResult.hit ? "starPop 0.45s ease" : undefined }}>
+                {combatResult.hit ? "⭐ ゲット！ ⭐" : "── にがした…──"}
+              </div>
+              {combatResult.hit && (
+                <div style={{ fontSize:52, animation:"animalPop 0.45s ease" }}>{combatResult.animal.emoji}</div>
+              )}
+              <button className="cmd-btn" style={{ width:"100%" }} onClick={doContinue}>
+                たんけんを つづける
+              </button>
+            </div>
+          )}
+
+          {phase === "GAMEOVER" && (
+            <div className="result-reveal" style={{ flex:1, display:"flex", flexDirection:"column",
+              alignItems:"center", justifyContent:"center", gap:8 }}>
+              <div style={{ fontFamily:"var(--font-kids)", fontSize:12,
+                color:stamina <= 0 ? "rgba(255,68,68,0.9)" : "rgba(0,255,136,0.7)",
+                letterSpacing:"0.1em", marginBottom:3 }}>
+                {stamina <= 0 ? "── たいりょく ゼロ！ ──" : "── キャンプに かえった ──"}
+              </div>
+              <div style={{ background:"rgba(0,255,136,0.03)", border:"1px solid rgba(0,255,136,0.12)",
+                borderRadius:3, padding:"10px 16px", textAlign:"center", width:"100%" }}>
+                <div style={{ fontFamily:"var(--font-kids)", fontSize:10, color:"rgba(0,255,136,0.4)", marginBottom:5 }}>
+                  つかまえた どうぶつ
+                </div>
+                <div style={{ fontSize:22, minHeight:28, letterSpacing:6 }}>
+                  {caught.length > 0 ? caught.join(" ") : "──"}
+                </div>
+                <div style={{ fontFamily:"var(--font-kids)", fontSize:11, color:"rgba(0,255,136,0.55)", marginTop:4 }}>
+                  {caught.length}ひき ゲット！
+                </div>
+                {items.length > 0 && (
+                  <>
+                    <div style={{ fontFamily:"var(--font-kids)", fontSize:10, color:"rgba(217,119,6,0.6)", marginTop:8, marginBottom:3 }}>
+                      ひろったもの
+                    </div>
+                    <div style={{ fontSize:18, letterSpacing:4 }}>{items.join(" ")}</div>
+                  </>
+                )}
+              </div>
+              <button className="cmd-btn" style={{ width:"100%", textAlign:"center", marginTop:2 }} onClick={doRestart}>
+                ▶ もういちど はじめる
+              </button>
+            </div>
+          )}
         </div>
+
+        {CORNER_STYLES.map((s, i) => (
+          <div key={i} style={{ position:"absolute", width:14, height:14, pointerEvents:"none", zIndex:200, ...s }} />
+        ))}
       </div>
     </div>
   );
