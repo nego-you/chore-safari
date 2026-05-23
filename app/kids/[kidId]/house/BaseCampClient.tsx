@@ -1,20 +1,24 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+// ★ Zustand 統合:
+//   BEFORE: animals / medals / stamina がローカル useState で管理されていた
+//   AFTER : useSafariStore から取得。画面をまたいでリアルタイムに同期される。
+//
+//   主な変更点:
+//   - INITIAL_ANIMALS 定数を削除（ストアの animalsInYard を使う）
+//   - handleShip → sendToLogistics(id) + shipTruck() に置き換え
+//   - handleRest → recoverStamina() に置き換え
+//   - checkMedals ロジックをストア内部に移動（コンポーネントからは削除）
 
-const INITIAL_ANIMALS = [
-  { id: 1, emoji: "🦕", name: "ブラキオ", rarity: "レア", count: 2 },
-  { id: 2, emoji: "🦖", name: "ティラノ", rarity: "でんせつ", count: 1 },
-  { id: 3, emoji: "🐘", name: "ゾウ", rarity: "ふつう", count: 3 },
-  { id: 4, emoji: "🦁", name: "ライオン", rarity: "レア", count: 1 },
-  { id: 5, emoji: "🐼", name: "パンダ", rarity: "レア", count: 2 },
-];
+import { useState, useEffect } from "react";
+import { useSafariStore } from "@/store/useSafariStore";
 
+// 勲章の説明文はコンポーネント内でのみ使う表示用定義（ストア外）
 const MEDALS_DEF = [
-  { id: "first", emoji: "🥉", name: "はじめての おてつだい", desc: "はじめて おてつだい を した！", condition: "help1", goal: 1 },
-  { id: "farm", emoji: "🥈", name: "ファーム・マスター", desc: "どうぶつを 10ぴき そだてた！", condition: "animals10", goal: 10 },
-  { id: "hunter", emoji: "🥇", name: "でんせつの ハンター", desc: "でんせつの どうぶつを つかまえた！", condition: "legendary", goal: 1 },
-  { id: "logistics", emoji: "🏆", name: "ぶつりゅう の ほし", desc: "ぶつりゅうセンターへ 20ひき おくった！", condition: "shipped20", goal: 20 },
+  { id: "first",     emoji: "🥉", name: "はじめての おてつだい", desc: "はじめて おてつだい を した！" },
+  { id: "farm",      emoji: "🥈", name: "ファーム・マスター",     desc: "どうぶつを 10ぴき そだてた！" },
+  { id: "hunter",    emoji: "🥇", name: "でんせつの ハンター",     desc: "でんせつの どうぶつを つかまえた！" },
+  { id: "logistics", emoji: "🏆", name: "ぶつりゅう の ほし",     desc: "ぶつりゅうセンターへ 20ひき おくった！" },
 ];
 
 function randomPos(max) { return Math.random() * max; }
@@ -70,83 +74,69 @@ function TruckAnimation({ active }) {
 }
 
 export default function BaseCampClient() {
-  const [animals, setAnimals] = useState(INITIAL_ANIMALS);
-  const [medals, setMedals] = useState({ first: null, farm: null, hunter: null, logistics: null });
-  const [stats, setStats] = useState({ helped: 1, totalAnimals: 8, legendary: 1, shipped: 5 });
-  const [modal, setModal] = useState(null); // null | 'view' | 'ship' | 'rest' | 'medals' | 'medalDetail'
-  const [selectedMedal, setSelectedMedal] = useState(null);
-  const [selectedShip, setSelectedShip] = useState([]);
-  const [stamina, setStamina] = useState(60);
+  // ★ ストアから取得（ローカル state を廃止）
+  const animals        = useSafariStore((s) => s.animalsInYard);
+  const stamina        = useSafariStore((s) => s.stamina);
+  const medals         = useSafariStore((s) => s.medals);
+  const sendToLogistics = useSafariStore((s) => s.sendToLogistics);
+  const shipTruck       = useSafariStore((s) => s.shipTruck);
+  const recoverStamina  = useSafariStore((s) => s.recoverStamina);
+
+  // UI ローカル state（アニメーション・モーダル制御のみ残す）
+  const [modal, setModal] = useState<string | null>(null);
+  const [selectedMedal, setSelectedMedal] = useState<typeof MEDALS_DEF[0] | null>(null);
+  const [selectedShip, setSelectedShip] = useState<string[]>([]);
   const [resting, setResting] = useState(false);
   const [truckAnim, setTruckAnim] = useState(false);
   const [confetti, setConfetti] = useState(false);
-  const [newMedal, setNewMedal] = useState(null);
-  const [animalPositions] = useState(() =>
-    INITIAL_ANIMALS.flatMap(a =>
-      Array.from({ length: a.count }, (_, i) => ({
-        key: `${a.id}-${i}`,
-        animal: a,
-        x: 5 + Math.random() * 80,
-        y: 5 + Math.random() * 70,
-      }))
-    )
-  );
+  const [newMedalDef, setNewMedalDef] = useState<typeof MEDALS_DEF[0] | null>(null);
 
-  // medal check
-  const checkMedals = (newStats, newAnimals) => {
-    const unlocked = [];
-    const s = newStats || stats;
-    const prev = medals;
+  // 動物スプライトの位置は animalsInYard が変わるたびに再計算
+  const [animalPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const animalPos = (key: string) =>
+    animalPositions[key] ?? { x: 5 + Math.random() * 80, y: 5 + Math.random() * 70 };
 
-    const conditions = {
-      first: s.helped >= 1,
-      farm: s.totalAnimals >= 10,
-      hunter: s.legendary >= 1,
-      logistics: s.shipped >= 20,
-    };
-
-    const next = { ...prev };
-    Object.entries(conditions).forEach(([k, met]) => {
-      if (met && !prev[k]) {
-        next[k] = new Date().toLocaleDateString("ja-JP");
-        unlocked.push(k);
-      }
-    });
-    if (unlocked.length > 0) {
-      setMedals(next);
-      setNewMedal(MEDALS_DEF.find(m => m.id === unlocked[0]));
-      setConfetti(true);
-      setTimeout(() => setConfetti(false), 4000);
-    }
-  };
-
-  useEffect(() => { checkMedals(stats, animals); }, []);
-
+  // ★ handleRest: recoverStamina() を呼ぶだけ。ストアが stamina=100 に更新する。
   const handleRest = () => {
     setResting(true);
     setModal("rest");
     setTimeout(() => {
-      setStamina(100);
+      recoverStamina();
       setResting(false);
       setModal(null);
     }, 2500);
   };
 
+  // ★ handleShip:
+  //   BEFORE: animals をローカルで filter し、stats を手動更新していた
+  //   AFTER : 選択した ID ごとに sendToLogistics(id) を呼ぶだけ。
+  //           ストアが animalsInYard から logisticsQueue へ移動させる。
+  //           その後 shipTruck() でトラック出発 → コイン獲得 → 勲章判定を一括処理。
   const handleShip = () => {
     if (selectedShip.length === 0) return;
-    const shipped = selectedShip.reduce((acc, id) => {
-      const a = animals.find(x => x.id === id);
-      return acc + (a ? a.count : 0);
-    }, 0);
-    const newAnimals = animals.filter(a => !selectedShip.includes(a.id));
-    const newStats = { ...stats, shipped: stats.shipped + shipped };
-    setAnimals(newAnimals);
-    setStats(newStats);
+
+    // 各動物を物流センターキューへ移動
+    selectedShip.forEach((id) => sendToLogistics(id));
+
+    // トラック出発 → 報酬獲得（コインはストアに加算、勲章判定もストア内部で実行）
+    const result = shipTruck();
+
     setSelectedShip([]);
     setModal(null);
     setTruckAnim(true);
     setTimeout(() => setTruckAnim(false), 2000);
-    checkMedals(newStats, newAnimals);
+
+    // 新しく解除された勲章があればコンフェッティ表示
+    if (result.newMedals.length > 0) {
+      const def = MEDALS_DEF.find((m) => m.id === result.newMedals[0].id);
+      if (def) {
+        setNewMedalDef(def);
+        setConfetti(true);
+        setTimeout(() => setConfetti(false), 4000);
+      }
+    }
+    // ※ コイン獲得表示を出したい場合は result.earnedCoins を使う
+    // 例: toast(`+${result.earnedCoins}コイン 🪙`)
   };
 
   const staminaColor = stamina > 60 ? "bg-green-400" : stamina > 30 ? "bg-yellow-400" : "bg-red-400";
@@ -195,13 +185,13 @@ export default function BaseCampClient() {
       <Confetti active={confetti} />
       <TruckAnimation active={truckAnim} />
 
-      {/* New Medal Popup */}
-      {confetti && newMedal && (
+      {/* New Medal Popup — ★ newMedal → newMedalDef に変更 */}
+      {confetti && newMedalDef && (
         <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
           <div className="animate-popup bg-yellow-400 border-4 border-yellow-600 rounded-3xl px-8 py-6 text-center shadow-2xl">
-            <div className="text-5xl mb-2">{newMedal.emoji}</div>
+            <div className="text-5xl mb-2">{newMedalDef.emoji}</div>
             <div className="text-white text-xl">🎉 あたらしい くんしょう を ゲットしたよ！</div>
-            <div className="text-white text-lg mt-1 font-black">{newMedal.name}</div>
+            <div className="text-white text-lg mt-1 font-black">{newMedalDef.name}</div>
           </div>
         </div>
       )}
@@ -230,8 +220,10 @@ export default function BaseCampClient() {
             <div className="rounded-2xl px-3 py-2 mb-1" style={{ background: "linear-gradient(135deg,#8B4513,#A0522D)", border: "3px solid #6B3410" }}>
               <div className="text-center text-xs text-yellow-200 mb-1" style={{ letterSpacing: "0.08em" }}>🏅 くんしょうボード 🏅</div>
               <div className="flex justify-center gap-3">
+                {/* ★ medals は Medal[] 配列になったので .find() で取得 */}
                 {MEDALS_DEF.map(m => {
-                  const unlocked = !!medals[m.id];
+                  const storeMedal = medals.find((x) => x.id === m.id);
+                  const unlocked = !!storeMedal?.unlockedAt;
                   return (
                     <div key={m.id} className="flex flex-col items-center cursor-pointer" onClick={() => { setSelectedMedal(m); setModal("medalDetail"); }}>
                       <span
@@ -260,6 +252,7 @@ export default function BaseCampClient() {
 
         {/* Animals in backyard */}
         <div className="absolute" style={{ bottom: 0, left: 0, right: 0, height: "44%", overflow: "hidden" }}>
+          {/* ★ animalPositions はストアの animals（配列）から動的生成 */}
           {animals.length === 0 ? (
             <div className="flex items-center justify-center h-full">
               <div className="bg-white bg-opacity-80 rounded-2xl px-4 py-3 text-center text-sm text-gray-600 mx-4">
@@ -267,15 +260,19 @@ export default function BaseCampClient() {
               </div>
             </div>
           ) : (
-            animalPositions
-              .filter(pos => animals.find(a => a.id === pos.animal.id))
-              .map(pos => (
-                <AnimalSprite
-                  key={pos.key}
-                  animal={pos.animal}
-                  style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
-                />
-              ))
+            animals.flatMap((a) =>
+              Array.from({ length: a.count }, (_, i) => {
+                const key = `${a.id}-${i}`;
+                const pos = animalPos(key);
+                return (
+                  <AnimalSprite
+                    key={key}
+                    animal={a}
+                    style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
+                  />
+                );
+              })
+            )
           )}
         </div>
 
@@ -408,9 +405,11 @@ export default function BaseCampClient() {
             {modal === "medals" && (
               <div className="p-4">
                 <div className="text-center text-lg mb-3 text-purple-900">🏅 くんしょうリスト</div>
+                {/* ★ medals は Medal[] → .find() で unlockedAt を取得 */}
                 <div className="flex flex-col gap-3 max-h-60 overflow-y-auto">
                   {MEDALS_DEF.map(m => {
-                    const unlocked = !!medals[m.id];
+                    const storeMedal = medals.find((x) => x.id === m.id);
+                    const unlocked = !!storeMedal?.unlockedAt;
                     return (
                       <div
                         key={m.id}
@@ -420,7 +419,7 @@ export default function BaseCampClient() {
                         <span className={`text-4xl ${unlocked ? "medal-unlocked" : "grayscale opacity-50"}`}>{m.emoji}</span>
                         <div>
                           <div className={`text-sm font-black ${unlocked ? "text-yellow-800" : "text-gray-500"}`}>{m.name}</div>
-                          <div className="text-xs text-gray-400">{unlocked ? `🗓 ${medals[m.id]}` : "まだ ゲットしていないよ"}</div>
+                          <div className="text-xs text-gray-400">{unlocked ? `🗓 ${storeMedal?.unlockedAt}` : "まだ ゲットしていないよ"}</div>
                         </div>
                       </div>
                     );
@@ -431,26 +430,30 @@ export default function BaseCampClient() {
             )}
 
             {/* MEDAL DETAIL */}
-            {modal === "medalDetail" && selectedMedal && (
-              <div className="p-5 text-center">
-                <span className={`text-6xl block mb-3 ${medals[selectedMedal.id] ? "medal-unlocked animate-shimmer" : "grayscale opacity-40"}`}>
-                  {selectedMedal.emoji}
-                </span>
-                <div className="text-xl font-black text-amber-900 mb-2">{selectedMedal.name}</div>
-                <div className="text-sm text-gray-700 mb-3 leading-relaxed">{selectedMedal.desc}</div>
-                {medals[selectedMedal.id] ? (
-                  <div className="bg-yellow-100 rounded-2xl px-3 py-2 text-sm text-yellow-800">
-                    🗓 {medals[selectedMedal.id]} に ゲット！
-                  </div>
-                ) : (
-                  <div className="bg-gray-100 rounded-2xl px-3 py-2 text-sm text-gray-500">
-                    🔒 まだ ゲットしていないよ
-                  </div>
-                )}
-                <button className="mt-4 w-full rounded-2xl py-2 text-white font-black" style={{ background: "#8B4513" }}
-                  onClick={() => setModal("medals")}>もどる</button>
-              </div>
-            )}
+            {modal === "medalDetail" && selectedMedal && (() => {
+              const storeMedal = medals.find((x) => x.id === selectedMedal.id);
+              const unlocked = !!storeMedal?.unlockedAt;
+              return (
+                <div className="p-5 text-center">
+                  <span className={`text-6xl block mb-3 ${unlocked ? "medal-unlocked animate-shimmer" : "grayscale opacity-40"}`}>
+                    {selectedMedal.emoji}
+                  </span>
+                  <div className="text-xl font-black text-amber-900 mb-2">{selectedMedal.name}</div>
+                  <div className="text-sm text-gray-700 mb-3 leading-relaxed">{selectedMedal.desc}</div>
+                  {unlocked ? (
+                    <div className="bg-yellow-100 rounded-2xl px-3 py-2 text-sm text-yellow-800">
+                      🗓 {storeMedal?.unlockedAt} に ゲット！
+                    </div>
+                  ) : (
+                    <div className="bg-gray-100 rounded-2xl px-3 py-2 text-sm text-gray-500">
+                      🔒 まだ ゲットしていないよ
+                    </div>
+                  )}
+                  <button className="mt-4 w-full rounded-2xl py-2 text-white font-black" style={{ background: "#8B4513" }}
+                    onClick={() => setModal("medals")}>もどる</button>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

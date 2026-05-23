@@ -1,21 +1,27 @@
 "use client";
-import { useState, useCallback, useRef, createContext, useContext } from "react";
+// ★ Zustand 統合:
+//   BEFORE: InventoryContext（ローカル useState）でインベントリを管理していた
+//   AFTER : useSafariStore の inventory・logisticsQueue を直接使う
+//
+//   主な変更点:
+//   - InventoryContext / InventoryProvider を削除
+//   - useContext(InventoryContext) の呼び出しを useSafariStore に置き換え
+//   - FarmPanel のデモ収穫が addToInventory を呼ぶようになり、
+//     農場・物流センターのインベントリが自動同期される
+//   - PickingScreen 上部に "物流待機キュー"（logisticsQueue の動物）を表示
+//   - LogisticsApp の export 末尾の <InventoryProvider> ラッパーを削除
 
-// ============================================================
-// INVENTORY CONTEXT
-// ============================================================
-const InventoryContext = createContext(null);
-function InventoryProvider({ children }) {
-  const [inv, setInv] = useState({
-    carrot:8,apple:5,banana:12,meat:4,fish:3,grain:7,
-    veggie3:2,fruit3:1,stone:15,wood:6,rope:4,herb:3,
-    crystal:1,poop:9,compost:5,
-  });
-  const consume = useCallback((id,qty=1)=>setInv(p=>({...p,[id]:Math.max(0,(p[id]??0)-qty)})),[]);
-  const restore = useCallback((id,qty=1)=>setInv(p=>({...p,[id]:(p[id]??0)+qty})),[]);
-  const harvest  = useCallback((id,qty)  =>setInv(p=>({...p,[id]:(p[id]??0)+qty})),[]);
-  return <InventoryContext.Provider value={{inv,consume,restore,harvest}}>{children}</InventoryContext.Provider>;
-}
+import { useState, useRef } from "react";
+import { useSafariStore } from "@/store/useSafariStore";
+
+// ── 後方互換シム: useContext(InventoryContext) を呼んでいる内部コンポーネントの
+//    置き換えを最小化するため、ContextValue 型だけ残してダミー Context を定義する。
+//    実際のデータは各コンポーネントで useSafariStore を直接参照する（下記参照）。
+// ※ 将来的には InventoryContext 参照を完全に削除してよい。
+const InventoryContext = createContext<null>(null);
+
+// ★ DELETED: InventoryProvider（ローカル state）は不要になった
+// function InventoryProvider({ children }) { ... }
 
 // ============================================================
 // ITEM MASTER
@@ -168,8 +174,13 @@ function OrderSelect({orders,onSelect,onReroll}){
 // STEP 2 — PICKING (inventory selection → queue)
 // MAX 荷台マス数に応じて上限を計算
 // ============================================================
+// ★ PickingScreen の上部に「物流待機キュー」セクションを追加し、
+//    BaseCamp から sendToLogistics で送られた動物を確認できるようにした。
 function PickingScreen({order,onBack,onNext}){
-  const {inv} = useContext(InventoryContext);
+  // ★ BEFORE: const {inv} = useContext(InventoryContext);
+  // ★ AFTER : useSafariStore から直接取得
+  const inv             = useSafariStore((s) => s.inventory);
+  const logisticsQueue  = useSafariStore((s) => s.logisticsQueue);
   const [queue, setQueue] = useState([]);  // [{item,uid}]
   const [catFilter, setCatFilter] = useState("all");
 
@@ -208,6 +219,30 @@ function PickingScreen({order,onBack,onNext}){
           <div style={{fontSize:10,color:"#9ca3af"}}>{order.icon} {order.label}　{catName(order.cat)} を えらぼう</div>
         </div>
       </div>
+
+      {/* ★ 物流待機キュー（BaseCamp から sendToLogistics で送られた動物） */}
+      {logisticsQueue.length > 0 && (
+        <div style={{background:"linear-gradient(135deg,#fff7ed,#fef3c7)",borderRadius:18,
+          padding:"10px 12px",marginBottom:10,border:"2px solid #fde68a"}}>
+          <div style={{fontWeight:800,fontSize:13,color:"#b45309",marginBottom:6}}>
+            🚚 物流センター待機中 ({logisticsQueue.reduce((s,a)=>s+a.count,0)}ひき)
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {logisticsQueue.map(a=>(
+              <div key={a.id} style={{display:"flex",flexDirection:"column",alignItems:"center",
+                padding:"6px 8px",borderRadius:12,border:"2px solid #fcd34d",
+                background:"#fffbeb",minWidth:50,textAlign:"center"}}>
+                <span style={{fontSize:22}}>{a.emoji}</span>
+                <span style={{fontSize:9,fontWeight:700,color:"#374151",marginTop:1}}>{a.name}</span>
+                <span style={{fontSize:8,color:"#d97706"}}>×{a.count}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{fontSize:10,color:"#92400e",marginTop:6}}>
+            ↑ 自分の家から送られた動物だよ。下のアイテムと一緒にトラックに積もう！
+          </div>
+        </div>
+      )}
 
       {/* Queue display */}
       <div style={{background:"linear-gradient(135deg,#f5f3ff,#ede9fe)",borderRadius:18,padding:"10px 12px",
@@ -320,7 +355,11 @@ function PickingScreen({order,onBack,onNext}){
 // STEP 3 — PACKING (grid + drag ghost preview)
 // ============================================================
 function PackingScreen({order,queue,onBack,onShip}){
-  const {consume} = useContext(InventoryContext);
+  // ★ BEFORE: const {consume} = useContext(InventoryContext);
+  // ★ AFTER : useSafariStore の consumeInventory を使う
+  const consumeInventory = useSafariStore((s) => s.consumeInventory);
+  // 後方互換シム: PackingScreen 内の consume(id, qty) 呼び出しをそのまま使えるようにする
+  const consume = (id: string, qty = 1) => consumeInventory(id, qty);
   const [cols,rows] = order.gridSize;
   const [grid,setGrid] = useState(()=>mkGrid(cols,rows));
   const [hand,setHand] = useState(()=>queue.map(e=>({...e}))); // [{item,uid}]
@@ -761,7 +800,13 @@ function ResultScreen({order, pct, grid, onDone}){
 // FARM DEMO
 // ============================================================
 function FarmPanel(){
-  const {harvest,inv}=useContext(InventoryContext);
+  // ★ BEFORE: const {harvest, inv} = useContext(InventoryContext);
+  // ★ AFTER : addToInventory / inventory を useSafariStore から取得
+  //           → FarmPanel で収穫すると即座にグローバルインベントリに反映される
+  const addToInventory = useSafariStore((s) => s.addToInventory);
+  const inv            = useSafariStore((s) => s.inventory);
+  // 後方互換シム
+  const harvest = (id: string, qty: number) => addToInventory(id, qty);
   const items=[{id:"carrot",q:3},{id:"apple",q:2},{id:"grain",q:4},{id:"veggie3",q:1},{id:"wood",q:2},{id:"poop",q:3}];
   return(
     <div style={{background:"rgba(255,255,255,.88)",borderRadius:18,padding:12,
@@ -849,6 +894,7 @@ function LogisticsApp(){
   );
 }
 
+// ★ InventoryProvider を削除。ストアは Zustand の useSafariStore で一元管理される。
 export default function LogisticsClient(){
-  return <InventoryProvider><LogisticsApp/></InventoryProvider>;
+  return <LogisticsApp/>;
 }

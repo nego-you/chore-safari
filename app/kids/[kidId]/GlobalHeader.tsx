@@ -4,10 +4,15 @@
 // 左: 戻るボタン（マップ画面では非表示）
 // 中: アバター + 子供の名前 + コイン残高
 // 右: 天気ウィジェット（WeatherContext から取得）
+//
+// ★ Zustand 統合:
+//   coinBalance は props ではなく useSafariStore から取得する。
+//   これにより物流センターでコインが増減したとき、ヘッダーが即座に再レンダリングされる。
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useWeather } from "./WeatherContext";
+import { useSafariStore } from "@/store/useSafariStore";
 
 // ── 子供ごとのアバター定義 ────────────────────────────────────
 const KID_AVATAR: Record<string, { emoji: string; color: string }> = {
@@ -22,15 +27,19 @@ const NAME_READING: Record<string, string> = {
   "叶泰": "かなた",
 };
 
+// ★ BEFORE: coinBalance: number を受け取っていた
+// ★ AFTER : coins は Zustand ストアから取得するため prop を削除
 type Props = {
   kidId: string;
   kidName: string;
-  coinBalance: number;
 };
 
-export function GlobalHeader({ kidId, kidName, coinBalance }: Props) {
+export function GlobalHeader({ kidId, kidName }: Props) {
   const weather = useWeather();
   const pathname = usePathname();
+
+  // ★ ストアから常に最新のコインを購読
+  const coins = useSafariStore((s) => s.coins);
 
   // マップ画面（/kids/[kidId] のみ）では戻るボタンを非表示
   const isMapPage = pathname === `/kids/${kidId}`;
@@ -133,8 +142,9 @@ export function GlobalHeader({ kidId, kidName, coinBalance }: Props) {
               }}
             >
               🪙
+              {/* ★ coins はストアから取得しているため、どの画面でコインが増えても即反映 */}
               <span style={{ fontVariantNumeric: "tabular-nums" }}>
-                {coinBalance.toLocaleString()}
+                {coins.toLocaleString()}
               </span>
             </div>
           </div>
