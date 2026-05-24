@@ -1129,6 +1129,41 @@ async function main() {
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Personality マスタ（AIガイドキャラクターの性格パターン）
+  // ─────────────────────────────────────────────────────────────────────────────
+  const PERSONALITIES = [
+    {
+      name: "ワイルド",
+      firstPerson: "オレ",
+      toneRule: "語尾に「だぜ」「だな」をつける、少しワイルドで頼もしい口調。前向きな言葉を使う。",
+    },
+    {
+      name: "おしとやか",
+      firstPerson: "わたし",
+      toneRule: "丁寧で優しい口調。「〜ですよ」「〜ですね」を使い、相手を気遣う言葉を添える。",
+    },
+    {
+      name: "がくしゃ",
+      firstPerson: "ぼく",
+      toneRule: "物知りで知的な口調。「〜なんだよ」「〜って知ってた？」など豆知識を交える。",
+    },
+    {
+      name: "げんき",
+      firstPerson: "あたし",
+      toneRule: "元気いっぱいの口調。「〜だよ！」「すごいね！」など感嘆符を多く使い、テンション高め。",
+    },
+  ] as const;
+
+  for (const p of PERSONALITIES) {
+    await prisma.personality.upsert({
+      where: { name: p.name },
+      update: { firstPerson: p.firstPerson, toneRule: p.toneRule },
+      create: p,
+    });
+    console.log(`Seeded personality: ${p.name}`);
+  }
+
   const childUsers = await prisma.user.findMany({
     where: {
       isTestAccount: false,
@@ -1200,7 +1235,8 @@ async function main() {
       }
     }
 
-    console.log(`Seeded test assets for child user: ${user.name} (${user.id})`);  }
+    console.log(`Seeded test assets for child user: ${user.name} (${user.id})`);
+  }
 
   console.log("\n✅ seed complete");
 }

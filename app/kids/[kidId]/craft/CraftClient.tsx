@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { useSafariStore } from "@/store/useSafariStore";
 
 // ── 型定義 ──────────────────────────────────────────────
 type MaterialId = "wood" | "stone" | "iron" | "thread" | "gunpowder";
@@ -24,7 +25,7 @@ interface Recipe {
   result: ResultItem;
 }
 
-type Inventory = Record<MaterialId, number>;
+// ★ DELETED: type Inventory = Record<MaterialId, number>; (ストア InventoryMap に統一)
 type SlotState = (MaterialId | null)[];
 type DiscoveredState = Record<string, boolean>;
 
@@ -46,11 +47,15 @@ const MATERIALS: Material[] = [
   { id: "gunpowder", name: "かやく",   emoji: "💥" },
 ];
 
-const INIT_INVENTORY: Inventory = { wood: 10, stone: 5, iron: 3, thread: 5, gunpowder: 2 };
+// ★ DELETED: INIT_INVENTORY（ハードコードのモックデータ → ストアの inventory に統一）
 
 // ── コンポーネント ───────────────────────────────────────
 export default function CraftClient() {
-  const [inventory, setInventory]           = useState<Inventory>(INIT_INVENTORY);
+  // ★ Zustand ストアから素材インベントリを取得
+  const inventory       = useSafariStore((s) => s.inventory);
+  const consumeInventory = useSafariStore((s) => s.consumeInventory);
+  const addToInventory   = useSafariStore((s) => s.addToInventory);
+
   const [slots, setSlots]                   = useState<SlotState>([null, null, null]);
   const [inspirationFrags, setInspirationFrags] = useState<number>(0);
   const [discovered, setDiscovered]         = useState<DiscoveredState>({});
@@ -61,13 +66,14 @@ export default function CraftClient() {
 
   // ── ハンドラ ───────────────────────────────────────────
   const addToSlot = (materialId: MaterialId): void => {
-    if (inventory[materialId] <= 0) return;
+    if ((inventory[materialId] ?? 0) <= 0) return;
     const emptyIdx = slots.findIndex(s => s === null);
     if (emptyIdx === -1) return;
     const newSlots: SlotState = [...slots];
     newSlots[emptyIdx] = materialId;
     setSlots(newSlots);
-    setInventory(prev => ({ ...prev, [materialId]: prev[materialId] - 1 }));
+    // ★ BEFORE: setInventory(prev => ({ ...prev, [materialId]: prev[materialId] - 1 }))
+    consumeInventory(materialId, 1);
   };
 
   const removeFromSlot = (idx: number): void => {
@@ -76,7 +82,8 @@ export default function CraftClient() {
     const newSlots: SlotState = [...slots];
     newSlots[idx] = null;
     setSlots(newSlots);
-    setInventory(prev => ({ ...prev, [mat]: prev[mat] + 1 }));
+    // ★ BEFORE: setInventory(prev => ({ ...prev, [mat]: prev[mat] + 1 }))
+    addToInventory(mat, 1);
   };
 
   const tryCraft = (): void => {
@@ -97,9 +104,8 @@ export default function CraftClient() {
       setTimeout(() => { setEffect(null); setResultItem(null); }, 3200);
     } else {
       setEffect("fail");
-      used.forEach(mat => {
-        setInventory(prev => ({ ...prev, [mat]: prev[mat] + 1 }));
-      });
+      // ★ BEFORE: used.forEach(mat => setInventory(prev => ({ ...prev, [mat]: prev[mat] + 1 })))
+      used.forEach(mat => addToInventory(mat, 1));
       setSlots([null, null, null]);
       setTimeout(() => {
         setEffect("failBonus");
@@ -330,7 +336,7 @@ export default function CraftClient() {
             <div style={{ color: "#c49050", fontSize: 12, letterSpacing: 2, marginBottom: 8 }}>📦 ざいりょう</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6 }}>
               {MATERIALS.map((mat: Material) => {
-                const count = inventory[mat.id];
+                const count = inventory[mat.id] ?? 0;
                 const slotsFull = slots.filter(Boolean).length >= 3;
                 return (
                   <button

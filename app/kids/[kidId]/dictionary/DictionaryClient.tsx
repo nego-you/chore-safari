@@ -37,6 +37,10 @@ type AnimalEntry = {
   captureStats: CaptureStat[];
   // 家族全体での累計捕獲回数
   totalCount: number;
+  // この子自身の捕獲情報（年齢・卒業表示用）
+  kidCaughtAt: string | null;
+  ageInYears: number | null;
+  isGraduated: boolean;
 };
 
 type Props = {
@@ -44,6 +48,7 @@ type Props = {
   kidName: string;
   animals: AnimalEntry[];
   familySize: number;
+  nowIso: string;
 };
 
 const RARITY_ORDER: Record<Rarity, number> = {
@@ -376,15 +381,35 @@ function AnimalDetailModal({
             {animal.description}
           </p>
 
-          {/* じゅみょう */}
+          {/* じゅみょう・年齢 */}
           {animal.lifespanYears !== undefined && (
-            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 px-3 py-1 ring-1 ring-amber-400/40">
-              <span className="text-base" aria-hidden>⌛</span>
-              <span className="text-[12px] font-extrabold text-amber-300">
-                {animal.lifespanYears >= 999
-                  ? "じゅみょう：ふろうふし（えいえんのいのち）"
-                  : `じゅみょう：やく ${animal.lifespanYears} ねん`}
-              </span>
+            <div className="mt-3 space-y-2">
+              {animal.isGraduated ? (
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-yellow-500/30 px-3 py-1 ring-2 ring-yellow-400/60">
+                  <span className="text-base" aria-hidden>✨</span>
+                  <span className="text-[12px] font-extrabold text-yellow-300">
+                    しぜんに かえりました（殿堂入り）
+                  </span>
+                </div>
+              ) : animal.ageInYears !== null ? (
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 ring-1 ring-emerald-400/40">
+                  <span className="text-base" aria-hidden>🌱</span>
+                  <span className="text-[12px] font-extrabold text-emerald-300">
+                    {animal.lifespanYears >= 999
+                      ? "えいえんのいのち ♾️"
+                      : `いま ${animal.ageInYears} さい（じゅみょう：${animal.lifespanYears} ねん）`}
+                  </span>
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 px-3 py-1 ring-1 ring-amber-400/40">
+                  <span className="text-base" aria-hidden>⌛</span>
+                  <span className="text-[12px] font-extrabold text-amber-300">
+                    {animal.lifespanYears >= 999
+                      ? "じゅみょう：ふろうふし（えいえんのいのち）"
+                      : `じゅみょう：やく ${animal.lifespanYears} ねん`}
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
@@ -555,7 +580,19 @@ function AnimalCard({
             💀
           </span>
         )}
+        {animal.isGraduated && (
+          <span className="rounded-full bg-yellow-500/80 px-1.5 py-0 text-[8px] font-bold text-yellow-900">
+            ✨殿堂
+          </span>
+        )}
       </div>
+
+      {/* 年齢表示（自分が捕まえている場合） */}
+      {animal.kidCaughtAt && !animal.isGraduated && animal.ageInYears !== null && (animal.lifespanYears ?? 0) < 999 && (
+        <p className="text-[8px] font-bold text-emerald-300 text-center">
+          {animal.ageInYears} さい
+        </p>
+      )}
 
       {/* 🌟 家族の累計捕獲回数 */}
       {animal.totalCount > 0 && (
@@ -568,7 +605,7 @@ function AnimalCard({
 }
 
 // ── メイン コンポーネント ──────────────────────────────────────────
-export function DictionaryClient({ kidId, kidName, animals }: Props) {
+export function DictionaryClient({ kidId, kidName, animals, nowIso: _nowIso }: Props) {
   const [selected, setSelected] = useState<AnimalEntry | null>(null);
   const [filterRarity, setFilterRarity] = useState<Rarity | "ALL">("ALL");
 

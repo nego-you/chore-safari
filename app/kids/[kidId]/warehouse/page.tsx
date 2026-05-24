@@ -1,5 +1,6 @@
 // /kids/[kidId]/warehouse — 博物倉庫。
 // 図鑑（コンプリート率・シルエットUI入口）+ 共有インベントリ + 道具一覧 を統合。
+// 年齢（1日=1年）・殿堂入り（寿命満了）・報酬ダイアログ を追加。
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -65,7 +66,7 @@ export default async function WarehousePage({ params }: { params: Params }) {
       orderBy: { sortOrder: "asc" },
       select: { id: true, stageId: true, name: true, emoji: true },
     }),
-    // 🌟 この子供が捕まえた動物の一覧（寿命表示用）
+    // 🌟 この子供が捕まえた動物の一覧（寿命・卒業表示用）
     prisma.caughtAnimal.findMany({
       where: { caughtByUserId: kidId },
       orderBy: { caughtAt: "desc" },
@@ -74,6 +75,8 @@ export default async function WarehousePage({ params }: { params: Params }) {
         caughtAt: true,
         expiresAt: true,
         isAlive: true,
+        isGraduated: true,
+        rewardClaimed: true,
         animal: {
           select: {
             id: true,
@@ -116,23 +119,43 @@ export default async function WarehousePage({ params }: { params: Params }) {
   const caughtCount = allAnimals.filter((a) => caughtSet.has(a.id)).length;
   const totalCount = allAnimals.length;
 
-  // isAlive フラグを現在時刻とも比較して最終判定（DB 値がまだ更新されていない場合も対応）
   const now = new Date();
-  const myAnimalsMapped = myAnimals.map((ca) => ({
-    id: ca.id,
-    caughtAt: ca.caughtAt.toISOString(),
-    expiresAt: ca.expiresAt?.toISOString() ?? null,
-    isAlive: ca.isAlive && (ca.expiresAt === null || ca.expiresAt > now),
-    animal: {
-      id: ca.animal.id,
-      animalId: ca.animal.animalId,
-      specificName: ca.animal.specificName,
-      genericName: ca.animal.genericName,
-      emoji: ca.animal.emoji,
-      rarity: ca.animal.rarity as "COMMON" | "RARE" | "EPIC" | "LEGENDARY",
-      lifespanYears: ca.animal.lifespanYears,
-    },
-  }));
+
+  const myAnimalsMapped = myAnimals.map((ca) => {
+    // 経過日数（1日 = 1ゲーム年）
+    const elapsedDays = Math.floor(
+      (now.getTime() - ca.caughtAt.getTime()) / (1000 * 60 * 60 * 24),
+    );
+    const ageInYears = elapsedDays;
+    const isLegendary = ca.animal.lifespanYears >= 999;
+
+    // 卒業判定：expiresAt 超過 or 経過日数 >= lifespanYears
+    const isExpiredByDate = ca.expiresAt !== null && ca.expiresAt <= now;
+    const isExpiredByAge = !isLegendary && ageInYears >= ca.animal.lifespanYears;
+    const isGraduated = ca.isGraduated || isExpiredByDate || isExpiredByAge;
+
+    // 生存フラグ（isAlive DB値 AND 卒業していない）
+    const isAlive = ca.isAlive && !isGraduated;
+
+    return {
+      id: ca.id,
+      caughtAt: ca.caughtAt.toISOString(),
+      expiresAt: ca.expiresAt?.toISOString() ?? null,
+      isAlive,
+      isGraduated,
+      rewardClaimed: ca.rewardClaimed,
+      ageInYears,
+      animal: {
+        id: ca.animal.id,
+        animalId: ca.animal.animalId,
+        specificName: ca.animal.specificName,
+        genericName: ca.animal.genericName,
+        emoji: ca.animal.emoji,
+        rarity: ca.animal.rarity as "COMMON" | "RARE" | "EPIC" | "LEGENDARY",
+        lifespanYears: ca.animal.lifespanYears,
+      },
+    };
+  });
 
   return (
     <WarehouseClient
@@ -141,7 +164,7 @@ export default async function WarehousePage({ params }: { params: Params }) {
       caughtCount={caughtCount}
       totalCount={totalCount}
       stageProgress={stageProgress}
-      inventory={inventory}
+      inventory={inventory.map((i) => ({ ...i, itemType: i.itemType as "FOOD" | "TRAP_PART" }))}
       tools={tools.map((t) => ({
         ...t,
         type: t.type as "TRAP" | "BOW" | "SPEAR",

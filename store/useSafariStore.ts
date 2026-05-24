@@ -62,6 +62,8 @@ const RARITY_COIN: Record<GameAnimal["rarity"], number> = {
 // ─────────────────────────────────────────────────────────────────────────────
 export interface SafariState {
   // ── 公開ステート ─────────────────────────────────────────
+  /** 現在プレイ中の kidId。ユーザー切り替え検出に使う */
+  activeKidId: string | null;
   /** コイン残高（ゲーム経済圏） */
   coins: number;
   /** インベントリ: { wood: 5, tomato: 2, ... } */
@@ -86,8 +88,18 @@ export interface SafariState {
 
   // ── アクション ───────────────────────────────────────────
 
+  /**
+   * ユーザー切り替え時に呼ぶ。
+   * activeKidId が変わっていれば全ゲーム状態をリセットして DB 値を適用する。
+   * 同一ユーザーの再訪問（同 kidId）ではリセットしない。
+   */
+  resetForKid: (kidId: string, coinBalance: number) => void;
+
   /** サーバー DB の coinBalance でストアを初期化（ページロード時に一度だけ呼ぶ） */
   initCoins: (amount: number) => void;
+
+  /** サーバーレスポンスの newCoinBalance でコインを直接上書きする（クレーン等） */
+  syncCoins: (amount: number) => void;
 
   /** コインを増やす */
   addCoins: (amount: number) => void;
@@ -118,7 +130,26 @@ export interface SafariState {
   recoverStamina: () => void;
   /** スタミナを指定量消費する（0 未満にはならない） */
   consumeStamina: (amount: number) => void;
+  /** スタミナを指定量回復する（100 を超えない） */
+  restoreStamina: (amount: number) => void;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ゲーム状態の初期値（resetForKid で再利用）
+// ─────────────────────────────────────────────────────────────────────────────
+const INITIAL_GAME_STATE = {
+  inventory: {} as InventoryMap,
+  animalsInYard: [] as GameAnimal[],
+  logisticsQueue: [] as GameAnimal[],
+  stamina: 100,
+  medals: [] as Medal[],
+  _stats: {
+    helpCount: 0,
+    totalAnimalsCaught: 0,
+    legendaryCaught: 0,
+    totalShipped: 0,
+  },
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ストア本体
@@ -127,17 +158,16 @@ export const useSafariStore = create<SafariState>()(
   persist(
     (set, get) => ({
       // ── 初期値 ────────────────────────────────────────────
+      activeKidId: null,
       coins: 0,
-      inventory: {},
-      animalsInYard: [],
-      logisticsQueue: [],
-      stamina: 100,
-      medals: [],
-      _stats: {
-        helpCount: 0,
-        totalAnimalsCaught: 0,
-        legendaryCaught: 0,
-        totalShipped: 0,
+      ...INITIAL_GAME_STATE,
+
+      // ── ユーザー切り替え ──────────────────────────────────
+      resetForKid: (kidId, coinBalance) => {
+        const { activeKidId } = get();
+        // 同じユーザーが再訪問した場合はリセットしない（ゲーム進行を維持）
+        if (activeKidId === kidId) return;
+        set({ activeKidId: kidId, coins: coinBalance, ...INITIAL_GAME_STATE });
       },
 
       // ── コイン ────────────────────────────────────────────
@@ -147,6 +177,8 @@ export const useSafariStore = create<SafariState>()(
           // localStorage に保存済みの場合はゲーム内の増減を維持する。
           coins: s.coins === 0 ? amount : s.coins,
         })),
+
+      syncCoins: (amount) => set({ coins: amount }),
 
       addCoins: (amount) =>
         set((s) => ({ coins: s.coins + amount })),
@@ -250,14 +282,18 @@ export const useSafariStore = create<SafariState>()(
 
       consumeStamina: (amount) =>
         set((s) => ({ stamina: Math.max(0, s.stamina - amount) })),
+
+      restoreStamina: (amount) =>
+        set((s) => ({ stamina: Math.min(100, s.stamina + amount) })),
     }),
 
     // ── persist 設定 ────────────────────────────────────────
     {
       name: "safari-store", // localStorage キー名
-      storage: createJSONStorage(() => localStorage),
+           storage: createJSONStorage(() => localStorage),
       // 内部統計も含めて全フィールドを保存
       partialize: (s) => ({
+        activeKidId: s.activeKidId,
         coins: s.coins,
         inventory: s.inventory,
         animalsInYard: s.animalsInYard,
@@ -270,9 +306,9 @@ export const useSafariStore = create<SafariState>()(
   )
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────��──────────────────────��────────────────────────────────────
 // 内部ヘルパー：勲章のチェック & 解除
-// ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────��────────────────────────────��─────────────────────────────
 function _checkAndUnlockMedals(
   get: () => SafariState,
   set: (partial: Partial<SafariState>) => void

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useSafariStore } from "@/store/useSafariStore";
+import type { AnimalRarity } from "@/types/safari";
 
 // ════════════════════════════════════════════════════════════════
 //  型定義
@@ -720,9 +722,20 @@ function StaminaBar({ stamina }: { stamina: number }) {
 
 type Phase = "EXPLORE" | "ENCOUNTER" | "QUIZ" | "TIMING" | "RESULT" | "GAMEOVER";
 
+// HuntClient 内で Animal.rarity を GameAnimal.rarity に変換する
+const toStoreRarity = (r: Animal["rarity"]): AnimalRarity =>
+  r === "LEGENDARY" ? "でんせつ" : r === "COMMON" ? "ふつう" : "レア";
+
 export default function HuntClient() {
+  // ★ Zustand ストアからスタミナ管理
+  const stamina        = useSafariStore((s) => s.stamina);
+  const consumeStamina = useSafariStore((s) => s.consumeStamina);
+  const restoreStamina = useSafariStore((s) => s.restoreStamina);
+  const recoverStamina = useSafariStore((s) => s.recoverStamina);
+  const catchAnimal    = useSafariStore((s) => s.catchAnimal);
+  // ★ DELETED: const [stamina, setStamina] = useState(100)
+
   const [phase,         setPhase]        = useState<Phase>("EXPLORE");
-  const [stamina,       setStamina]      = useState(100);
   const [turn,          setTurn]         = useState(0);
   const [weather,       setWeather]      = useState<Weather>(WEATHERS[0]);
   const [caught,        setCaught]       = useState<string[]>([]);
@@ -778,12 +791,12 @@ export default function HuntClient() {
 
     const newStamina = stamina - route.staminaCost;
     if (newStamina <= 0) {
-      setStamina(0);
+      consumeStamina(stamina); // → 0 へ
       addLog("たいりょくが なくなった…", "rgba(255,68,68,0.9)");
       setTimeout(() => { setPhase("GAMEOVER"); setBusy(false); }, 600);
       return;
     }
-    setStamina(newStamina);
+    consumeStamina(route.staminaCost);
 
     const nextTurn = turn + 1;
     setTurn(nextTurn);
@@ -819,8 +832,10 @@ export default function HuntClient() {
           setItems(prev => [...prev, happening.item!.emoji]);
           setTimeout(() => addLog(`　→「${happening.item!.name}」を ゲット！`, "rgba(217,119,6,0.9)"), 600);
         }
-        if (happening.staminaDelta !== 0) {
-          setStamina(prev => Math.min(100, Math.max(0, prev + happening.staminaDelta)));
+        if (happening.staminaDelta > 0) {
+          restoreStamina(happening.staminaDelta);
+        } else if (happening.staminaDelta < 0) {
+          consumeStamina(-happening.staminaDelta);
         }
       }, happeningDelay);
     }
@@ -872,6 +887,8 @@ export default function HuntClient() {
     if (!animal) return;
     if (correct) {
       setCaught(prev => [...prev, animal.emoji]);
+      // ★ グローバル裏庭へ追加
+      catchAnimal({ name: animal.name, emoji: animal.emoji, rarity: toStoreRarity(animal.rarity) });
       addLog(`⭐ せいかい！ ${animal.name}を かんさつ ゲット！`, "#ffd700");
       setCombatResult({ hit:true, animal, bonus:"quiz" });
     } else {
@@ -879,27 +896,29 @@ export default function HuntClient() {
       setCombatResult({ hit:false, animal, bonus:null });
     }
     setIsEncounter(false); setPhase("RESULT");
-  }, [animal, addLog]);
+  }, [animal, addLog, catchAnimal]);
 
   // ── わなをしかける ──
   const doTrap = useCallback(() => {
     if (!animal) return;
     const ns = stamina - 8;
     if (ns <= 0) {
-      setStamina(0);
+      consumeStamina(stamina); // → 0 へ
       addLog("たいりょくが なくなった…", "rgba(255,68,68,0.9)");
       setTimeout(() => setPhase("GAMEOVER"), 400); return;
     }
-    setStamina(ns);
+    consumeStamina(8);
     addLog("🪤 わなを しかけた！ タイミングを あわせろ！", "rgba(0,255,136,0.8)");
     setPhase("TIMING");
-  }, [animal, stamina, addLog]);
+  }, [animal, stamina, addLog, consumeStamina]);
 
   const onTimingResult = useCallback((score: number) => {
     if (!animal) return;
     const hitChance = score === 2 ? 0.85 : score === 1 ? 0.50 : 0.15;
     if (Math.random() < hitChance) {
       setCaught(prev => [...prev, animal.emoji]);
+      // ★ グローバル裏庭へ追加
+      catchAnimal({ name: animal.name, emoji: animal.emoji, rarity: toStoreRarity(animal.rarity) });
       addLog(`🎉 やった！ ${animal.name}を つかまえた！`, "#ffd700");
       setCombatResult({ hit:true, animal, bonus:`timing_${score}` });
     } else {
@@ -907,7 +926,7 @@ export default function HuntClient() {
       setCombatResult({ hit:false, animal, bonus:null });
     }
     setIsEncounter(false); setPhase("RESULT");
-  }, [animal, addLog]);
+  }, [animal, addLog, catchAnimal]);
 
   // ── にげる ──
   const doFlee = useCallback(() => {
@@ -930,7 +949,7 @@ export default function HuntClient() {
 
   // ── リスタート ──
   const doRestart = useCallback(() => {
-    setPhase("EXPLORE"); setStamina(100); setTurn(0);
+    setPhase("EXPLORE"); recoverStamina(); setTurn(0);
     setWeather(WEATHERS[0]); setCaught([]); setItems([]);
     setAnimal(null); setCombatResult(null);
     setIsEncounter(false); setIsEncFlash(false);

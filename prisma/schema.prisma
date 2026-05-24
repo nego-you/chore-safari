@@ -121,6 +121,7 @@ model User {
   hunts              Hunt[]
   userMaterials      UserMaterial[]
   userTools          UserTool[]
+  activities         UserActivity[]
   // 専用クエストの対象となる場合
   targetedQuests     Quest[]
   // 専用ペナルティの対象となる場合
@@ -271,25 +272,60 @@ model Animal {
   @@map("animals")
 }
 
+// ─────────────────────────────────────────────────────────────
+// AIガイドキャラクターのパーソナリティマスタ（選択可能）。
+//   firstPerson : キャラの一人称（「オレ」「わたし」「ぼく」など）
+//   toneRule    : 口調の基本ルール（LLM system prompt に埋め込む）
+// ─────────────────────────────────────────────────────────────
+model Personality {
+  id          Int            @id @default(autoincrement())
+  name        String         @unique
+  firstPerson String         @map("first_person")
+  toneRule    String         @map("tone_rule")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  catches     CaughtAnimal[]
+
+  @@map("personalities")
+}
+
+// ユーザーの機能利用履歴（AIガイドの未利用機能誘導に使用）。
+//   featureId : "camera" / "quiz" など
+model UserActivity {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  featureId  String   @map("feature_id")
+  lastUsedAt DateTime @default(now()) @map("last_used_at")
+
+  @@unique([userId, featureId])
+  @@index([userId])
+  @@map("user_activities")
+}
+
 // 捕獲履歴：かぞくでひとつの図鑑を共有する。
 model CaughtAnimal {
-  id             String   @id @default(cuid())
-  animalId       String   @map("animal_id")
-  animal         Animal   @relation(fields: [animalId], references: [id], onDelete: Cascade)
-  caughtByUserId String   @map("caught_by_user_id")
-  caughtBy       User     @relation(fields: [caughtByUserId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  animalId       String       @map("animal_id")
+  animal         Animal       @relation(fields: [animalId], references: [id], onDelete: Cascade)
+  caughtByUserId String       @map("caught_by_user_id")
+  caughtBy       User         @relation(fields: [caughtByUserId], references: [id], onDelete: Cascade)
   // どの罠とエサで捕まえたかの記録（後で組み合わせ確率を分析できるように残しておく）。
-  trapItemId     String?  @map("trap_item_id")
-  foodItemId     String?  @map("food_item_id")
+  trapItemId     String?      @map("trap_item_id")
+  foodItemId     String?      @map("food_item_id")
   // どの道具（Tool）で捕まえたか。アクティブ狩りの記録用。
-  toolId         String?   @map("tool_id")
-  caughtAt       DateTime  @default(now()) @map("caught_at")
+  toolId         String?      @map("tool_id")
+  caughtAt       DateTime     @default(now()) @map("caught_at")
   // 寿命：捕獲日 + lifespanYears 日数分後に設定。null は未設定（旧データ）。
-  expiresAt      DateTime? @map("expires_at")
+  expiresAt      DateTime?    @map("expires_at")
   // 生存フラグ。寿命を過ぎたら false に更新（または画面上で動的判定）。
-  isAlive        Boolean   @default(true) @map("is_alive")
-  isGraduated    Boolean   @default(false) @map("is_graduated")
-  rewardClaimed  Boolean   @default(false) @map("reward_claimed")
+  isAlive        Boolean      @default(true) @map("is_alive")
+  isGraduated    Boolean      @default(false) @map("is_graduated")
+  rewardClaimed  Boolean      @default(false) @map("reward_claimed")
+  // AIガイドキャラクター：選択されたパーソナリティ（null=デフォルト）
+  personalityId  Int?         @map("personality_id")
+  personality    Personality? @relation(fields: [personalityId], references: [id], onDelete: SetNull)
+  // 親密度スコア（0-300: よそよそしい, 301-800: 友好的, 801-: 家族のような絆）
+  intimacyScore  Int          @default(0) @map("intimacy_score")
 
   @@index([animalId])
   @@index([caughtByUserId])

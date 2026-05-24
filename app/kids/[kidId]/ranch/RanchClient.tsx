@@ -1,5 +1,14 @@
 "use client";
+// ★ Zustand 統合:
+//   BEFORE: inventory { coins, poop, grass } を useState で管理していた
+//   AFTER : coins → useSafariStore.coins
+//           grass/poop → useSafariStore.inventory['grass'/'poop']
+//   アクション対応:
+//     collectPoop  → addToInventory('poop', 1)
+//     feed(grass)  → consumeInventory('grass', 1)
+//     feed(coins)  → spendCoins(FEED_COST)
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useSafariStore } from "@/store/useSafariStore";
 
 // ============================================================
 // Type Definitions
@@ -117,7 +126,7 @@ const css = `
 @import url('https://fonts.googleapis.com/css2?family=Mochiy+Pop+One&family=Nunito:wght@700;800;900&display=swap');
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* ── movement ── */
+/* -- movement -- */
 @keyframes waddle {
   0%,100% { transform: rotate(-6deg) translateY(0); }
   50%      { transform: rotate(6deg) translateY(-4px); }
@@ -127,7 +136,7 @@ const css = `
   50%     { transform: translateY(-5px) scale(1.04); }
 }
 
-/* ── SUCCESS: big bounce-jump ── */
+/* -- SUCCESS: big bounce-jump -- */
 @keyframes eat-happy {
   0%   { transform: scale(1)    translateY(0)    rotate(0deg); filter: brightness(1); }
   20%  { transform: scale(1.5)  translateY(-18px) rotate(-12deg); filter: brightness(1.3) drop-shadow(0 0 12px #4ade80); }
@@ -135,7 +144,7 @@ const css = `
   70%  { transform: scale(1.25) translateY(-8px)  rotate(-4deg);  filter: brightness(1.2) drop-shadow(0 0 8px #4ade80); }
   100% { transform: scale(1)    translateY(0)    rotate(0deg);   filter: brightness(1); }
 }
-/* ── SUPER-HAPPY (grass synergy) ── */
+/* -- SUPER-HAPPY (grass synergy) -- */
 @keyframes eat-super {
   0%   { transform: scale(1)    rotate(0deg);   filter: brightness(1); }
   15%  { transform: scale(1.7)  rotate(-18deg); filter: brightness(1.5) drop-shadow(0 0 18px #facc15) hue-rotate(20deg); }
@@ -144,7 +153,7 @@ const css = `
   75%  { transform: scale(1.2)  rotate(6deg);   filter: brightness(1.1); }
   100% { transform: scale(1)    rotate(0deg);   filter: brightness(1); }
 }
-/* ── REFUSE: shrink-shake with red flash ── */
+/* -- REFUSE: shrink-shake with red flash -- */
 @keyframes refuse-anim {
   0%   { transform: scale(1)    rotate(0deg);  filter: brightness(1); }
   10%  { transform: scale(0.75) rotate(0deg);  filter: brightness(0.6) sepia(1) saturate(5) hue-rotate(-20deg); }
@@ -154,21 +163,21 @@ const css = `
   80%  { transform: scale(0.9)  rotate(5deg);   filter: brightness(0.9); }
   100% { transform: scale(1)    rotate(0deg);  filter: brightness(1); }
 }
-/* ── particles ── */
+/* -- particles -- */
 @keyframes particle-fly {
   0%   { opacity:1; transform: translate(0,0) scale(1); }
   80%  { opacity:1; }
   100% { opacity:0; transform: translate(var(--px),var(--py)) scale(0.4); }
 }
-/* ── poop ── */
+/* -- poop -- */
 @keyframes poop-idle    { 0%,100%{transform:rotate(-5deg) scale(1);}    50%{transform:rotate(5deg) scale(1.08);} }
 @keyframes poop-collect { 0%{opacity:1;transform:translateY(0) scale(1);} 100%{opacity:0;transform:translateY(-60px) scale(0.1);} }
-/* ── field deco ── */
+/* -- field deco -- */
 @keyframes grass-sway  { 0%,100%{transform:rotate(-3deg);transform-origin:bottom center;} 50%{transform:rotate(3deg);transform-origin:bottom center;} }
 @keyframes cloud-drift { 0%{transform:translateX(-20px);} 100%{transform:translateX(20px);} }
 @keyframes drag-item   { 0%,100%{transform:scale(1.1) rotate(-5deg);} 50%{transform:scale(1.2) rotate(5deg);} }
 @keyframes hunger-pulse{ 0%,100%{opacity:1;} 50%{opacity:0.45;} }
-/* ── feedback overlay on animal ── */
+/* -- feedback overlay on animal -- */
 @keyframes feedback-bg-ok {
   0%   { opacity:0; transform:scale(0.7); }
   30%  { opacity:1; transform:scale(1.15); }
@@ -181,10 +190,10 @@ const css = `
   60%  { opacity:0.6; transform:scale(1.1); }
   100% { opacity:0;  transform:scale(1); }
 }
-/* ── toast ── */
+/* -- toast -- */
 @keyframes toast-slide-in  { 0%{opacity:0;transform:translateX(-50%) translateY(-16px) scale(0.88);} 100%{opacity:1;transform:translateX(-50%) translateY(0) scale(1);} }
 @keyframes toast-slide-out { 0%{opacity:1;transform:translateX(-50%) scale(1);} 100%{opacity:0;transform:translateX(-50%) scale(0.9) translateY(-10px);} }
-/* ── drop-target ── */
+/* -- drop-target -- */
 @keyframes target-ok { 0%,100%{box-shadow:0 0 0 0 rgba(74,222,128,0);} 50%{box-shadow:0 0 0 10px rgba(74,222,128,0.35);} }
 @keyframes target-ng { 0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0);} 50%{box-shadow:0 0 0 10px rgba(239,68,68,0.35);} }
 `;
@@ -215,9 +224,21 @@ function HungerBar({ hunger }: { hunger: number }) {
 // Main Component
 // ============================================================
 export default function RanchClient() {
+  // ★ ストアからグローバル経済データを取得
+  const coins          = useSafariStore((s) => s.coins);
+  const storeInventory = useSafariStore((s) => s.inventory);
+  const addToInventory  = useSafariStore((s) => s.addToInventory);
+  const consumeInventory = useSafariStore((s) => s.consumeInventory);
+  const spendCoins     = useSafariStore((s) => s.spendCoins);
+
+  // 便利ゲッター（インベントリ内の草・フン）
+  const grassCount = storeInventory["grass"] ?? 0;
+  const poopCount  = storeInventory["poop"]  ?? 0;
+
+  // ★ ローカル state（牧場固有：動物の動き・空腹・フンドロップ・UI）
   const [animals,   setAnimals]   = useState<Animal[]>(INITIAL_ANIMALS.map(a => ({ ...a, lastPoopTime: Date.now() - rand(0, POOP_INTERVAL) })));
   const [poops,     setPoops]     = useState<PoopDrop[]>([]);
-  const [inventory, setInventory] = useState<Inventory>({ coins: 1200, poop: 0, grass: 5 });
+  // ★ DELETED: const [inventory, setInventory] = useState<Inventory>({ coins: 1200, poop: 0, grass: 5 });
   const [particles, setParticles] = useState<Particle[]>([]);
   const [toasts,    setToasts]    = useState<Toast[]>([]);
   const [drag,      setDrag]      = useState<DragState>({ type: null, currentPos: { x: 0, y: 0 }, active: false });
@@ -229,10 +250,10 @@ export default function RanchClient() {
   const poopId      = useRef(0);
   const toastId     = useRef(0);
   const animalsRef  = useRef(animals);  useEffect(() => { animalsRef.current  = animals;   }, [animals]);
-  const inventoryRef= useRef(inventory); useEffect(() => { inventoryRef.current = inventory; }, [inventory]);
+  // ★ DELETED: inventoryRef（ストアの getState() で代替）
   const dragRef     = useRef(drag);      useEffect(() => { dragRef.current      = drag;      }, [drag]);
 
-  // ── movement ──
+  // -- movement --
   useEffect(() => {
     const iv = setInterval(() => {
       setAnimals(prev => prev.map(a => {
@@ -259,7 +280,7 @@ export default function RanchClient() {
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  // ── hunger ──
+  // -- hunger --
   useEffect(() => {
     const iv = setInterval(() => {
       setAnimals(prev => prev.map(a => ({ ...a, hunger: Math.min(100, a.hunger + 8) })));
@@ -267,7 +288,7 @@ export default function RanchClient() {
     return () => clearInterval(iv);
   }, []);
 
-  // ── poop drop ──
+  // -- poop drop --
   useEffect(() => {
     const iv = setInterval(() => {
       const now = Date.now();
@@ -287,7 +308,7 @@ export default function RanchClient() {
     return () => clearInterval(iv);
   }, []);
 
-  // ── cleanup ──
+  // -- cleanup --
   useEffect(() => {
     const iv = setInterval(() => {
       const now = Date.now();
@@ -297,7 +318,7 @@ export default function RanchClient() {
     return () => clearInterval(iv);
   }, []);
 
-  // ── drop-target highlight ──
+  // -- drop-target highlight --
   useEffect(() => {
     if (!drag.active || !fieldRef.current) { setDropTarget(null); return; }
     const rect = fieldRef.current.getBoundingClientRect();
@@ -311,7 +332,7 @@ export default function RanchClient() {
     setDropTarget(best);
   }, [drag.currentPos, drag.active]);
 
-  // ── spawn particles ──
+  // -- spawn particles --
   const spawnParticles = useCallback((animalId: number, cx: number, cy: number, kind: "success" | "refuse") => {
     const emojis = kind === "success"
       ? ["💖","💛","🎵","✨","🌟","💚","🎉"]
@@ -334,22 +355,24 @@ export default function RanchClient() {
     setParticles(prev => [...prev, ...ps]);
   }, []);
 
-  // ── add toast ──
+  // -- add toast --
   const addToast = useCallback((message: string, kind: "success" | "refuse") => {
     const id = toastId.current++;
     setToasts(prev => [...prev.slice(-2), { id, message, kind, createdAt: Date.now() }]);
   }, []);
 
-  // ── collect poop ──
+  // -- collect poop --
+  // ★ BEFORE: setInventory(prev => ({ ...prev, poop: prev.poop + 1 }))
+  // ★ AFTER : addToInventory('poop', 1) → グローバルインベントリへ反映
   const collectPoop = useCallback((pid: number, pos: Vec2) => {
     setPoops(prev => prev.map(p => p.id === pid ? { ...p, collecting: true } : p));
     setTimeout(() => {
       setPoops(prev => prev.filter(p => p.id !== pid));
-      setInventory(prev => ({ ...prev, poop: prev.poop + 1 }));
+      addToInventory("poop", 1);
     }, 650);
-  }, []);
+  }, [addToInventory]);
 
-  // ── feed ──
+  // -- feed --
   const feedAnimal = useCallback((animalId: number, foodType: FoodType) => {
     const curAnimals = animalsRef.current;
     const a = curAnimals.find(x => x.id === animalId);
@@ -361,10 +384,9 @@ export default function RanchClient() {
     const cy   = a.pos.y + ANIMAL_SIZE / 2;
 
     if (!ok) {
-      // ── REFUSE ──
+      // -- REFUSE --
       setAnimals(prev => prev.map(x => x.id === animalId ? { ...x, state: "refuse" } : x));
       spawnParticles(animalId, cx, cy, "refuse");
-      const dietM = DIET_META[a.diet];
       const msg =
         a.diet === "HERBIVORE" ? `🚫 ${a.name} は にくが たべられないよ！` :
         a.diet === "CARNIVORE" ? `🚫 ${a.name} は くさを たべないみたい…` :
@@ -374,13 +396,15 @@ export default function RanchClient() {
       return;
     }
 
-    // ── SUCCESS ──
+    // -- SUCCESS --
     const isSuper = food.superSynergy;
 
+    // ★ BEFORE: setInventory(prev => ({...prev, grass: prev.grass-1}))
+    // ★ AFTER : consumeInventory / spendCoins → ストアへ反映
     if (foodType === "grass") {
-      setInventory(prev => ({ ...prev, grass: prev.grass - 1 }));
+      consumeInventory("grass", 1);
     } else {
-      setInventory(prev => ({ ...prev, coins: prev.coins - FEED_COST }));
+      spendCoins(FEED_COST);
     }
 
     setAnimals(prev => prev.map(x => {
@@ -397,9 +421,9 @@ export default function RanchClient() {
       : `😊 ${a.name} が もぐもぐ！`;
     addToast(msg, "success");
     setTimeout(() => setAnimals(prev => prev.map(x => x.id === animalId ? { ...x, state: "idle" } : x)), 950);
-  }, [spawnParticles, addToast]);
+  }, [spawnParticles, addToast, consumeInventory, spendCoins]);
 
-  // ── drag handlers ──
+  // -- drag handlers --
   const onDragStart = useCallback((e: React.MouseEvent | React.TouchEvent, type: FoodType) => {
     e.preventDefault();
     const cx = "touches" in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
@@ -430,8 +454,10 @@ export default function RanchClient() {
         if (dv < minD) { minD = dv; hit = a; }
       }
       if (hit) {
-        const inv = inventoryRef.current;
-        const canAfford = d.type === "grass" ? inv.grass > 0 : inv.coins >= FEED_COST;
+        // ★ BEFORE: inventoryRef.current で在庫確認
+        // ★ AFTER : useSafariStore.getState() でストアの最新値を同期参照
+        const { inventory: si, coins: sc } = useSafariStore.getState();
+        const canAfford = d.type === "grass" ? (si["grass"] ?? 0) > 0 : sc >= FEED_COST;
         if (canAfford) {
           feedAnimal(hit.id, d.type);
         } else {
@@ -466,7 +492,7 @@ export default function RanchClient() {
         display: "flex", flexDirection: "column", alignItems: "center",
         fontFamily: "'Nunito','Mochiy Pop One',sans-serif", padding: "0 0 24px", userSelect: "none" }}>
 
-        {/* ── Toasts ── */}
+        {/* -- Toasts -- */}
         <div style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)",
           zIndex: 9000, display: "flex", flexDirection: "column", gap: 8, alignItems: "center", pointerEvents: "none" }}>
           {toasts.map(t => {
@@ -498,7 +524,7 @@ export default function RanchClient() {
           })}
         </div>
 
-        {/* ── Header ── */}
+        {/* -- Header -- */}
         <div style={{ width: "100%", maxWidth: 480,
           background: "linear-gradient(135deg,#ff8f00,#f9a825)",
           padding: "14px 18px 12px", borderRadius: "0 0 24px 24px",
@@ -509,7 +535,8 @@ export default function RanchClient() {
             <div style={{ fontSize: "0.68rem", color: "rgba(255,255,255,0.8)" }}>いのちのがっこう — Ranch Field</div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            {([ ["🪙", inventory.coins], ["💩", inventory.poop], ["🌿", inventory.grass] ] as [string,number][]).map(([icon, val]) => (
+            {/* ★ ストアの coins / inventory から取得 */}
+            {([ ["🪙", coins], ["💩", poopCount], ["🌿", grassCount] ] as [string,number][]).map(([icon, val]) => (
               <div key={icon} style={{ background: "rgba(255,255,255,0.25)", borderRadius: 12, padding: "5px 10px", textAlign: "center", minWidth: 44 }}>
                 <div style={{ fontSize: "1.1rem" }}>{icon}</div>
                 <div style={{ fontSize: "0.85rem", fontWeight: 900, color: "#fff" }}>{val}</div>
@@ -518,7 +545,7 @@ export default function RanchClient() {
           </div>
         </div>
 
-        {/* ── Field ── */}
+        {/* -- Field -- */}
         <div ref={fieldRef} style={{
           width: FIELD_W, height: FIELD_H, position: "relative",
           borderRadius: 20, overflow: "hidden",
@@ -550,7 +577,7 @@ export default function RanchClient() {
               animation:`grass-sway ${2+i*0.3}s ease-in-out infinite`, animationDelay:`${i*0.4}s`, pointerEvents:"none" }}>🌿</div>
           ))}
 
-          {/* ── Poops ── */}
+          {/* -- Poops -- */}
           {poops.map(p => (
             <button key={p.id} onClick={() => !p.collecting && collectPoop(p.id, p.pos)} style={{
               position:"absolute", left:p.pos.x, top:p.pos.y,
@@ -559,7 +586,7 @@ export default function RanchClient() {
               filter:"drop-shadow(1px 1px 2px rgba(0,0,0,0.3))", zIndex:5 }}>💩</button>
           ))}
 
-          {/* ── Particles ── */}
+          {/* -- Particles -- */}
           {particles.map(p => (
             <div key={p.id} style={{
               position: "absolute",
@@ -574,7 +601,7 @@ export default function RanchClient() {
             }}>{p.emoji}</div>
           ))}
 
-          {/* ── Animals ── */}
+          {/* -- Animals -- */}
           {animals.map(a => {
             const s = a.state;
             const emojiAnim =
@@ -592,7 +619,7 @@ export default function RanchClient() {
               <div key={a.id} style={{ position:"absolute", left:a.pos.x, top:a.pos.y, width:ANIMAL_SIZE, zIndex:10, cursor:"pointer", transition:"none" }}
                 onClick={() => setSelectedAnimal(prev => prev === a.id ? null : a.id)}>
 
-                {/* ── Success glow overlay ── */}
+                {/* -- Success glow overlay -- */}
                 {(s === "happy" || s === "superHappy") && (
                   <div style={{
                     position:"absolute", inset:-14, borderRadius:"50%", zIndex:-1, pointerEvents:"none",
@@ -602,7 +629,7 @@ export default function RanchClient() {
                     animation: "feedback-bg-ok 0.85s ease-out forwards",
                   }} />
                 )}
-                {/* ── Refuse red flash overlay ── */}
+                {/* -- Refuse red flash overlay -- */}
                 {s === "refuse" && (
                   <div style={{
                     position:"absolute", inset:-14, borderRadius:"50%", zIndex:-1, pointerEvents:"none",
@@ -611,7 +638,7 @@ export default function RanchClient() {
                   }} />
                 )}
 
-                {/* ── Status bubble ── */}
+                {/* -- Status bubble -- */}
                 <div style={{
                   position:"absolute", top:-52, left:"50%", transform:"translateX(-50%)",
                   background:"rgba(255,255,255,0.96)", borderRadius:12,
@@ -632,7 +659,7 @@ export default function RanchClient() {
                   </div>
                 </div>
 
-                {/* ── Drop-target ring ── */}
+                {/* -- Drop-target ring -- */}
                 {isTarget && (
                   <div style={{
                     position:"absolute", inset:-8, borderRadius:"50%",
@@ -642,7 +669,7 @@ export default function RanchClient() {
                   }} />
                 )}
 
-                {/* ── Big "×" or "♥" overlay when state fires ── */}
+                {/* -- Big "x" or "heart" overlay when state fires -- */}
                 {s !== "idle" && s !== "happy" && (
                   <div style={{
                     position:"absolute", top:"50%", left:"50%",
@@ -655,14 +682,14 @@ export default function RanchClient() {
                   </div>
                 )}
 
-                {/* ── Animal emoji ── */}
+                {/* -- Animal emoji -- */}
                 <div style={{
                   fontSize:`${ANIMAL_SIZE}px`, lineHeight:1, display:"block", textAlign:"center",
                   transform: a.dir === "left" ? "scaleX(-1)" : "scaleX(1)",
                   animation: emojiAnim,
                 }}>{a.emoji}</div>
 
-                {/* ── Tap popup ── */}
+                {/* -- Tap popup -- */}
                 {selectedAnimal === a.id && (
                   <div style={{
                     position:"absolute", top: ANIMAL_SIZE + 6, left:"50%", transform:"translateX(-50%)",
@@ -692,7 +719,7 @@ export default function RanchClient() {
           💩 タップで回収 ／ エサをドラッグ🐾 まちがえた食性はもどるよ！
         </div>
 
-        {/* ── Feed bar ── */}
+        {/* -- Feed bar -- */}
         <div style={{ width:"100%", maxWidth:480, background:"rgba(255,255,255,0.88)", borderRadius:22, padding:"14px 16px",
           boxShadow:"0 -2px 20px rgba(0,0,0,0.1), 0 4px 16px rgba(0,0,0,0.08)", backdropFilter:"blur(8px)" }}>
           <div style={{ fontSize:"0.72rem", fontWeight:700, color:"#888", marginBottom:10, textAlign:"center", letterSpacing:1 }}>
@@ -701,7 +728,7 @@ export default function RanchClient() {
           <div style={{ display:"flex", gap:12 }}>
             {/* grass */}
             {(() => {
-              const ok = inventory.grass > 0;
+              const ok = grassCount > 0;
               return (
                 <div onMouseDown={e => ok && onDragStart(e,"grass")} onTouchStart={e => ok && onDragStart(e,"grass")}
                   style={{ flex:1, borderRadius:16, padding:"12px 8px", textAlign:"center", touchAction:"none",
@@ -710,7 +737,7 @@ export default function RanchClient() {
                     boxShadow: ok ? "0 4px 12px rgba(74,222,128,0.4)" : "none", transition:"all 0.2s" }}>
                   <div style={{ fontSize:"1.8rem" }}>🌿</div>
                   <div style={{ fontSize:"0.75rem", fontWeight:800 }}>農場のくさ</div>
-                  <div style={{ fontSize:"0.6rem", opacity:0.85, marginTop:2 }}>のこり {inventory.grass}本</div>
+                  <div style={{ fontSize:"0.6rem", opacity:0.85, marginTop:2 }}>のこり {grassCount}本</div>
                   <div style={{ fontSize:"0.58rem", marginTop:4, opacity:0.85 }}>
                     <span style={{ background:"rgba(255,255,255,0.22)", borderRadius:6, padding:"1px 6px" }}>🌿そうしょく 🍀ざっしょく</span>
                   </div>
@@ -719,7 +746,7 @@ export default function RanchClient() {
             })()}
             {/* feed (meat) */}
             {(() => {
-              const ok = inventory.coins >= FEED_COST;
+              const ok = coins >= FEED_COST;
               return (
                 <div onMouseDown={e => ok && onDragStart(e,"feed")} onTouchStart={e => ok && onDragStart(e,"feed")}
                   style={{ flex:1, borderRadius:16, padding:"12px 8px", textAlign:"center", touchAction:"none",
@@ -728,7 +755,7 @@ export default function RanchClient() {
                     boxShadow: ok ? "0 4px 12px rgba(251,191,36,0.4)" : "none", transition:"all 0.2s" }}>
                   <div style={{ fontSize:"1.8rem" }}>🍖</div>
                   <div style={{ fontSize:"0.75rem", fontWeight:800 }}>コインのエサ</div>
-                  <div style={{ fontSize:"0.6rem", opacity:0.85, marginTop:2 }}>{FEED_COST}コイン（のこり {inventory.coins}）</div>
+                  <div style={{ fontSize:"0.6rem", opacity:0.85, marginTop:2 }}>{FEED_COST}コイン（のこり {coins}）</div>
                   <div style={{ fontSize:"0.58rem", marginTop:4, opacity:0.85 }}>
                     <span style={{ background:"rgba(255,255,255,0.22)", borderRadius:6, padding:"1px 6px" }}>🍖にくしょく 🍀ざっしょく</span>
                   </div>
@@ -738,7 +765,7 @@ export default function RanchClient() {
           </div>
         </div>
 
-        {/* ── Drag ghost ── */}
+        {/* -- Drag ghost -- */}
         {drag.active && drag.type && (
           <div style={{ position:"fixed", left:drag.currentPos.x-26, top:drag.currentPos.y-26,
             fontSize:"3.2rem", pointerEvents:"none", zIndex:9999,

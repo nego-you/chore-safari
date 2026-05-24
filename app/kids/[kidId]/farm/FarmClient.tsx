@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useSafariStore } from "@/store/useSafariStore";
 
 // ══════════════════════════════════════════════════════
 //  定数
@@ -548,7 +549,12 @@ function WeatherBar({ weather, nextChange }) {
 // ══════════════════════════════════════════════════════
 export default function FarmUI() {
   const saved=loadSt();
-  const [inv,setInv]=useState(saved?.inv??{wood:5,stone:2,iron:1,thread:0,poop:3,grass:0,coins:1200,wheat:0,carrot:0,potato:0,cotton:0,tomato:0,corn:0});
+  // ★ グローバルストアから inv/coins を取得
+  const inventory   = useSafariStore((s) => s.inventory);
+  const coins       = useSafariStore((s) => s.coins);
+  const addToInventory  = useSafariStore((s) => s.addToInventory);
+  const consumeInventory = useSafariStore((s) => s.consumeInventory);
+
   const [cells,setCells]=useState(()=>saved?.cells??initCells());
   const [now,setNow]=useState(Date.now());
   const [seedPicker,setSeedPicker]=useState(null); // cellId
@@ -616,7 +622,7 @@ export default function FarmUI() {
     else{setCooldownMs(rem);setCurrentAction(ACTION.EXHAUSTED);}
   },[now,cooldownEnd]);
 
-  useEffect(()=>{ saveSt({cells,inv,workCount,cooldownEnd,weather,nextWeatherChange}); },[cells,inv,workCount,cooldownEnd,weather,nextWeatherChange]);
+  useEffect(()=>{ saveSt({cells,workCount,cooldownEnd,weather,nextWeatherChange}); },[cells,workCount,cooldownEnd,weather,nextWeatherChange]);
 
   const showToast=(msg,dur=2400)=>{setToast(msg);setTimeout(()=>setToast(null),dur);};
   const addPop=(x,y,items)=>{const id=Date.now()+Math.random();setPops(p=>[...p,{id,x,y,items}]);setTimeout(()=>setPops(p=>p.filter(x=>x.id!==id)),1500);};
@@ -697,7 +703,7 @@ export default function FarmUI() {
       window.removeEventListener("touchmove",onMove);
       window.removeEventListener("touchend",onEnd);
     };
-  },[cells,inv]);
+  },[cells]);
 
   const handleDrop=useCallback((drag,targetId,cx,cy)=>{
     const cell=cells.find(c=>c.id===targetId); if(!cell)return;
@@ -708,8 +714,8 @@ export default function FarmUI() {
       triggerAction(ACTION.PLANTING,1200);
       showToast(`🌰 ${CROPS.find(c=>c.id===drag.cropId)?.label}をまいた！ みずやりしてね 💧`);
     } else if(drag.type==="manure"&&[S.GROWING,S.TYPHOON_DANGER].includes(cell.state)){
-      if(inv.poop<1){showToast("💩 フンが足りない！");return;}
-      setInv(iv=>({...iv,poop:iv.poop-1}));
+      if((useSafariStore.getState().inventory["poop"]??0)<1){showToast("💩 フンが足りない！");return;}
+      consumeInventory("poop",1);
       setCells(cs=>cs.map(c=>{
         if(c.id!==targetId)return c;
         const crop=CROPS.find(cr=>cr.id===c.crop); if(!crop||!c.readyAt)return c;
@@ -721,7 +727,7 @@ export default function FarmUI() {
       addPop(cx,cy,[{emoji:"💩",qty:-1,color:"#fbbf24"},{emoji:"✨",qty:0,big:true,color:"#4ade80"}]);
       showToast("💩✨ 肥料投入！ 品質アップ＆成長×2！");
     }
-  },[cells,inv,triggerAction]);
+  },[cells,triggerAction,consumeInventory]);
 
   // ══ セルアクション
   const handleAction=useCallback((type,cell,e)=>{
@@ -750,7 +756,9 @@ export default function FarmUI() {
             setHoldingId(null); setHoldProgress(0);
             // 草刈り副産物
             const drops=[{emoji:"🌿",qty:1,color:"#4ade80"}];
-            setInv(iv=>{const nx={...iv,grass:iv.grass+1}; if(Math.random()<0.3){nx.thread=(nx.thread||0)+1;drops.push({emoji:"🧵",qty:1,color:"#f9a8d4"});} if(Math.random()<0.25){nx.wood=(nx.wood||0)+1;drops.push({emoji:"🪵",qty:1,color:"#d97706"});} return nx;});
+            addToInventory("grass",1);
+            if(Math.random()<0.3){addToInventory("thread",1);drops.push({emoji:"🧵",qty:1,color:"#f9a8d4"});}
+            if(Math.random()<0.25){addToInventory("wood",1);drops.push({emoji:"🪵",qty:1,color:"#d97706"});}
             addPop(cx,cy,drops); drops.forEach(d=>addFly(d.emoji,cx,cy));
             setCells(cs=>cs.map(c=>c.id===cell.id?{...c,state:S.HARD_SOIL,tillProgress:0}:c));
             doWork(); triggerAction(ACTION.IDLE,300);
@@ -814,8 +822,8 @@ export default function FarmUI() {
         setCells(cs=>cs.map(c=>c.id===cell.id?{...c,state:S.TILLED,tillProgress:0}:c));
         // 土中の素材
         const drops=[];
-        if(Math.random()<0.2){drops.push({emoji:"🪨",qty:1,color:"#9ca3af"});setInv(iv=>({...iv,stone:(iv.stone||0)+1}));}
-        if(Math.random()<0.15){drops.push({emoji:"🔩",qty:1,color:"#94a3b8"});setInv(iv=>({...iv,iron:(iv.iron||0)+1}));}
+        if(Math.random()<0.2){drops.push({emoji:"🪨",qty:1,color:"#9ca3af"});addToInventory("stone",1);}
+        if(Math.random()<0.15){drops.push({emoji:"🔩",qty:1,color:"#94a3b8"});addToInventory("iron",1);}
         if(drops.length>0){addPop(cx,cy,drops);drops.forEach(d=>addFly(d.emoji,cx,cy));showToast("💎 はっけん！ 土の中に素材が！");}
         else showToast("✅ ふかふか！ 畝の完成！");
         doWork();
@@ -846,8 +854,8 @@ export default function FarmUI() {
       showToast(`${crop.icon} ${crop.label} ${q.stars} | ${rem}${cell.fertilized?" 💩速成中":""}`,3500);
 
     } else if(cell.state===S.TYPHOON_DANGER){
-      if(inv.wood<1){showToast("🪵 きのえだが足りない！");return;}
-      setInv(iv=>({...iv,wood:iv.wood-1}));
+      if((useSafariStore.getState().inventory["wood"]??0)<1){showToast("🪵 きのえだが足りない！");return;}
+      consumeInventory("wood",1);
       const newQ=Math.min(3,(cell.quality||1)+1);
       setCells(cs=>cs.map(c=>c.id===cell.id?{...c,state:S.GROWING,quality:newQ}:c));
       addPop(cx,cy,[{emoji:"🔨",qty:0,big:true,color:"#fbbf24"},{emoji:"✅",qty:0,big:true,color:"#4ade80"}]);
@@ -862,13 +870,14 @@ export default function FarmUI() {
       const popItems=[{emoji:crop.icon,qty,color:qm.color,big:true},...(grassDrop?[{emoji:"🌿",qty:1,color:"#4ade80"}]:[]),{emoji:qm.stars,qty:0,color:qm.color}];
       addPop(cx,cy,popItems); addFly(crop.icon,cx,cy);
       triggerAction(ACTION.HARVESTING,1500);
-      setInv(iv=>({...iv,[crop.id]:(iv[crop.id]||0)+qty,grass:iv.grass+grassDrop}));
+      addToInventory(crop.id,qty);
+      if(grassDrop>0) addToInventory("grass",grassDrop);
       setCells(cs=>cs.map(c=>c.id===cell.id?{...c,state:Math.random()<0.35?S.WEED:S.HARD_SOIL,crop:null,plantedAt:null,readyAt:null,yieldMult:1,tillProgress:0,quality:1,watered:false,fertilized:false}:c));
       if(q===3)showToast("🌈 ごくじょう！ さいこうのしゅうかく！！",3000);
       else if(q===2)showToast("⭐ りょうしつ！ いいできだよ！");
       else showToast("🌾 しゅうかくした！");
     }
-  },[cooldownEnd,doWork,triggerAction,inv,startGrow]);
+  },[cooldownEnd,doWork,triggerAction,addToInventory,consumeInventory,startGrow]);
 
   // 種タップ選択 → SEED_READY に遷移（モーダルを閉じる）
   const handleSeedPick = useCallback((cropId) => {
@@ -884,11 +893,11 @@ export default function FarmUI() {
 
   // インベントリ💩ドラッグ開始
   const handleManureDragStart=useCallback(e=>{
-    if(inv.poop<1)return;
+    if((useSafariStore.getState().inventory["poop"]??0)<1)return;
     e.currentTarget.setPointerCapture(e.pointerId);
     _dragState={type:"manure",x:e.clientX,y:e.clientY};
     setDragState({type:"manure",x:e.clientX,y:e.clientY});
-  },[inv.poop]);
+  },[]);
 
   const INV_ITEMS=[
     {k:"coins",e:"🪙"},{k:"poop",e:"💩"},{k:"grass",e:"🌿"},{k:"iron",e:"🔩"},
@@ -909,22 +918,25 @@ export default function FarmUI() {
             <div style={{fontWeight:900,fontSize:15,color:"#ffe98a",textShadow:"0 2px 4px rgba(0,0,0,0.5)",letterSpacing:1}}>お手伝いサファリ</div>
             <div style={{fontSize:10,color:"#a8d88a",fontWeight:700,letterSpacing:2}}>農場（ファーム）</div>
           </div>
-          <button onClick={()=>{if(confirm("リセット？")){localStorage.removeItem(LS_KEY);setCells(initCells());setWorkCount(0);setCooldownEnd(null);setCurrentAction(ACTION.IDLE);setWeather(WEATHER.SUNNY);setNextWeatherChange(Date.now()+WEATHER_CHANGE_MS);setInv({wood:5,stone:2,iron:1,thread:0,poop:3,grass:0,coins:1200,wheat:0,carrot:0,potato:0,cotton:0,tomato:0,corn:0});}}} style={{background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"4px 8px",color:"rgba(255,220,150,0.7)",fontSize:10,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>🔄</button>
+          <button onClick={()=>{if(confirm("リセット？")){localStorage.removeItem(LS_KEY);setCells(initCells());setWorkCount(0);setCooldownEnd(null);setCurrentAction(ACTION.IDLE);setWeather(WEATHER.SUNNY);setNextWeatherChange(Date.now()+WEATHER_CHANGE_MS);}}} style={{background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:8,padding:"4px 8px",color:"rgba(255,220,150,0.7)",fontSize:10,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>🔄</button>
         </div>
         <div ref={invBarRef} style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:2}}>
-          {INV_ITEMS.map(it=>(
+          {INV_ITEMS.map(it=>{
+            const cnt = it.k==="coins" ? coins : (inventory[it.k]??0);
+            return (
             <div key={it.k}
-              onPointerDown={it.k==="poop"&&inv.poop>0?handleManureDragStart:undefined}
-              style={{flexShrink:0,background:it.k==="poop"&&inv.poop>0?"rgba(180,130,20,0.45)":"rgba(0,0,0,0.32)",
+              onPointerDown={it.k==="poop"&&cnt>0?handleManureDragStart:undefined}
+              style={{flexShrink:0,background:it.k==="poop"&&cnt>0?"rgba(180,130,20,0.45)":"rgba(0,0,0,0.32)",
                 border:it.k==="poop"&&dragState?.type==="manure"?"2px solid #fbbf24":"1px solid rgba(255,255,255,0.15)",
                 borderRadius:10,padding:"3px 6px",textAlign:"center",minWidth:38,
-                cursor:it.k==="poop"&&inv.poop>0?"grab":"default",
+                cursor:it.k==="poop"&&cnt>0?"grab":"default",
                 touchAction:it.k==="poop"?"none":"auto",
                 transition:"border 0.2s",userSelect:"none"}}>
               <div style={{fontSize:14,lineHeight:1.2}}>{it.e}</div>
-              <div style={{fontSize:10,fontWeight:900,color:"#ffe98a"}}>{inv[it.k]??0}</div>
+              <div style={{fontSize:10,fontWeight:900,color:"#ffe98a"}}>{cnt}</div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

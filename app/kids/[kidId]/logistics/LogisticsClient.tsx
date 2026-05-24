@@ -14,13 +14,7 @@
 import { useState, useRef } from "react";
 import { useSafariStore } from "@/store/useSafariStore";
 
-// ── 後方互換シム: useContext(InventoryContext) を呼んでいる内部コンポーネントの
-//    置き換えを最小化するため、ContextValue 型だけ残してダミー Context を定義する。
-//    実際のデータは各コンポーネントで useSafariStore を直接参照する（下記参照）。
-// ※ 将来的には InventoryContext 参照を完全に削除してよい。
-const InventoryContext = createContext<null>(null);
-
-// ★ DELETED: InventoryProvider（ローカル state）は不要になった
+// ★ DELETED: InventoryContext / InventoryProvider（ローカル state）は完全削除済み
 // function InventoryProvider({ children }) { ... }
 
 // ============================================================

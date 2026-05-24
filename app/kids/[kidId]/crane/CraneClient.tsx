@@ -1,26 +1,29 @@
 "use client";
 
-// UFOキャッチャー仕様クレーンゲーム（実機挙動再現版）
+// UFOキャッチャー仕様クレーンゲーム（コイン投入フェーズ + クラフト素材景品版）
 // ステートマシン:
+//   WAIT_COIN（初期）→「🪙 100コイ��をいれる」ボタン → spendCoins(100) → IDLE
 //   IDLE → MOVING_RIGHT（右押し）→ WAITING_DEPTH（右離し）
 //   → MOVING_DEPTH（奥押し）→ DROPPING（奥離し・自動降下）
-//   → GRABBING → RETURNING → SHOW → IDLE
-// ボタン操作:
-//   ➡️ 押している間 右移動、離すと停止 → WAITING_DEPTH
-//   ⬆️ 押している間 奥移動（縮小演出）、離すと自動降下 → DROPPING
-// try-catch-finally でフリーズバグを完全修正（どのパスでも必ず IDLE に戻る）。
+//   → GRABBING → RETURNING → SHOW → WAIT_COIN（次のラウンドへ）
+//
+// 景品はクラフト工房で使え��素材（wood / stone / iron / thread / gunpowder）。
+// ゲット成功時は addToInventory(materialId, 1) でストアに追加。
+// API エラー時は addCoins(CRANE_COST) でコイン返還。
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { playCraneGame } from "../../actions";
 import { CRANE_COST } from "../../config";
+import { useSafariStore } from "@/store/useSafariStore";
 
 // ── 型 ──────────────────────────────────────────────────────────────────
 type Kid = { id: string; name: string; coinBalance: number };
 type Props = { initialKidId: string | null; kids: Kid[] };
 
 type MachineState =
-  | "IDLE"
+  | "WAIT_COIN"      // コイン投入待ち（初期 / ラウンド間）
+  | "IDLE"           // 投入済み・操作待ち
   | "MOVING_RIGHT"
   | "WAITING_DEPTH"
   | "MOVING_DEPTH"
@@ -29,18 +32,34 @@ type MachineState =
   | "RETURNING"
   | "SHOW";
 
+// ── クラフト素材テーブル ─────────────────────────────────────────────────
+const CRAFT_MATERIALS = [
+  { id: "wood",      emoji: "🪵", name: "きのえだ" },
+  { id: "stone",     emoji: "🪨", name: "いし"     },
+  { id: "iron",      emoji: "🔩", name: "てつ"     },
+  { id: "thread",    emoji: "🧶", name: "いと"     },
+  { id: "gunpowder", emoji: "🧨", name: "かやく"   },
+] as const;
+
+type CraftMaterial = (typeof CRAFT_MATERIALS)[number];
+
+const MATERIAL_EMOJI: Record<string, string> = Object.fromEntries(
+  CRAFT_MATERIALS.map((m) => [m.id, m.emoji]),
+);
+
+function pickMaterial(): CraftMaterial {
+  return CRAFT_MATERIALS[Math.floor(Math.random() * CRAFT_MATERIALS.length)];
+}
+
 type Prize = {
-  itemId: string;
-  itemName: string;
-  itemType: "FOOD" | "TRAP_PART";
-  count: number;
-  totalQuantity: number | null;
+  materialId: string;
+  name: string;
   emoji: string;
 };
 
 type Outcome =
-  | { kind: "caught"; prizes: Prize[] }
-  | { kind: "dropped"; prizes: Prize[] }
+  | { kind: "caught"; prize: Prize }
+  | { kind: "dropped"; prize: Prize }
   | null;
 
 // ── 定数 ────────────────────────────────────────────────────────────────
@@ -51,21 +70,16 @@ const CABLE_EXTENDED = "min(46vh, 255px)";
 const DROP_CHANCE = 0.2;
 
 const MS = {
-  moveX:        4000, // 左端→右端 全移動時間（1〜2 秒押すと中央付近へ）
-  depthInMs:    1200, // 奥移動 CSS transition（押し込み：ゆっくり）
-  depthOutMs:    400, // 奥移動 CSS transition（離し・戻り：素早く）
-  depthReturn:   400, // ※ 現在未使用（奥演出は DROPPING 中も維持し RETURNING で一括リセット）
-  moveY:        1500, // ケーブル降下
-  grab:         1200, // 掴む演出最低時間（API 待ちを含む）
-  retract:       700, // ケーブル収縮
-  returnX:      1800, // 左端へ帰還
-  dropping:      700, // アーム開いて結果前
-  fall:          850, // 途中落下アニメ
+  moveX:        4000,
+  depthInMs:    1200,
+  depthOutMs:    400,
+  moveY:        1500,
+  grab:         1200,
+  retract:       700,
+  returnX:      1800,
+  dropping:      700,
+  fall:          850,
 } as const;
-
-const ITEM_EMOJI: Record<string, string> = {
-  rope: "🪢", wood: "🪵", net: "🕸️", sturdy_trap: "🪤", hunter_net: "🥅",
-};
 
 const NAME_READING: Record<string, string> = {
   "美琴": "みこと",
@@ -73,7 +87,7 @@ const NAME_READING: Record<string, string> = {
   "叶泰": "かなた",
 };
 
-// ── ユーティリティ ────────────────────────────────────────────────────
+// ── ��ーティリティ ────────────────────────────────────────────────────
 const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 function NameRuby({ name }: { name: string }) {
@@ -87,19 +101,18 @@ function NameRuby({ name }: { name: string }) {
   );
 }
 
-// ── ヒープ生成（山積みアイテム） ──────────────────────────────────────
+// ── ヒー���生成（山積みアイテム：クラフト素材絵文字） ───────────────────
 type HeapItem = {
   key: string; emoji: string;
   dx: number; dy: number; rot: number; size: number; z: number;
 };
 
 function buildHeap(seed: number): HeapItem[] {
-  const keys = Object.keys(ITEM_EMOJI);
   let s = seed;
   const rand = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
   const items: HeapItem[] = Array.from({ length: 30 }, (_, i) => ({
     key: `${seed}-${i}`,
-    emoji: ITEM_EMOJI[keys[Math.floor(rand() * keys.length)]] ?? "❓",
+    emoji: CRAFT_MATERIALS[Math.floor(rand() * CRAFT_MATERIALS.length)].emoji,
     dx: (rand() - 0.5) * 220,
     dy: -rand() * 90,
     rot: (rand() - 0.5) * 50,
@@ -110,12 +123,13 @@ function buildHeap(seed: number): HeapItem[] {
   return items;
 }
 
-// ── メインコンポーネント ──────────────────────────────────────────────
+// ── ���インコンポーネント ──────────────────────────────────────────────
 export function CraneClient({ initialKidId, kids }: Props) {
   const [kidId, setKidId] = useState<string | null>(initialKidId);
   const selectedKid = kidId ? kids.find((k) => k.id === kidId) ?? null : null;
 
-  const [mState,        setMState]        = useState<MachineState>("IDLE");
+  // ── マシンステート ────────────────────────────────────────────────
+  const [mState,        setMState]        = useState<MachineState>("WAIT_COIN");
   const [craneX,        setCraneX]        = useState(X_START);
   const [xTransition,   setXTransition]   = useState("none");
   const [isDepth,       setIsDepth]       = useState(false);
@@ -126,20 +140,18 @@ export function CraneClient({ initialKidId, kids }: Props) {
   const [fallingAtX,    setFallingAtX]    = useState(X_START);
   const [outcome,       setOutcome]       = useState<Outcome>(null);
   const [error,         setError]         = useState<string | null>(null);
-  const [coinBalance,   setCoinBalance]   = useState(
-    initialKidId ? (kids.find((k) => k.id === initialKidId)?.coinBalance ?? 0) : 0,
-  );
-  const [heapSeed, setHeapSeed] = useState(1);
+  const [heapSeed,      setHeapSeed]      = useState(1);
   const heap = useMemo(() => buildHeap(heapSeed), [heapSeed]);
+
+  // ── Zustand ストア ────────────────────────────────────────────────
+  const coins          = useSafariStore((s) => s.coins);
+  const spendCoins     = useSafariStore((s) => s.spendCoins);
+  const addCoins       = useSafariStore((s) => s.addCoins);
+  const syncCoins      = useSafariStore((s) => s.syncCoins);
+  const addToInventory = useSafariStore((s) => s.addToInventory);
 
   const moveStartRef = useRef(0);
   const busyRef      = useRef(false);
-
-  useEffect(() => {
-    if (!kidId) return;
-    const k = kids.find((x) => x.id === kidId);
-    if (k) setCoinBalance(k.coinBalance);
-  }, [kidId, kids]);
 
   // MOVING_RIGHT: 右端に達したら自動で WAITING_DEPTH へ
   useEffect(() => {
@@ -151,7 +163,19 @@ export function CraneClient({ initialKidId, kids }: Props) {
     return () => clearTimeout(t);
   }, [mState]);
 
-  // ── ➡️ ボタン押し（右移動開始） ──────────────────────────────
+  // ── 🪙 コイン投入ボタン ───────────────────────────────────────────
+  const handleInsertCoin = useCallback(() => {
+    if (mState !== "WAIT_COIN") return;
+    const ok = spendCoins(CRANE_COST);
+    if (!ok) {
+      setError(`コインが たりないよ！（あと ${CRANE_COST - coins} まい ひつよう）`);
+      return;
+    }
+    setError(null);
+    setMState("IDLE");
+  }, [mState, spendCoins, coins]);
+
+  // ── ➡️ ボタン押し（右��動開始） ──────────────────────────────────
   const handleRightDown = useCallback(() => {
     if (mState !== "IDLE") return;
     moveStartRef.current = Date.now();
@@ -160,7 +184,7 @@ export function CraneClient({ initialKidId, kids }: Props) {
     setMState("MOVING_RIGHT");
   }, [mState]);
 
-  // ── ➡️ ボタン離し（右移動停止 → WAITING_DEPTH） ────────────
+  // ── ➡️ ボタン離し（右移動停止 → WAITING_DEPTH） ──────────────────
   const handleRightUp = useCallback(() => {
     if (mState !== "MOVING_RIGHT") return;
     const elapsed  = Date.now() - moveStartRef.current;
@@ -171,10 +195,9 @@ export function CraneClient({ initialKidId, kids }: Props) {
     setMState("WAITING_DEPTH");
   }, [mState]);
 
-  // ── ドロップシーケンス（フリーズバグ修正版） ──────────────────
-  // kid と capturedCraneX をパラメータで受け取り、クロージャで state を読まない。
-  // try-catch-finally により、成功・失敗・例外のいずれのパスでも
-  // 必ず busyRef=false かつ IDLE にリセットされることを保証する。
+  // ── ドロップシーケンス ────────────────────────────────────────────
+  // コインは WAIT_COIN フェーズで既に spendCoins 済み。
+  // API エラー時は addCoins(CRANE_COST) で返還す��。
   const runDropSequence = useCallback(
     async (capturedCraneX: number, kid: Kid) => {
       if (busyRef.current) return;
@@ -185,62 +208,54 @@ export function CraneClient({ initialKidId, kids }: Props) {
 
       const willDrop = Math.random() < DROP_CHANCE;
       const didCatch = !willDrop;
+
+      // 今ラウンドの景品（クラフト素材）を事前に決定
+      const material = pickMaterial();
+      const prize: Prize = {
+        materialId: material.id,
+        name:       material.name,
+        emoji:      material.emoji,
+      };
+
       let reachedShow = false;
 
       try {
-        // 奥移動の transform（translateY / scale）を維持したまま降下開始。
-        // setIsDepth(false) は RETURNING まで呼ばない。
-        // これにより「右・奥に移動したその真下」へそのまま降りていく。
-
-        // ① DROPPING: ケーブル降下（CSS height transition）
+        // ① DROPPING: ケーブル降下
         setMState("DROPPING");
         setCableExtended(true);
+        setCarriedEmojis([material.emoji]);
         await wait(MS.moveY);
 
-        // ② GRABBING: ツメを閉じて API 呼び出し
+        // ② GRABBING: ツ��を閉じて API 呼び出し
         setMState("GRABBING");
         setClawClosed(true);
         const grabStart = Date.now();
 
-        // API 呼び出し。サーバーエラー・ネットワーク障害どちらも安全に処理。
         let result: Awaited<ReturnType<typeof playCraneGame>>;
         try {
           result = await playCraneGame(kid.id, didCatch);
         } catch (apiErr) {
           console.error("[CraneGame] playCraneGame threw:", apiErr);
-          setError("つうしん エラーが おきたよ。もう いちど どうぞ");
-          return; // finally で IDLE にリセット
+          // コイン返還（投入済みなので）
+          addCoins(CRANE_COST);
+          setError("つうしん エラーが おきたよ。コイ���を かえすね");
+          return;
         }
 
         if (!result.success) {
           console.error("[CraneGame] API returned failure:", result.error);
-          setError(result.error ?? "エラーが発生したよ");
-          return; // finally で IDLE にリセット
+          addCoins(CRANE_COST);
+          setError((result.error ?? "エラーが発生したよ") + "（コインを かえすね）");
+          return;
         }
 
-        // レスポンスデータをオプショナルチェーンで安全に取り出す
-        const rawItems = result.items ?? [];
-        setCoinBalance(result.newCoinBalance ?? 0);
+        // DB 確定値でストアを同期
+        syncCoins(result.newCoinBalance ?? 0);
 
-        const prizes: Prize[] = rawItems.map((it) => ({
-          itemId:        it?.itemId        ?? "",
-          itemName:      it?.itemName      ?? "アイテム",
-          itemType:      (it?.itemType     ?? "TRAP_PART") as "FOOD" | "TRAP_PART",
-          count:         it?.count         ?? 1,
-          totalQuantity: it?.totalQuantity ?? null,
-          emoji:         ITEM_EMOJI[it?.itemId ?? ""] ?? "🎁",
-        }));
-        setCarriedEmojis(
-          prizes.flatMap((p) => Array.from({ length: Math.max(1, p.count) }, () => p.emoji)),
-        );
-
-        // 掴む演出の残り時間を消化
         const grabRemaining = MS.grab - (Date.now() - grabStart);
         if (grabRemaining > 0) await wait(grabRemaining);
 
-        // ③ RETURNING: ケーブル収縮 + 奥移動リセット + 左端への帰還（同時進行）
-        // ここで初めて isDepth をリセットする。
-        // depth revert（400ms）と左帰還（1800ms）が同時に走り、自然な帰宅アニメになる。
+        // ③ RETURNING
         setMState("RETURNING");
         setCableExtended(false);
         setIsDepth(false);
@@ -248,7 +263,6 @@ export function CraneClient({ initialKidId, kids }: Props) {
         setCraneX(X_START);
 
         if (willDrop) {
-          // 帰還の 40% 地点でアイテムを落とす（ハラハラ演出）
           const dropDelay = Math.round(MS.returnX * 0.4);
           await wait(dropDelay);
           setFallingAtX(capturedCraneX + (X_START - capturedCraneX) * 0.4);
@@ -260,26 +274,26 @@ export function CraneClient({ initialKidId, kids }: Props) {
           await wait(MS.returnX - dropDelay + 100);
           setXTransition("none");
           reachedShow = true;
-          setOutcome({ kind: "dropped", prizes });
+          setOutcome({ kind: "dropped", prize });
           setMState("SHOW");
         } else {
-          // ケーブル収縮と横移動の長い方が終わるまで待つ
           await wait(Math.max(MS.retract, MS.returnX) + 100);
           setClawClosed(false);
           await wait(MS.dropping);
           setXTransition("none");
           setCarriedEmojis([]);
+          // ゲット成功 → インベントリに追加
+          addToInventory(material.id, 1);
           reachedShow = true;
-          setOutcome({ kind: "caught", prizes });
+          setOutcome({ kind: "caught", prize });
           setMState("SHOW");
         }
       } catch (e) {
         console.error("[CraneGame] unexpected error:", e);
-        setError("エラーが発生したよ。もう いちど どうぞ");
+        addCoins(CRANE_COST);
+        setError("エラーが発生したよ。コインを かえすね");
       } finally {
         busyRef.current = false;
-        // SHOW に到達していない場合（エラー・失敗パス）は必ず IDLE に戻す。
-        // これがフリーズバグ修正の核心。
         if (!reachedShow) {
           setCableExtended(false);
           setClawClosed(false);
@@ -288,36 +302,31 @@ export function CraneClient({ initialKidId, kids }: Props) {
           setFalling(false);
           setXTransition("none");
           setCraneX(X_START);
-          setMState("IDLE");
+          setMState("WAIT_COIN");
         }
       }
     },
-    [],
+    [addCoins, syncCoins, addToInventory],
   );
 
-  // ── ⬆️ ボタン押し（奥移動開始） ──────────────────────────────
+  // ── ⬆️ ボタン押し（奥移動開始） ──────────────────────────────────
   const handleDepthDown = useCallback(() => {
     if (mState !== "WAITING_DEPTH") return;
     setIsDepth(true);
     setMState("MOVING_DEPTH");
   }, [mState]);
 
-  // ── ⬆️ ボタン離し（自動降下トリガー） ─────────────────────────
+  // ── ⬆️ ボタン離し（自動降下トリガー）────────────────────────────
+  // ���インは投入済みなので残高��ェックは不要
   const handleDepthUp = useCallback(() => {
     if (mState !== "MOVING_DEPTH" || !selectedKid) return;
-    if (coinBalance < CRANE_COST) {
-      setError(`コインが ${CRANE_COST - coinBalance} まい たりないよ`);
-      setIsDepth(false);
-      setMState("WAITING_DEPTH");
-      return;
-    }
     runDropSequence(craneX, selectedKid);
-  }, [mState, selectedKid, coinBalance, craneX, runDropSequence]);
+  }, [mState, selectedKid, craneX, runDropSequence]);
 
-  // ── リセット ────────────────────────────────────────────────────
+  // ── リセット（SHOW → WAIT_COIN） ──────────────────────────────────
   const closeResult = () => {
     setOutcome(null);
-    setMState("IDLE");
+    setMState("WAIT_COIN");   // ��ラウンドはコイン投入から
     setCraneX(X_START);
     setXTransition("none");
     setCableExtended(false);
@@ -328,7 +337,7 @@ export function CraneClient({ initialKidId, kids }: Props) {
     setHeapSeed((s) => s + 1);
   };
 
-  // ── キッド未選択 ──────────────────────────────────────────────
+  // ── キッド未��択 ──────────────────────────────────────────────────
   if (!selectedKid) {
     return (
       <main className="min-h-screen bg-gradient-to-b from-fuchsia-100 via-pink-100 to-amber-100 px-4 py-10">
@@ -353,27 +362,28 @@ export function CraneClient({ initialKidId, kids }: Props) {
             href="/kids"
             className="mt-10 inline-block text-sm font-bold text-fuchsia-700 underline"
           >
-            ← こども ポータルへ もどる
+            ← こど��� ポー��ルへ もどる
           </Link>
         </div>
       </main>
     );
   }
 
-  // ── ボタン有効状態 ────────────────────────────────────────────
+  // ── ボタン有効状態 ────────────────────────────────────────────────
+  const canAfford           = coins >= CRANE_COST;
+  const isPlayPhase         = mState !== "WAIT_COIN" && mState !== "SHOW";
   const rightBtnInteractive = mState === "IDLE" || mState === "MOVING_RIGHT";
   const rightBtnHeld        = mState === "MOVING_RIGHT";
   const depthBtnInteractive = mState === "WAITING_DEPTH" || mState === "MOVING_DEPTH";
   const depthBtnHeld        = mState === "MOVING_DEPTH";
-  const noCoins = mState === "WAITING_DEPTH" && coinBalance < CRANE_COST;
 
   const STATUS: Partial<Record<MachineState, string>> = {
-    IDLE:          "➡️ ボタンを おして クレーンを うごかそう！",
+    IDLE:          "➡️ ボタンを おし��� ��レーンを うごかそう！",
     MOVING_RIGHT:  "➡️ ボタンを はなすと とまるよ！",
     WAITING_DEPTH: "⬆️ ボタンを おして 奥に うごかそう！",
-    MOVING_DEPTH:  "⬆️ ボタンを はなすと アームが おちるよ！",
+    MOVING_DEPTH:  "⬆️ ボタンを はなすと アー��が おちるよ！",
     DROPPING:      "⬇️ アームが おりていくよ…",
-    GRABBING:      "✊ ぐっと つかんだ！",
+    GRABBING:      "✊ ぐっ��� ���かんだ！",
     RETURNING:     "⬆️ もちあげて もどってるよ…",
   };
 
@@ -409,85 +419,135 @@ export function CraneClient({ initialKidId, kids }: Props) {
 
             <div className="mt-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 rounded-xl bg-white/80 px-3 py-2 text-xs font-bold text-fuchsia-700 ring-1 ring-fuchsia-300">
-                🪙 1かい {CRANE_COST}
+                🪙 1かい {CRANE_COST} コイン
               </div>
               <div className="rounded-xl bg-rose-100 px-3 py-2 text-[10px] font-extrabold text-rose-700 ring-1 ring-rose-300">
-                {DROP_CHANCE * 100}% で とちゅう おち！？
+                {DROP_CHANCE * 100}% で と��ゅう おち！？
               </div>
             </div>
           </div>
         </section>
 
-        {/* 操作パネル（2ボタン） */}
+        {/* ──��� 操作パネル ──────────────────────────────────────────── */}
         <section className="rounded-3xl bg-white/90 p-5 shadow-lg ring-2 ring-fuchsia-200">
-          <div className="flex items-center justify-center gap-8">
 
-            {/* ➡️ 右ボタン */}
-            <button
-              type="button"
-              onPointerDown={handleRightDown}
-              onPointerUp={handleRightUp}
-              onPointerLeave={handleRightUp}
-              disabled={!rightBtnInteractive}
-              aria-label="右にうごかす"
-              style={{ touchAction: "none" }}
-              className={[
-                "flex h-28 w-36 select-none flex-col items-center justify-center gap-1 rounded-3xl text-5xl font-black shadow-xl transition active:scale-[0.92]",
-                rightBtnHeld
-                  ? "bg-gradient-to-br from-amber-400 to-orange-500 text-white ring-4 ring-amber-300/70"
-                  : rightBtnInteractive
-                    ? "bg-gradient-to-br from-fuchsia-400 to-violet-500 text-white hover:brightness-110"
+          {/* ── WAIT_COIN：コイン投入 UI ── */}
+          {mState === "WAIT_COIN" && (
+            <div className="flex flex-col items-center gap-3 py-2">
+              <p className="text-xs font-bold text-fuchsia-600/70 tracking-widest">
+                ── コ��ンを いれてね ──
+              </p>
+              <button
+                type="button"
+                onClick={handleInsertCoin}
+                disabled={!canAfford}
+                className={[
+                  "w-full max-w-xs rounded-3xl py-5 text-2xl font-black shadow-xl transition active:scale-95",
+                  canAfford
+                    ? "bg-gradient-to-br from-amber-400 to-yellow-500 text-white hover:brightness-110 ring-4 ring-amber-300/60"
                     : "cursor-not-allowed bg-gray-200 text-gray-400 shadow-none",
-              ].join(" ")}
-            >
-              ➡️
-              <span className="text-xs font-extrabold leading-none">
-                {rightBtnHeld ? "はなして！" : "みぎへ"}
-              </span>
-            </button>
-
-            {/* ⬆️ 奥ボタン */}
-            <button
-              type="button"
-              onPointerDown={handleDepthDown}
-              onPointerUp={handleDepthUp}
-              onPointerLeave={handleDepthUp}
-              disabled={!depthBtnInteractive}
-              aria-label="奥にうごかして アームをおとす"
-              style={{ touchAction: "none" }}
-              className={[
-                "flex h-28 w-36 select-none flex-col items-center justify-center gap-1 rounded-3xl text-5xl font-black shadow-xl transition active:scale-[0.92]",
-                depthBtnHeld
-                  ? "bg-gradient-to-br from-rose-400 to-pink-500 text-white ring-4 ring-rose-300/70"
-                  : depthBtnInteractive
-                    ? "bg-gradient-to-br from-rose-500 to-fuchsia-600 text-white hover:brightness-110"
-                    : "cursor-not-allowed bg-gray-200 text-gray-400 shadow-none",
-              ].join(" ")}
-            >
-              ⬆️
-              <span className="text-xs font-extrabold leading-none">
-                {depthBtnHeld ? "はなして！" : "おくへ"}
-              </span>
-            </button>
-          </div>
-
-          {error && (
-            <p className="mt-4 text-center text-sm font-bold text-rose-500">{error}</p>
+                ].join(" ")}
+              >
+                🪙 {CRANE_COST} コインを いれる
+              </button>
+              {canAfford ? (
+                <p className="text-xs font-bold text-fuchsia-500/70">
+                  いま {coins} コイン もっ���るよ
+                </p>
+              ) : (
+                <p className="text-sm font-bold text-rose-500">
+                  コインが たりないよ！（あと {CRANE_COST - coins} まい ひつよう）
+                </p>
+              )}
+              {error && (
+                <p className="text-sm font-bold text-rose-500">{error}</p>
+              )}
+            </div>
           )}
-          {noCoins && !error && (
-            <p className="mt-3 text-center text-sm font-bold text-rose-500">
-              コインが {CRANE_COST - coinBalance} まい たりないよ
-            </p>
-          )}
-          {!noCoins && !error && STATUS[mState] && (
-            <p className="mt-3 min-h-[1.25rem] text-center text-xs font-bold text-fuchsia-600/80">
-              {STATUS[mState]}
-            </p>
+
+          {/* ── IDLE 以降：クレーン操作 2 ボタン ── */}
+          {isPlayPhase && (
+            <>
+              <div className="flex items-center justify-center gap-8">
+
+                {/* ➡️ 右ボタン */}
+                <button
+                  type="button"
+                  onPointerDown={handleRightDown}
+                  onPointerUp={handleRightUp}
+                  onPointerLeave={handleRightUp}
+                  disabled={!rightBtnInteractive}
+                  aria-label="右にうごかす"
+                  style={{ touchAction: "none" }}
+                  className={[
+                    "flex h-28 w-36 select-none flex-col items-center justify-center gap-1 rounded-3xl text-5xl font-black shadow-xl transition active:scale-[0.92]",
+                    rightBtnHeld
+                      ? "bg-gradient-to-br from-amber-400 to-orange-500 text-white ring-4 ring-amber-300/70"
+                      : rightBtnInteractive
+                        ? "bg-gradient-to-br from-fuchsia-400 to-violet-500 text-white hover:brightness-110"
+                        : "cursor-not-allowed bg-gray-200 text-gray-400 shadow-none",
+                  ].join(" ")}
+                >
+                  ➡️
+                  <span className="text-xs font-extrabold leading-none">
+                    {rightBtnHeld ? "はなして！" : "みぎへ"}
+                  </span>
+                </button>
+
+                {/* ⬆️ 奥ボタン */}
+                <button
+                  type="button"
+                  onPointerDown={handleDepthDown}
+                  onPointerUp={handleDepthUp}
+                  onPointerLeave={handleDepthUp}
+                  disabled={!depthBtnInteractive}
+                  aria-label="奥にうごかして アームをおとす"
+                  style={{ touchAction: "none" }}
+                  className={[
+                    "flex h-28 w-36 select-none flex-col items-center justify-center gap-1 rounded-3xl text-5xl font-black shadow-xl transition active:scale-[0.92]",
+                    depthBtnHeld
+                      ? "bg-gradient-to-br from-rose-400 to-pink-500 text-white ring-4 ring-rose-300/70"
+                      : depthBtnInteractive
+                        ? "bg-gradient-to-br from-rose-500 to-fuchsia-600 text-white hover:brightness-110"
+                        : "cursor-not-allowed bg-gray-200 text-gray-400 shadow-none",
+                  ].join(" ")}
+                >
+                  ⬆️
+                  <span className="text-xs font-extrabold leading-none">
+                    {depthBtnHeld ? "はなして！" : "おくへ"}
+                  </span>
+                </button>
+              </div>
+
+              {error && (
+                <p className="mt-4 text-center text-sm font-bold text-rose-500">{error}</p>
+              )}
+              {!error && STATUS[mState] && (
+                <p className="mt-3 min-h-[1.25rem] text-center text-xs font-bold text-fuchsia-600/80">
+                  {STATUS[mState]}
+                </p>
+              )}
+            </>
           )}
         </section>
 
+        {/* 景品ヒント */}
+        <div className="rounded-2xl bg-white/60 px-4 py-3 ring-1 ring-fuchsia-200">
+          <p className="text-center text-[11px] font-bold text-fuchsia-600/70 mb-2">
+            🎁 ゲットで���る クラフト素材
+          </p>
+          <div className="flex justify-center gap-4">
+            {CRAFT_MATERIALS.map((m) => (
+              <div key={m.id} className="flex flex-col items-center gap-0.5">
+                <span className="text-2xl">{m.emoji}</span>
+                <span className="text-[9px] font-bold text-fuchsia-700/70">{m.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <p className="text-center text-xs text-fuchsia-700/70">
-          ✨ ガチャより いい アイテムが でるよ。でも {DROP_CHANCE * 100}% で とちゅう おとすかも… ✨
+          ��� クラフト工房で そうびが つくれるよ！ でも {DROP_CHANCE * 100}% で とちゅう おとすかも… ✨
         </p>
       </div>
 
@@ -497,10 +557,6 @@ export function CraneClient({ initialKidId, kids }: Props) {
 }
 
 // ── PlayArea ──────────────────────────────────────────────────────────
-// X 移動は `left` CSS transition で制御。
-// 奥移動（MOVING_DEPTH）は transform の translateY + scale で表現し、
-// 「クレーンが画面奥に入っていく」ように見せる。
-// 押し込み時は depthInMs でゆっくり、離し時は depthOutMs で素早く戻る。
 function PlayArea({
   heap,
   craneX,
@@ -528,8 +584,6 @@ function PlayArea({
     ? "translateX(-50%) translateY(-18px) scale(0.88)"
     : "translateX(-50%) translateY(0px) scale(1)";
 
-  // 押し込み時はゆっくり（depthInMs）、離し時は素早く戻る（depthOutMs）。
-  // X 移動の transition と合成して同一要素で両方を同時アニメーション。
   const depthDur = `${isDepth ? MS.depthInMs : MS.depthOutMs}ms`;
   const combinedTransition =
     xTransition === "none"
@@ -570,7 +624,7 @@ function PlayArea({
         </p>
       </div>
 
-      {/* 山積みアイテム */}
+      {/* 山積み素材 */}
       <div
         className="pointer-events-none absolute"
         style={{ left: "50%", bottom: "8%", transform: "translateX(-50%)" }}
@@ -597,10 +651,10 @@ function PlayArea({
         />
       </div>
 
-      {/* 上部レール */}
+      {/* 上��レ���ル */}
       <div className="absolute inset-x-3 top-3 h-2 rounded-full bg-gradient-to-b from-slate-700 to-slate-500 shadow" />
 
-      {/* ── クレーングループ ── */}
+      {/* ─��� ��レーングループ ── */}
       <div
         className="pointer-events-none absolute flex flex-col items-center"
         style={{
@@ -611,10 +665,8 @@ function PlayArea({
           zIndex: 25,
         }}
       >
-        {/* キャリッジ */}
         <div className="h-3 w-16 rounded-md bg-gradient-to-b from-slate-700 to-slate-900 shadow-lg" />
 
-        {/* ケーブル */}
         <div
           style={{
             width: "3px",
@@ -627,7 +679,6 @@ function PlayArea({
           }}
         />
 
-        {/* アーム */}
         <div className="relative flex h-10 w-12 items-end justify-center">
           <span
             className="absolute -left-1 bottom-0 block h-7 w-2 rounded-b-md bg-gradient-to-b from-slate-500 to-slate-800"
@@ -714,13 +765,11 @@ function ResultModal({
   outcome,
   onClose,
 }: {
-  outcome: { kind: "caught"; prizes: Prize[] } | { kind: "dropped"; prizes: Prize[] };
+  outcome: NonNullable<Outcome>;
   onClose: () => void;
 }) {
-  const isCaught   = outcome.kind === "caught";
-  const prizes     = outcome.prizes;
-  const totalCount = prizes.reduce((s, p) => s + p.count, 0);
-  const isMulti    = totalCount > 1;
+  const isCaught = outcome.kind === "caught";
+  const prize    = outcome.prize;
 
   useEffect(() => {
     if (!isCaught) return;
@@ -729,15 +778,15 @@ function ResultModal({
       const mod = await import("canvas-confetti");
       if (cancelled) return;
       mod.default({
-        particleCount: isMulti ? 280 : 180,
-        spread: isMulti ? 130 : 100,
+        particleCount: 180,
+        spread: 100,
         origin: { y: 0.55 },
         colors: ["#fda4af", "#fcd34d", "#a7f3d0", "#bae6fd", "#ddd6fe", "#fbcfe8"],
         zIndex: 9999,
       });
     })();
     return () => { cancelled = true; };
-  }, [isCaught, isMulti]);
+  }, [isCaught]);
 
   return (
     <div
@@ -748,7 +797,7 @@ function ResultModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`mx-4 max-w-sm rounded-[2rem] p-1 shadow-2xl ${
+        className={`mx-4 w-full max-w-sm rounded-[2rem] p-1 shadow-2xl ${
           isCaught
             ? "bg-gradient-to-br from-yellow-200 via-pink-200 to-violet-200"
             : "bg-gradient-to-br from-slate-300 via-slate-200 to-slate-300"
@@ -758,81 +807,48 @@ function ResultModal({
           {isCaught ? (
             <>
               <p className="text-sm font-extrabold tracking-[0.3em] text-fuchsia-500">
-                {isMulti ? `✨ ${totalCount}こ まとめてゲット ✨` : "✨ ゲット ✨"}
+                ✨ ゲット ✨
               </p>
-              <div className="relative my-4 flex flex-wrap items-center justify-center gap-2">
-                {prizes.map((p, i) => (
-                  <span
-                    key={`${p.itemId}-${i}`}
-                    aria-hidden
-                    className={`relative drop-shadow-lg animate-bounce ${isMulti ? "text-6xl" : "text-8xl"}`}
-                    style={{ animationDelay: `${i * 80}ms` }}
-                  >
-                    {p.emoji}
-                    {p.count > 1 && (
-                      <span className="absolute -right-2 -bottom-1 rounded-full bg-fuchsia-500 px-2 py-0.5 text-xs font-extrabold text-white shadow">
-                        ×{p.count}
-                      </span>
-                    )}
-                  </span>
-                ))}
+              <div className="relative my-5 flex items-center justify-center">
+                <span
+                  aria-hidden
+                  className="text-9xl drop-shadow-lg animate-bounce"
+                >
+                  {prize.emoji}
+                </span>
               </div>
-              <ul className="space-y-1 text-base font-black text-fuchsia-700">
-                {prizes.map((p) => (
-                  <li key={p.itemId} className="flex items-center justify-center gap-2">
-                    <span>{p.itemName}</span>
-                    {p.count > 1 && (
-                      <span className="rounded-full bg-fuchsia-100 px-2 py-0.5 text-xs font-extrabold text-fuchsia-700">
-                        × {p.count}
-                      </span>
-                    )}
-                    {p.totalQuantity !== null && (
-                      <span className="text-xs font-bold text-fuchsia-500/80">
-                        （そうこ {p.totalQuantity}）
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-2 text-base font-bold text-fuchsia-500">を ゲットしたよ！</p>
+              <p className="text-2xl font-black text-fuchsia-800">
+                「{prize.emoji} {prize.name}」
+              </p>
+              <p className="mt-1 text-base font-bold text-fuchsia-600">
+                を ゲットしたよ！
+              </p>
+              <p className="mt-3 rounded-xl bg-fuchsia-50 px-4 py-2 text-xs font-bold text-fuchsia-500 ring-1 ring-fuchsia-200">
+                🎒 リュックに いれた���！ クラフト工房で つかってね
+              </p>
             </>
           ) : (
             <>
               <p className="animate-pulse text-sm font-extrabold tracking-[0.3em] text-slate-500">
                 💧 とちゅう おち 💧
               </p>
-              <div className="relative my-4 flex flex-wrap items-center justify-center gap-2">
-                {prizes.map((p, i) => (
-                  <span
-                    key={`${p.itemId}-${i}`}
-                    aria-hidden
-                    className={`relative opacity-60 grayscale drop-shadow-lg ${isMulti ? "text-6xl" : "text-8xl"}`}
-                    style={{ animation: `shake 0.4s linear 3` }}
-                  >
-                    {p.emoji}
-                    {p.count > 1 && (
-                      <span className="absolute -right-2 -bottom-1 rounded-full bg-slate-500 px-2 py-0.5 text-xs font-extrabold text-white shadow">
-                        ×{p.count}
-                      </span>
-                    )}
-                  </span>
-                ))}
+              <div className="relative my-5 flex items-center justify-center">
+                <span
+                  aria-hidden
+                  className="text-9xl opacity-50 grayscale drop-shadow-lg"
+                  style={{ animation: "shake 0.4s linear 3" }}
+                >
+                  {prize.emoji}
+                </span>
               </div>
-              <ul className="space-y-0.5 text-base font-black text-slate-700">
-                {prizes.map((p) => (
-                  <li key={p.itemId}>
-                    {p.itemName}
-                    {p.count > 1 && (
-                      <span className="ml-1 text-xs font-extrabold text-slate-500">× {p.count}</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-3 text-sm font-bold text-slate-600">
-                {isMulti ? "ああっ！ まとめて おちちゃった…" : "ああっ！ とちゅうで おちちゃった…"}
+              <p className="text-xl font-black text-slate-700">
+                「{prize.emoji} {prize.name}」
               </p>
-              <p className="mt-1 text-xs text-rose-500">
-                ※ コインだけ なくなったよ（ざんねん…）
+              <p className="mt-1 text-sm font-bold text-slate-500">
+                あ�����！ とちゅうで おちちゃった…
+              </p>
+              <p className="mt-2 text-xs text-rose-500">
+                ※ コインだけ なくなったよ（ざ�������…）
               </p>
             </>
           )}
@@ -840,11 +856,11 @@ function ResultModal({
           <button
             type="button"
             onClick={onClose}
-            className={`mt-6 rounded-full px-6 py-2 text-sm font-extrabold text-white shadow transition hover:brightness-110 ${
+            className={`mt-7 w-full rounded-full py-3 text-base font-extrabold text-white shadow transition hover:brightness-110 active:scale-95 ${
               isCaught ? "bg-fuchsia-500" : "bg-slate-500"
             }`}
           >
-            {isCaught ? "やったー！" : "もう いっかい！"}
+            {isCaught ? "やったー！ 🎉" : "もう いっかい！"}
           </button>
         </div>
       </div>
@@ -868,3 +884,6 @@ const CSS_KEYFRAMES = `
     100% { transform: translateX(0); }
   }
 `;
+
+// MATERIAL_EMOJI は buildHeap 内で使用済み（未使用警告抑制）
+void MATERIAL_EMOJI;
