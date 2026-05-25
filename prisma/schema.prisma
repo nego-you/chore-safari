@@ -124,11 +124,15 @@ model User {
   longestStreak        Int       @default(0) @map("longest_streak")
   lastQuestCompletedAt DateTime? @map("last_quest_completed_at")
   streakStatus         String    @default("ACTIVE") @map("streak_status")
+  // ── AIガイドキャラ設定 ─────────────────────────────────────────
+  //   activeGuideAnimalId : 現在「相棒」として設定している CaughtAnimal の ID（null=未設定）
+  activeGuideAnimalId  String?          @map("active_guide_animal_id")
+  activeGuideAnimal    CaughtAnimal?    @relation("UserActiveGuide", fields: [activeGuideAnimalId], references: [id], onDelete: SetNull)
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")
   transactions       CoinTransaction[]
   gachaTransactions  GachaTransaction[]
-  caughtAnimals      CaughtAnimal[]
+  caughtAnimals      CaughtAnimal[]     @relation("CaughtByUser")
   bonusNotifications   SpecialBonusNotification[]
   penaltyNotifications PenaltyNotification[]
   questSubmissions     QuestSubmission[]
@@ -322,7 +326,9 @@ model CaughtAnimal {
   animalId       String       @map("animal_id")
   animal         Animal       @relation(fields: [animalId], references: [id], onDelete: Cascade)
   caughtByUserId String       @map("caught_by_user_id")
-  caughtBy       User         @relation(fields: [caughtByUserId], references: [id], onDelete: Cascade)
+  caughtBy       User         @relation("CaughtByUser", fields: [caughtByUserId], references: [id], onDelete: Cascade)
+  // このCaughtAnimalを相棒（ガイド）に設定しているユーザー（通常0か1人）
+  guidedByUsers  User[]       @relation("UserActiveGuide")
   // どの罠とエサで捕まえたかの記録（後で組み合わせ確率を分析できるように残しておく）。
   trapItemId     String?      @map("trap_item_id")
   foodItemId     String?      @map("food_item_id")
