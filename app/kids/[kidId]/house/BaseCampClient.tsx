@@ -21,6 +21,7 @@ import { useState, useEffect, useCallback, useTransition } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { setGuideAnimal, getGuideSuggestion } from "@/actions/guide";
 import GuideChatModal from "@/components/GuideChatModal";
+import { useGuide } from "@/app/kids/[kidId]/GuideContext";
 
 // ─────────────────────────────────────────────────────────────
 // 型定義（page.tsx の select から推論）
@@ -106,6 +107,9 @@ export default function BaseCampClient({
   const [guide, setGuide] = useState<GuideAnimalItem | null>(initialGuide);
   const [animals] = useState<CaughtAnimalItem[]>(initialAnimals);
 
+  // GlobalHeader のガイドウィジェットと同期するための Context
+  const { setGuide: setGlobalGuide } = useGuide();
+
   // 自発提案の吹き出し
   const [suggestion, setSuggestion] = useState<{
     text: string;
@@ -144,11 +148,19 @@ export default function BaseCampClient({
       const result = await setGuideAnimal(kidId, ca.id);
       if (result.success) {
         // 楽観的 UI 更新: GuideAnimalItem にキャスト
-        setGuide({
+        const newGuide: GuideAnimalItem = {
           ...ca,
           personality: ca.personality
             ? { firstPerson: ca.personality.firstPerson, toneRule: "" }
             : null,
+        };
+        setGuide(newGuide);
+        // GlobalHeader のガイドウィジェットにも即時反映
+        setGlobalGuide({
+          id: ca.id,
+          animalName: ca.animal.genericName,
+          emoji: ca.animal.emoji,
+          intimacyScore: ca.intimacyScore,
         });
         setSuggestion(null); // 新ガイドになったら吹き出しをリセット
       }

@@ -444,6 +444,36 @@ export function WorldMapPortal({
   const router = useRouter();
   const mapRef = useRef<HTMLDivElement>(null);
 
+  // ── BGM ───────────────────────────────────────────────────────
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [muted, setMuted] = useState(false);
+
+  useEffect(() => {
+    const audio = new Audio("/sounds/Beyond_The_Tall_Grass.mp3");
+    audio.loop = true;
+    audio.volume = 0.45;
+    audioRef.current = audio;
+
+    // ユーザー操作後でないと autoplay できないブラウザ対応：
+    // コンポーネントマウント後すぐに再生を試み、失敗しても無視。
+    audio.play().catch(() => {/* autoplay policy: wait for interaction */});
+
+    return () => {
+      audio.pause();
+      audio.src = "";
+    };
+  }, []);
+
+  // ミュート切り替え
+  const toggleMute = () => {
+    if (!audioRef.current) return;
+    const next = !muted;
+    audioRef.current.muted = next;
+    setMuted(next);
+    // ミュート解除 → まだ再生されていなければ再生開始
+    if (!next) audioRef.current.play().catch(() => {});
+  };
+
   useEffect(() => { injectMapCSS(); }, []);
 
   const players = buildPlayers(children);
@@ -571,6 +601,21 @@ export function WorldMapPortal({
           boxShadow: "0 10px 40px rgba(0,0,0,.18)",
         }}>
           <WeatherEffect weather={weather} />
+
+          {/* BGM ミュートボタン */}
+          <button
+            onClick={toggleMute}
+            title={muted ? "BGM をオンにする" : "BGM をオフにする"}
+            style={{
+              position: "absolute", top: 10, right: 10, zIndex: 30,
+              background: "rgba(0,0,0,.38)", border: "none", borderRadius: 14,
+              width: 36, height: 36, cursor: "pointer", fontSize: 18,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              backdropFilter: "blur(6px)", color: "#fff",
+            }}
+          >
+            {muted ? "🔇" : "🔊"}
+          </button>
 
           {/* 地形デコレーション（広域に散らす） */}
           {[
