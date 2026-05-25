@@ -15,7 +15,14 @@ import {
   type QuestCategory,
 } from "@/lib/quest-categories";
 
-type KidLite = { id: string; name: string; coinBalance: number };
+type KidLite = {
+  id: string;
+  name: string;
+  coinBalance: number;
+  currentStreak: number;
+  longestStreak: number;
+  streakStatus: string; // "ACTIVE" | "HOLD"
+};
 
 type QuestLite = {
   id: string;
@@ -205,6 +212,33 @@ export function QuestsClient({
             <p className="mt-3 text-xs text-emerald-700/70">
               いま あそんでるのは <NameRuby name={selectedKid.name} /> ちゃん
             </p>
+
+            {/* ── ストリークインジケーター ── */}
+            {selectedKid.currentStreak > 0 && (
+              <div className="mt-3 flex justify-center">
+                {selectedKid.streakStatus === "HOLD" ? (
+                  <div className="rounded-2xl bg-sky-100 px-4 py-2 ring-2 ring-sky-300">
+                    <p className="text-lg font-black text-sky-700">
+                      🧊 れんぞく {selectedKid.currentStreak}日 ピンチ！
+                    </p>
+                    <p className="mt-0.5 text-xs font-bold text-sky-600">
+                      今日クエストを2つクリアするとコンボがふっかつするよ！
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl bg-amber-100 px-4 py-2 ring-2 ring-amber-300">
+                    <p className="text-xl font-black text-amber-700">
+                      🔥 れんぞく {selectedKid.currentStreak}日 たっせい中！
+                    </p>
+                    {selectedKid.currentStreak >= 5 && (
+                      <p className="mt-0.5 text-xs font-bold text-amber-600">
+                        すごい！このちょうしで がんばろう！
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </section>
 

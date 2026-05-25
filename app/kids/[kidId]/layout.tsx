@@ -19,9 +19,25 @@ export default async function KidLayout({
 }) {
   const { kidId } = await params;
 
-  const kid = await prisma.user.findFirst({
+  // select に streak フィールドを含める。prisma generate 前は型に含まれないため
+  // as unknown 経由でキャストしている（DB マイグレーション後は正常動作）。
+  const kid = await (prisma.user.findFirst as unknown as (args: unknown) => Promise<{
+    id: string;
+    name: string;
+    coinBalance: number;
+    currentStreak: number;
+    longestStreak: number;
+    streakStatus: string;
+  } | null>)({
     where: { id: kidId, role: "CHILD" },
-    select: { id: true, name: true, coinBalance: true },
+    select: {
+      id: true,
+      name: true,
+      coinBalance: true,
+      currentStreak: true,
+      longestStreak: true,
+      streakStatus: true,
+    },
   });
 
   if (!kid) notFound();
@@ -31,6 +47,9 @@ export default async function KidLayout({
       kidId={kid.id}
       kidName={kid.name}
       coinBalance={kid.coinBalance}
+      currentStreak={kid.currentStreak ?? 0}
+      longestStreak={kid.longestStreak ?? 0}
+      streakStatus={kid.streakStatus ?? "ACTIVE"}
     >
       {children}
     </SafariLayoutShell>

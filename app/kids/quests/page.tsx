@@ -17,10 +17,16 @@ export default async function QuestsPage({
   const kidParam = Array.isArray(sp.kid) ? sp.kid[0] : sp.kid;
 
   const [kids, quests, submissions] = await Promise.all([
-    prisma.user.findMany({
+(prisma.user.findMany as unknown as (args: unknown) => Promise<Array<{
+      id: string; name: string; coinBalance: number;
+      currentStreak: number; longestStreak: number; streakStatus: string;
+    }>>)({
       where: { role: "CHILD" },
       orderBy: { birthDate: "asc" },
-      select: { id: true, name: true, coinBalance: true },
+      select: {
+        id: true, name: true, coinBalance: true,
+        currentStreak: true, longestStreak: true, streakStatus: true,
+      },
     }),
     // kid 未指定のときは「全員用」のみを返す。
     // kid 指定時は「全員用 OR 自分専用」を返す。
@@ -69,7 +75,14 @@ export default async function QuestsPage({
   return (
     <QuestsClient
       initialKidId={initialKid}
-      kids={kids}
+      kids={kids.map((k) => ({
+        id: k.id,
+        name: k.name,
+        coinBalance: k.coinBalance,
+        currentStreak: k.currentStreak,
+        longestStreak: k.longestStreak,
+        streakStatus: k.streakStatus,
+      }))}
       quests={quests.map((q) => ({
         id: q.id,
         title: q.title,

@@ -10,6 +10,7 @@ import {
   normalizeCategory,
   type QuestCategory,
 } from "@/lib/quest-categories";
+import { computeStreakUpdate, type StreakMilestone } from "@/lib/streak";
 
 const CHORE_AMOUNT = 100;
 const PENALTY_AMOUNT = 50;
@@ -130,6 +131,14 @@ export type QuestReviewResult =
       questTitle: string;
       rewardCoins: number;
       newCoinBalance?: number;
+      // ストリーク情報（APPROVED 時のみ）
+      streak?: {
+        currentStreak: number;
+        longestStreak: number;
+        streakStatus: string;
+        didIncrement: boolean;
+        milestone: StreakMilestone | null;
+      };
     }
   | { success: false; error: string };
 
@@ -148,24 +157,76 @@ export async function approveQuest(
     return { success: false, error: "すでに処理済みの申請です" };
   }
 
+  // ストリークフィールドを型アサーションで取得
+  // （prisma generate 前は生成型に含まれないが、DB マイグレーション後は実値が存在する）
+  type UserWithStreak = typeof submission.user & {
+    currentStreak: number;
+    longestStreak: number;
+    lastQuestCompletedAt: Date | null;
+    streakStatus: string;
+  };
+  const userWithStreak = submission.user as UserWithStreak;
+
   try {
     const result = await prisma.$transaction(async (tx) => {
+      const now = new Date();
+
       // PENDING のものだけを APPROVED に。二重承認は count=0 で弾く。
       const upd = await tx.questSubmission.updateMany({
         where: { id: submissionId, status: "PENDING" },
-        data: { status: "APPROVED", reviewedAt: new Date() },
+        data: { status: "APPROVED", reviewedAt: now },
       });
       if (upd.count !== 1) {
         throw new Error("ALREADY_PROCESSED");
       }
 
-      // 報酬コイン加算
-      const updatedUser = await tx.user.update({
-        where: { id: submission.userId },
-        data: { coinBalance: { increment: submission.quest.rewardCoins } },
+      // ── ストリーク判定 ───────────────────────────────────
+      // 今日（JST）すでに承認済みのクエスト数を取得（この承認を含まない）
+      const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+      const todayJST = jstNow.toISOString().slice(0, 10); // "YYYY-MM-DD"
+      const todayStart = new Date(`${todayJST}T00:00:00+09:00`);
+      const todayEnd = new Date(`${todayJST}T23:59:59+09:00`);
+
+      const todayApprovedCount = await tx.questSubmission.count({
+        where: {
+          userId: submission.userId,
+          status: "APPROVED",
+          reviewedAt: { gte: todayStart, lte: todayEnd },
+          id: { not: submissionId },
+        },
       });
 
-      // コイン履歴に「クエスト完了報酬」として記録
+      const streakUpdate = computeStreakUpdate(
+        {
+          currentStreak: userWithStreak.currentStreak ?? 0,
+          longestStreak: userWithStreak.longestStreak ?? 0,
+          lastQuestCompletedAt: userWithStreak.lastQuestCompletedAt ?? null,
+          streakStatus: userWithStreak.streakStatus ?? "ACTIVE",
+        },
+        now,
+        todayApprovedCount,
+      );
+
+      // ── コイン加算（クエスト報酬 + ストリークマイルストーン） ──
+      const milestoneCoins = streakUpdate.milestone?.bonusCoins ?? 0;
+      const totalCoins = submission.quest.rewardCoins + milestoneCoins;
+
+      const updatedUser = await tx.user.update({
+        where: { id: submission.userId },
+        // streak フィールドは prisma generate 前は型に含まれないため as any で回避
+        // （DB マイグレーション適用後は正常動作する）
+        data: {
+          coinBalance: { increment: totalCoins },
+          ...(({
+            currentStreak: streakUpdate.currentStreak,
+            longestStreak: streakUpdate.longestStreak,
+            lastQuestCompletedAt: streakUpdate.lastQuestCompletedAt,
+            streakStatus: streakUpdate.streakStatus,
+          }) as Record<string, unknown>),
+        } as Parameters<typeof tx.user.update>[0]["data"],
+      });
+
+      // クエスト報酬の履歴
       await tx.coinTransaction.create({
         data: {
           userId: submission.userId,
@@ -175,7 +236,52 @@ export async function approveQuest(
         },
       });
 
-      return { newBalance: updatedUser.coinBalance };
+      // マイルストーン報酬の履歴 + 通知
+      if (streakUpdate.milestone) {
+        const m = streakUpdate.milestone;
+        await tx.coinTransaction.create({
+          data: {
+            userId: submission.userId,
+            amount: m.bonusCoins,
+            kind: "BONUS",
+            reason: `🔥 れんぞく${m.days}日ボーナス：${m.label}`,
+          },
+        });
+        await tx.specialBonusNotification.create({
+          data: {
+            userId: submission.userId,
+            reason: `🔥 れんぞく${m.days}日たっせい！ ${m.label}`,
+            coinAmount: m.bonusCoins,
+            isRead: false,
+          },
+        });
+
+        // 素材アイテムを SharedInventoryItem に追加
+        if (m.bonusItem) {
+          const item = m.bonusItem;
+          await tx.sharedInventoryItem.upsert({
+            where: { itemId: item.itemId },
+            update: { quantity: { increment: item.quantity } },
+            create: {
+              itemId: item.itemId,
+              itemName: item.itemName,
+              quantity: item.quantity,
+              itemType: item.itemType as never,
+            },
+          });
+        }
+      }
+
+      return {
+        newBalance: updatedUser.coinBalance,
+        streak: {
+          currentStreak: streakUpdate.currentStreak,
+          longestStreak: streakUpdate.longestStreak,
+          streakStatus: streakUpdate.streakStatus,
+          didIncrement: streakUpdate.didIncrement,
+          milestone: streakUpdate.milestone,
+        },
+      };
     });
 
     revalidatePath("/bank");
@@ -190,6 +296,7 @@ export async function approveQuest(
       questTitle: submission.quest.title,
       rewardCoins: submission.quest.rewardCoins,
       newCoinBalance: result.newBalance,
+      streak: result.streak,
     };
   } catch (err) {
     if (err instanceof Error && err.message === "ALREADY_PROCESSED") {

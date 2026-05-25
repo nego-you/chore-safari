@@ -27,11 +27,14 @@ function StoreInitializer({ kidId, coinBalance }: { kidId: string; coinBalance: 
   return null;
 }
 
-// ─── レイアウトシェル ─────────────────────────��──────────────────────────────
+// ─── レイアウトシェル ─────────────────────────────────────────────────────────
 type Props = {
   kidId: string;
   kidName: string;
   coinBalance: number;
+  currentStreak: number;
+  longestStreak: number;
+  streakStatus: string;
   children: React.ReactNode;
 };
 
@@ -39,13 +42,22 @@ export function SafariLayoutShell({
   kidId,
   kidName,
   coinBalance,
+  currentStreak,
+  longestStreak,
+  streakStatus,
   children,
 }: Props) {
   return (
     <WeatherProvider>
       {/* ユーザー切り替えを検出し DB 値でストアを初期化 */}
       <StoreInitializer kidId={kidId} coinBalance={coinBalance} />
-      <GlobalHeader kidId={kidId} kidName={kidName} />
+      <GlobalHeader
+        kidId={kidId}
+        kidName={kidName}
+        currentStreak={currentStreak}
+        longestStreak={longestStreak}
+        streakStatus={streakStatus}
+      />
       {children}
     </WeatherProvider>
   );

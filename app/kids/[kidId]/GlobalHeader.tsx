@@ -14,6 +14,42 @@ import { usePathname } from "next/navigation";
 import { useWeather } from "./WeatherContext";
 import { useSafariStore } from "@/store/useSafariStore";
 
+// ── ストリークバッジ ──────────────────────────────────────────
+function StreakBadge({ streak, status }: { streak: number; status: string }) {
+  const isHold = status === "HOLD";
+  return (
+    <div
+      title={
+        isHold
+          ? `ピンチ！今日クエストを2つクリアするとコンボが復活するよ`
+          : `れんぞく${streak}日達成中！`
+      }
+      style={{
+        marginTop: 2,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 2,
+        background: isHold
+          ? "linear-gradient(135deg,#bfdbfe,#dbeafe)"
+          : "linear-gradient(135deg,#fef08a,#fde68a)",
+        border: isHold ? "1.5px solid #93c5fd" : "1.5px solid #fbbf24",
+        borderRadius: 20,
+        padding: "1px 7px",
+        fontSize: 10,
+        fontWeight: 800,
+        color: isHold ? "#1d4ed8" : "#92400e",
+        whiteSpace: "nowrap",
+        boxShadow: isHold
+          ? "0 0 0 2px #bfdbfe44"
+          : "0 0 0 2px #fde68a44",
+      }}
+    >
+      <span style={{ fontSize: 12 }}>{isHold ? "🧊" : "🔥"}</span>
+      {isHold ? "ピンチ！" : `れんぞく${streak}日`}
+    </div>
+  );
+}
+
 // ── 子供ごとのアバター定義 ────────────────────────────────────
 const KID_AVATAR: Record<string, { emoji: string; color: string }> = {
   "美琴": { emoji: "🦭", color: "#0ea5e9" },
@@ -32,9 +68,12 @@ const NAME_READING: Record<string, string> = {
 type Props = {
   kidId: string;
   kidName: string;
+  currentStreak: number;
+  longestStreak: number;
+  streakStatus: string; // "ACTIVE" | "HOLD"
 };
 
-export function GlobalHeader({ kidId, kidName }: Props) {
+export function GlobalHeader({ kidId, kidName, currentStreak, streakStatus }: Props) {
   const weather = useWeather();
   const pathname = usePathname();
 
@@ -126,7 +165,7 @@ export function GlobalHeader({ kidId, kidName }: Props) {
             {av.emoji}
           </div>
 
-          {/* 名前 + コイン */}
+          {/* 名前 + コイン + ストリーク */}
           <div style={{ lineHeight: 1.2 }}>
             <div style={{ fontSize: 14, fontWeight: 800, color: "#1f2937" }}>
               {yomi}
@@ -147,6 +186,10 @@ export function GlobalHeader({ kidId, kidName }: Props) {
                 {coins.toLocaleString()}
               </span>
             </div>
+            {/* ── ストリークインジケーター ── */}
+            {currentStreak > 0 && (
+              <StreakBadge streak={currentStreak} status={streakStatus} />
+            )}
           </div>
         </div>
 

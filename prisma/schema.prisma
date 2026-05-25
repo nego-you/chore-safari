@@ -115,6 +115,15 @@ model User {
   //   helpedGrandma  : おばあちゃんを助けたフラグ（Phase2/3 の引き金）
   kizunaPoints      Int                @default(0) @map("kizuna_points")
   helpedGrandma     Boolean            @default(false) @map("helped_grandma")
+  // ── ストリーク（連続達成ボーナス）管理 ─────────────────────────
+  //   currentStreak        : 現在の連続達成日数
+  //   longestStreak        : 過去最高の連続達成日数
+  //   lastQuestCompletedAt : 最後にクエストが承認された日時
+  //   streakStatus         : "ACTIVE" = 通常 / "HOLD" = 1日空きで復活チャンス中
+  currentStreak        Int       @default(0) @map("current_streak")
+  longestStreak        Int       @default(0) @map("longest_streak")
+  lastQuestCompletedAt DateTime? @map("last_quest_completed_at")
+  streakStatus         String    @default("ACTIVE") @map("streak_status")
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")
   transactions       CoinTransaction[]
