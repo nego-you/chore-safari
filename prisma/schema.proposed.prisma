@@ -1,0 +1,663 @@
+// Chore Safari - Prisma Schema（新・エコシステム版 提案）
+// PostgreSQL backend
+//
+// 2026-05-25 大規模刷新:
+//   - Hunt/Weapon → TameSession/TameItemMaster（武器廃止・友好的なテイムへ）
+//   - AnimalCompanion（旧CaughtAnimal）に currentLocation / hungerLevel / moodLevel 追加
+//   - スタミナ管理を User モデルに追加
+//   - インベントリを UserInventoryItem に統合（旧 UserMaterial + UserTool を廃止）
+//   - エコサイクル用モデル新設（FarmPlot / PoopLog / AnimalCareLog）
+//   - NpcRelation 新設（恩送りの詳細管理）
+//   - CoinTxKind.PENALTY → DONATION（表現の温かい置き換え）
+//   - コインの増減はすべて Server Actions + DB トランザクションで管理（Zustand は UI 状態のみ）
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Enums
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+enum UserRole {
+  CHILD
+  PARENT
+
+  @@map("user_role")
+}
+
+// コイン取引の種別
+// PENALTY を廃止し、DONATION（どうぶつ保護活動への寄付）として表現する
+enum CoinTxKind {
+  CHORE      // お手伝い報酬（親の承認後にのみ付与）
+  DONATION   // 旧PENALTY → 「保護活動への寄付」として UI 表示
+  BONUS      // 特大ボーナス
+  PURCHASE   // アイテム購入（コイン消費）
+  GACHA      // クレーンゲーム消費
+  ADJUSTMENT // 管理者による手動調整
+
+  @@map("coin_tx_kind")
+}
+
+enum Rarity {
+  COMMON
+  RARE
+  EPIC
+  LEGENDARY
+
+  @@map("rarity")
+}
+
+enum QuestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@map("quest_status")
+}
+
+// テイム（仲良くなる）方法
+//   LURE  : 好きな食べ物を置いて引き寄せる（旧 TRAP の置き換え。パッシブ）
+//   MUSIC : オカリナ・タンバリン等の楽器を演奏する（アクティブ）
+//   TOY   : ボール・ロープ等のおもちゃで遊んであげる（アクティブ）
+//   SONG  : 子守唄・リズムゲーム（アクティブ・高難度）
+enum TameMethod {
+  LURE
+  MUSIC
+  TOY
+  SONG
+
+  @@map("tame_method")
+}
+
+// テイムセッションのライフサイクル（旧 HuntStatus の置き換え）
+//   APPROACHING : 動物が近づいてきている（appearsAt まで待機中）
+//   APPEARED    : 動物が姿を現した（タイミングゲーム可能）
+//   BEFRIENDED  : テイム成功（仲良くなった）
+//   FLED        : 失敗で逃げられた
+enum TameStatus {
+  APPROACHING
+  APPEARED
+  BEFRIENDED
+  FLED
+
+  @@map("tame_status")
+}
+
+// 動物の現在の配置場所
+//   BASECAMP     : BaseCamp（仲間になったばかり／ふれあい場所）
+//   FARM         : 牧場（糞を落とす、エサが必要）
+//   ZOO          : 動物園（展示・来場者ポイント）
+//   HALL_OF_FAME : 殿堂（寿命を全うした記念）
+enum AnimalLocation {
+  BASECAMP
+  FARM
+  ZOO
+  HALL_OF_FAME
+
+  @@map("animal_location")
+}
+
+// 統合インベントリのアイテムカテゴリ
+//   旧 ItemType (FOOD / TRAP_PART / MATERIAL) を大幅拡張
+enum ItemCategory {
+  MATERIAL     // 素材（クレーンゲームドロップ）
+  LURE         // 誘いエサ（クラフト品。テイムで使用）
+  TOY          // おもちゃ（クラフト品。世話・テイムで使用）
+  MUSIC_ITEM   // 楽器（クラフト品。テイムで使用・消耗しない）
+  ANIMAL_FOOD  // 動物のエサ（野菜・収穫物を加工したもの）
+  CROP         // 収穫物（農場から獲得した野菜等。エサ加工の元）
+  FERTILIZER   // 肥料（糞を加工したもの。農場で使用）
+  POOP         // 糞（牧場で回収。肥料にクラフト可能）
+  CRAFT_TOOL   // 工房ツール（スタミナ消費軽減等。消耗しない）
+
+  @@map("item_category")
+}
+
+// 農場区画のステータス
+enum FarmPlotStatus {
+  EMPTY    // 空き区画
+  SEEDED   // 種まき済み（成長中）
+  READY    // 収穫可能
+
+  @@map("farm_plot_status")
+}
+
+// 動物の世話アクションの種別
+enum CareActionType {
+  FEED   // エサやり（hungerLevel を回復）
+  PLAY   // 遊ぶ（moodLevel を回復）
+  TALK   // AI会話（intimacyScore を少し上昇）
+  GROOM  // ブラッシング等（moodLevel + intimacyScore を上昇）
+
+  @@map("care_action_type")
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Models
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+model User {
+  id                   String    @id @default(cuid())
+  name                 String
+  // 年齢は保存せず、表示時に birthDate から動的に算出する
+  birthDate            DateTime  @map("birth_date") @db.Date
+  role                 UserRole  @default(CHILD)
+  // ── コイン残高（DB が Single Source of Truth。Server Actions でのみ更新） ──
+  coinBalance          Int       @default(0) @map("coin_balance")
+  isTestAccount        Boolean   @default(false) @map("is_test")
+  // ── スタミナ管理 ────────────────────────────────────────────────
+  //   回復は「現実の時間経過のみ」。Server Action で消費/計算する。
+  //   staminaLastUpdatedAt を基準に、経過分を計算してから操作する。
+  staminaCurrent       Int       @default(100) @map("stamina_current")
+  staminaMax           Int       @default(100) @map("stamina_max")
+  staminaLastUpdatedAt DateTime  @default(now()) @map("stamina_last_updated_at")
+  // ── 恩送り（ペイ・フォワード）イベント管理 ────────────────────────
+  kizunaPoints         Int       @default(0) @map("kizuna_points")
+  helpedGrandma        Boolean   @default(false) @map("helped_grandma")
+  // ── ストリーク（連続達成ボーナス）管理 ─────────────────────────────
+  currentStreak        Int       @default(0) @map("current_streak")
+  longestStreak        Int       @default(0) @map("longest_streak")
+  lastQuestCompletedAt DateTime? @map("last_quest_completed_at")
+  streakStatus         String    @default("ACTIVE") @map("streak_status")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  transactions         CoinTransaction[]
+  gachaTransactions    GachaTransaction[]
+  companions           AnimalCompanion[]        // 旧 caughtAnimals
+  bonusNotifications   SpecialBonusNotification[]
+  donationNotifications DonationNotification[]  // 旧 penaltyNotifications
+  questSubmissions     QuestSubmission[]
+  tameSessions         TameSession[]            // 旧 hunts
+  inventory            UserInventoryItem[]      // 統合インベントリ
+  farmPlots            FarmPlot[]
+  activities           UserActivity[]
+  npcRelations         NpcRelation[]
+  targetedQuests       Quest[]
+  targetedPenalties    Penalty[]
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────────────────────
+// コイン取引履歴
+//   amount: 正 = 入金、負 = 出金
+//   すべての増減はこのテーブルへの INSERT + User.coinBalance 更新を
+//   1 トランザクション内で行うこと（Server Actions で徹底）。
+// ─────────────────────────────────────────────────────────────
+model CoinTransaction {
+  id        String     @id @default(cuid())
+  userId    String     @map("user_id")
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount    Int        // 正=入金、負=出金
+  kind      CoinTxKind
+  reason    String?
+  createdAt DateTime   @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("coin_transactions")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 統合インベントリ（1ユーザー × 1アイテムID = 1行）
+//   旧: UserMaterial + UserTool + SharedInventoryItem の役割を統合。
+//   アイテムの詳細定義（素材か・クラフトレシピ等）は lib/items.ts の定数で管理。
+//   quantity が 0 の行も残す（UI 上でアイテム欄を常に表示するため）。
+// ─────────────────────────────────────────────────────────────
+model UserInventoryItem {
+  id        String       @id @default(cuid())
+  userId    String       @map("user_id")
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemId    String       @map("item_id")    // "wood_branch" / "ocarina" / "carrot" etc.
+  itemName  String       @map("item_name")  // 表示名（キャッシュ用）
+  category  ItemCategory
+  quantity  Int          @default(0)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  @@unique([userId, itemId])
+  @@index([userId, category])
+  @@map("user_inventory")
+}
+
+// 家族共有倉庫（図鑑完成バッジ等の家族単位のアイテム用）
+// 個人アイテムは UserInventoryItem で管理。これは本当に家族全員で共有するものだけ。
+model FamilySharedItem {
+  id        String   @id @default(cuid())
+  itemId    String   @unique @map("item_id")
+  itemName  String   @map("item_name")
+  quantity  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("family_shared_items")
+}
+
+// ガチャ（クレーンゲーム）履歴
+model GachaTransaction {
+  id         String       @id @default(cuid())
+  userId     String       @map("user_id")
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  costAmount Int          @map("cost_amount")
+  itemId     String       @map("item_id")
+  itemName   String       @map("item_name")
+  category   ItemCategory
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("gacha_transactions")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 博物学ステージ（フィールドのカテゴリ）
+//   動物との出会いが起きる「フィールド」のマスタ。
+//   旧 Stage モデルと同じ構造で、名称・概念のみ更新。
+// ─────────────────────────────────────────────────────────────
+model Stage {
+  id              String   @id @default(cuid())
+  stageId         String   @unique @map("stage_id") // "savanna" / "forest" / "ice_age" / "deep_sea" / "cretaceous"
+  name            String
+  emoji           String   @default("🌍")
+  description     String   @default("")
+  unlockCondition String?  @map("unlock_condition")
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  animals         Animal[]
+
+  @@map("stages")
+}
+
+// ─────────────────────────────────────────────────────────────
+// テイムアイテムマスタ（旧 Tool モデルの置き換え）
+//   楽器・おもちゃ・誘いエサなど、動物と仲良くなるための道具。
+//   historicalContext は博物学豆知識（例:「オカリナは1万年前から…」）。
+// ─────────────────────────────────────────────────────────────
+model TameItemMaster {
+  id                String     @id @default(cuid())
+  itemId            String     @unique @map("item_id") // "ocarina" / "ball" / "berry_lure"
+  name              String
+  emoji             String     @default("🎵")
+  description       String     @default("")
+  historicalContext String     @default("") @map("historical_context")
+  method            TameMethod
+  // 0.00〜1.00。テイム成功率に加算する。
+  successRateBonus  Float      @default(0) @map("success_rate_bonus")
+  // 消耗品か否か（楽器は非消耗、誘いエサは使い切り）
+  consumable        Boolean    @default(true)
+  sortOrder         Int        @default(0) @map("sort_order")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+  tameSessions      TameSession[]
+
+  @@index([method])
+  @@map("tame_item_masters")
+}
+
+// ─────────────────────────────────────────────────────────────
+// どうぶつマスタ（図鑑定義）
+//   preferredTameMethod : この方法だとテイム成功率が上がる
+//   favoriteFoodId      : このエサをあげると機嫌が大きく上がる
+// ─────────────────────────────────────────────────────────────
+model Animal {
+  id                  String            @id @default(cuid())
+  animalId            String            @unique @map("animal_id")
+  genericName         String            @default("") @map("generic_name")
+  specificName        String            @default("") @map("specific_name")
+  name                String            // 後方互換
+  rarity              Rarity
+  description         String
+  imageUrl            String?           @map("image_url")
+  emoji               String            @default("🐾")
+  isExtinct           Boolean           @default(false) @map("is_extinct")
+  habitat             String            @default("")
+  location            String            @default("")
+  era                 String            @default("")
+  // 現実の平均寿命（年）。ゲーム内ではこの日数分だけ生存する（1日=1年換算）。
+  lifespanYears       Int               @default(10) @map("lifespan_years")
+  // 好きなテイム方法（この方法だと成功率 +20%）
+  preferredTameMethod TameMethod?       @map("preferred_tame_method")
+  // 好きな食べ物のアイテムID（このエサをあげると moodLevel +30）
+  favoriteFoodId      String?           @map("favorite_food_id")
+  stageId             String?           @map("stage_id")
+  stage               Stage?            @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+  companions          AnimalCompanion[]
+  tameSessions        TameSession[]
+
+  @@index([rarity])
+  @@index([genericName])
+  @@index([stageId])
+  @@map("animals")
+}
+
+// ─────────────────────────────────────────────────────────────
+// AIガイドキャラクターのパーソナリティマスタ
+// ─────────────────────────────────────────────────────────────
+model Personality {
+  id          Int               @id @default(autoincrement())
+  name        String            @unique
+  firstPerson String            @map("first_person")
+  toneRule    String            @map("tone_rule")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  companions  AnimalCompanion[]
+
+  @@map("personalities")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 仲間になった動物（旧 CaughtAnimal → AnimalCompanion）
+//
+//   【配置場所の設計（Single Source of Truth）】
+//     currentLocation : どこにいるか（BASECAMP / FARM / ZOO / HALL_OF_FAME）
+//     farmPlotId      : FARM 配置時の具体的な区画（null = 区画未割当）
+//     assignedAt      : 最後に配置場所を変更した日時
+//
+//   【動物のステータス】
+//     hungerLevel  : 0(空腹)〜100(満腹)。時間経過で自然減少。
+//     moodLevel    : 0(不機嫌)〜100(上機嫌)。おもちゃで回復、放置で減少。
+//     lastFedAt    : 最後にエサをもらった日時（空腹度の計算基準）
+//     lastPlayedAt : 最後に遊んでもらった日時（機嫌の計算基準）
+//
+//   ★ hungerLevel/moodLevel の現在値は Server Action で
+//     (now() - lastFedAt/lastPlayedAt) から動的に算出・書き込むこと。
+//     Zustand で保持してはならない。
+// ─────────────────────────────────────────────────────────────
+model AnimalCompanion {
+  id              String         @id @default(cuid())
+  animalId        String         @map("animal_id")
+  animal          Animal         @relation(fields: [animalId], references: [id], onDelete: Cascade)
+  userId          String         @map("user_id")
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // ── テイム記録 ──────────────────────────────────────────────
+  tamedAt         DateTime       @default(now()) @map("tamed_at")
+  tameItemId      String?        @map("tame_item_id")  // 使用したテイムアイテムの itemId
+  // ── 寿命管理 ─────────────────────────────────────────────────
+  expiresAt       DateTime?      @map("expires_at")    // tamedAt + lifespanYears 日後
+  isAlive         Boolean        @default(true) @map("is_alive")
+  isGraduated     Boolean        @default(false) @map("is_graduated")
+  rewardClaimed   Boolean        @default(false) @map("reward_claimed")
+  // ── 配置場所（厳密管理） ────────────────────────────────────
+  currentLocation AnimalLocation @default(BASECAMP) @map("current_location")
+  farmPlotId      String?        @map("farm_plot_id")
+  farmPlot        FarmPlot?      @relation(fields: [farmPlotId], references: [id], onDelete: SetNull)
+  assignedAt      DateTime       @default(now()) @map("assigned_at")
+  // ── 動物のステータス ────────────────────────────────────────
+  hungerLevel     Int            @default(80) @map("hunger_level")
+  moodLevel       Int            @default(80) @map("mood_level")
+  lastFedAt       DateTime?      @map("last_fed_at")
+  lastPlayedAt    DateTime?      @map("last_played_at")
+  // ── AI・親密度 ──────────────────────────────────────────────
+  // 親密度レベル: 0-300 よそよそしい / 301-800 友好的 / 801- 家族のような絆
+  // Ollama プロンプトの口調・情報量の制御に使用する
+  personalityId   Int?           @map("personality_id")
+  personality     Personality?   @relation(fields: [personalityId], references: [id], onDelete: SetNull)
+  intimacyScore   Int            @default(0) @map("intimacy_score")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  careLogs        AnimalCareLog[]
+  poopLogs        PoopLog[]
+
+  @@index([animalId])
+  @@index([userId])
+  @@index([currentLocation])
+  @@index([tamedAt])
+  @@map("animal_companions")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 動物の世話ログ（エサやり・おもちゃ・会話等の記録）
+//   空腹度・機嫌・親密度の変動根拠として参照する。
+// ─────────────────────────────────────────────────────────────
+model AnimalCareLog {
+  id             String          @id @default(cuid())
+  companionId    String          @map("companion_id")
+  companion      AnimalCompanion @relation(fields: [companionId], references: [id], onDelete: Cascade)
+  actionType     CareActionType  @map("action_type")
+  itemUsed       String?         @map("item_used")       // 使ったアイテム ID（エサ・おもちゃ等）
+  hungerChange   Int             @default(0) @map("hunger_change")
+  moodChange     Int             @default(0) @map("mood_change")
+  intimacyChange Int             @default(0) @map("intimacy_change")
+  staminaCost    Int             @default(0) @map("stamina_cost")
+  performedAt    DateTime        @default(now()) @map("performed_at")
+
+  @@index([companionId])
+  @@index([performedAt])
+  @@map("animal_care_logs")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 糞ログ（牧場の動物が落とした糞の記録）
+//   動物が FARM 配置で且つ前回エサやりから一定時間経過すると Server Action が自動生成する。
+//   isCollected=false の行が「回収待ち糞」として牧場画面に表示される。
+//   回収すると UserInventory の POOP が +1 され、肥料クラフトの素材になる。
+// ─────────────────────────────────────────────────────────────
+model PoopLog {
+  id          String          @id @default(cuid())
+  companionId String          @map("companion_id")
+  companion   AnimalCompanion @relation(fields: [companionId], references: [id], onDelete: Cascade)
+  isCollected Boolean         @default(false) @map("is_collected")
+  droppedAt   DateTime        @default(now()) @map("dropped_at")
+  collectedAt DateTime?       @map("collected_at")
+
+  @@index([companionId, isCollected])
+  @@index([droppedAt])
+  @@map("poop_logs")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 農場区画（1ユーザー × 複数区画）
+//   各区画に種をまき、肥料を投入すると readyAt が短縮され、
+//   成熟すると READY になり収穫できる。
+//   FARM 配置の動物は farmPlot.companions に連結する。
+// ─────────────────────────────────────────────────────────────
+model FarmPlot {
+  id          String         @id @default(cuid())
+  userId      String         @map("user_id")
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plotIndex   Int            @map("plot_index")  // 区画番号 (0, 1, 2, …)
+  status      FarmPlotStatus @default(EMPTY)
+  // 育てている作物（種のアイテムID / 名前）
+  cropId      String?        @map("crop_id")
+  cropName    String?        @map("crop_name")
+  // 肥料を投入済みか（true なら成長時間が短縮される）
+  fertilized  Boolean        @default(false)
+  seededAt    DateTime?      @map("seeded_at")
+  readyAt     DateTime?      @map("ready_at")    // 収穫可能になる予定時刻
+  harvestedAt DateTime?      @map("harvested_at")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  // この区画に配置されている動物
+  companions  AnimalCompanion[]
+
+  @@unique([userId, plotIndex])
+  @@index([userId])
+  @@map("farm_plots")
+}
+
+// ─────────────────────────────────────────────────────────────
+// テイムセッション（旧 Hunt モデルの置き換え）
+//   method=LURE : パッシブ（誘いエサを置いて待つ）
+//   method=MUSIC/TOY/SONG : アクティブ（タイミングゲームで即決着）
+//
+//   【スタミナ消費】
+//     staminaCost は Server Action でセッション開始時に User.staminaCurrent から差し引く。
+//     スタミナが足りない場合は開始不可。
+// ─────────────────────────────────────────────────────────────
+model TameSession {
+  id             String          @id @default(cuid())
+  userId         String          @map("user_id")
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  method         TameMethod      @default(LURE)
+  // 使用したテイムアイテムのマスタ参照
+  tameItemId     String?         @map("tame_item_id")
+  tameItem       TameItemMaster? @relation(fields: [tameItemId], references: [id], onDelete: SetNull)
+  // 使用した誘いエサのインベントリアイテム ID（消耗品は session 開始時に -1）
+  lureItemId     String?         @map("lure_item_id")
+  status         TameStatus      @default(APPROACHING)
+  startedAt      DateTime        @default(now()) @map("started_at")
+  // 動物が姿を現す予定時刻（LURE は仕掛け後数分〜、MUSIC等は即時）
+  approachesAt   DateTime        @map("approaches_at")
+  targetAnimalId String          @map("target_animal_id")
+  targetAnimal   Animal          @relation(fields: [targetAnimalId], references: [id], onDelete: Cascade)
+  resolvedAt     DateTime?       @map("resolved_at")
+  staminaCost    Int             @default(10) @map("stamina_cost")
+  // 子供がフィールド上でタップした位置（% で 0〜100）
+  posX           Float           @default(50) @map("pos_x")
+  posY           Float           @default(50) @map("pos_y")
+
+  @@index([userId, status])
+  @@index([approachesAt])
+  @@index([targetAnimalId])
+  @@index([method])
+  @@map("tame_sessions")
+}
+
+// 特大達成ボーナス通知
+model SpecialBonusNotification {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reason     String
+  coinAmount Int      @map("coin_amount")
+  isRead     Boolean  @default(false) @map("is_read")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+  @@map("special_bonus_notifications")
+}
+
+// ペナルティ（寄付）通知（旧 PenaltyNotification）
+//   UI での表示文: 「どうぶつ保護活動に ○コイン 寄付されました 🌱」
+model DonationNotification {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reason     String
+  coinAmount Int      @map("coin_amount")
+  isRead     Boolean  @default(false) @map("is_read")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+  @@map("donation_notifications")
+}
+
+// クエストマスタ
+model Quest {
+  id          String            @id @default(cuid())
+  title       String
+  description String?
+  rewardCoins Int               @map("reward_coins")
+  emoji       String            @default("⭐")
+  isActive    Boolean           @default(true) @map("is_active")
+  // CHORE: おてつだい / STUDY: おべんきょう / LIFE: せいかつ
+  category    String            @default("CHORE")
+  targetUsers User[]
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+  submissions QuestSubmission[]
+
+  @@map("quests")
+}
+
+// クエスト申請（子供が「やったよ！」と申告 → 親が承認するとコイン付与）
+// 【重要】APPROVED 時のコイン付与は必ず Server Action のトランザクション内で行う
+model QuestSubmission {
+  id          String      @id @default(cuid())
+  questId     String      @map("quest_id")
+  quest       Quest       @relation(fields: [questId], references: [id], onDelete: Cascade)
+  userId      String      @map("user_id")
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status      QuestStatus @default(PENDING)
+  submittedAt DateTime    @default(now()) @map("submitted_at")
+  reviewedAt  DateTime?   @map("reviewed_at")
+
+  @@index([status])
+  @@index([userId, status])
+  @@index([questId])
+  @@index([submittedAt])
+  @@map("quest_submissions")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 素材マスタ（クレーンゲームでドロップする生素材）
+//   クラフトレシピは lib/recipes.ts で管理。
+// ─────────────────────────────────────────────────────────────
+model Material {
+  id          String   @id @default(cuid())
+  materialId  String   @unique @map("material_id")
+  name        String
+  emoji       String   @default("📦")
+  description String   @default("")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("materials")
+}
+
+// ユーザーの機能利用履歴（AIガイドの未利用機能誘導に使用）
+model UserActivity {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  featureId  String   @map("feature_id")  // "field" / "farm" / "quiz" / "chat" etc.
+  lastUsedAt DateTime @default(now()) @map("last_used_at")
+
+  @@unique([userId, featureId])
+  @@index([userId])
+  @@map("user_activities")
+}
+
+// ─────────────────────────────────────────────────────────────
+// NPC関係（恩送りシステム用）
+//   ユーザーがマップ上のNPCにアイテムを無償であげると helpCount が +1 され、
+//   裏で User.kizunaPoints も加算される。
+//   大ピンチ（農場の台風など）の際、rewardGiven=false かつ helpCount 十分なら
+//   NPCの縁者が無償で助けてくれるストーリーイベントが発生する。
+//   詰み防止（動物がゼロになってエコサイクルが止まった時の救済）としても機能する。
+// ─────────────────────────────────────────────────────────────
+model NpcRelation {
+  id           String    @id @default(cuid())
+  userId       String    @map("user_id")
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  npcId        String    @map("npc_id")    // "grandma" / "fisherman" / "farmer" etc.
+  npcName      String    @map("npc_name")
+  helpCount    Int       @default(0) @map("help_count")
+  lastHelpedAt DateTime? @map("last_helped_at")
+  // このNPCによる恩返しイベントが発生済みか（詰み防止フラグ）
+  rewardGiven  Boolean   @default(false) @map("reward_given")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@unique([userId, npcId])
+  @@index([userId])
+  @@map("npc_relations")
+}
+
+// ペナルティマスタ（表示上は「保護活動への寄付」として表現する）
+model Penalty {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  coinAmount  Int      @map("coin_amount")
+  emoji       String   @default("🌱")   // 世界観: 保護活動・緑のイメージ
+  isActive    Boolean  @default(true) @map("is_active")
+  targetUsers User[]
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("penalties")
+}
