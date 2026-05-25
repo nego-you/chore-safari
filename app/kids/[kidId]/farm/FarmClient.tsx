@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSafariStore } from "@/store/useSafariStore";
+import { KizunaEventDialog } from "@/components/KizunaEventDialog";
 
 // ══════════════════════════════════════════════════════
 //  定数
@@ -550,10 +551,31 @@ function WeatherBar({ weather, nextChange }) {
 export default function FarmUI() {
   const saved=loadSt();
   // ★ グローバルストアから inv/coins を取得
-  const inventory   = useSafariStore((s) => s.inventory);
-  const coins       = useSafariStore((s) => s.coins);
-  const addToInventory  = useSafariStore((s) => s.addToInventory);
+  const inventory        = useSafariStore((s) => s.inventory);
+  const coins            = useSafariStore((s) => s.coins);
+  const addToInventory   = useSafariStore((s) => s.addToInventory);
   const consumeInventory = useSafariStore((s) => s.consumeInventory);
+
+  // ── 恩送りイベント（ピンチ＆回収フェーズ） ────────────────────────────────
+  const helpedGrandma     = useSafariStore((s) => s.helpedGrandma);
+  const tickKizunaTurns   = useSafariStore((s) => s.tickKizunaTurns);
+  const receiveKizunaBadge = useSafariStore((s) => s.receiveKizunaBadge);
+  const [kizunaRescueOpen, setKizunaRescueOpen] = useState(false);
+
+  // 農場マウント時に恩送りターンをカウント。3ターン目で大ピンチイベント発火。
+  const kizunaCheckedRef = useRef(false);
+  useEffect(() => {
+    if (kizunaCheckedRef.current) return;
+    kizunaCheckedRef.current = true;
+    if (!helpedGrandma) return;
+    const turns = tickKizunaTurns();
+    if (turns >= 3) {
+      // 台風ピンチ演出を少し遅らせて表示（ファーム画面が描画されてから）
+      const t = setTimeout(() => setKizunaRescueOpen(true), 1200);
+      return () => clearTimeout(t);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [cells,setCells]=useState(()=>saved?.cells??initCells());
   const [now,setNow]=useState(Date.now());
@@ -1012,6 +1034,18 @@ export default function FarmUI() {
       {flyParticles.map(f=><FlyParticle key={f.id} emoji={f.emoji} fromX={f.fromX} fromY={f.fromY} toX={f.toX} toY={f.toY} onDone={()=>setFlyParticles(p=>p.filter(x=>x.id!==f.id))} />)}
 
       {toast&&<div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:80,padding:"9px 20px",borderRadius:24,background:"linear-gradient(135deg,#065f46,#047857)",border:"3px solid #064e3b",color:"#d1fae5",fontWeight:900,fontSize:13,boxShadow:"0 4px 16px rgba(0,0,0,0.45)",whiteSpace:"nowrap",fontFamily:"'Hiragino Maru Gothic ProN',sans-serif",maxWidth:"90vw",textAlign:"center"}}>{toast}</div>}
+
+      {/* ── 恩送りイベント（ピンチ＆回収フェーズ）─────────────────────── */}
+      {kizunaRescueOpen && (
+        <KizunaEventDialog
+          phase="TYPHOON_RESCUE"
+          onComplete={() => {
+            receiveKizunaBadge();
+            setKizunaRescueOpen(false);
+            showToast("🏅 きずなの しょうを うけとった！ はたけも なおったよ！✨", 5000);
+          }}
+        />
+      )}
 
       <style>{`
         @keyframes avatarBreath{0%,100%{transform:translateY(0) scale(1);}50%{transform:translateY(-4px) scale(1.03);}}

@@ -110,6 +110,11 @@ model User {
   lastHuntDate      DateTime?          @map("last_hunt_date")
   // テスト用フラグ：true の場合、コイン・回数制限をすべてバイパスする
   isTestAccount     Boolean            @default(false) @map("is_test")
+  // ── 恩送り（ペイ・フォワード）イベント管理 ─────────────────────
+  //   kizunaPoints   : 善行の累積ポイント（非公開）
+  //   helpedGrandma  : おばあちゃんを助けたフラグ（Phase2/3 の引き金）
+  kizunaPoints      Int                @default(0) @map("kizuna_points")
+  helpedGrandma     Boolean            @default(false) @map("helped_grandma")
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")
   transactions       CoinTransaction[]

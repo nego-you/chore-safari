@@ -81,7 +81,7 @@ const RARITY_BADGE: Record<Rarity, string> = {
 
 const NAME_READING: Record<string, string> = {
   "美琴": "みこと",
-  "幸仁": "ゆきひと",
+  "幸仁": "ゆきと",
   "叶泰": "かなた",
 };
 

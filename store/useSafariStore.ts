@@ -77,6 +77,16 @@ export interface SafariState {
   /** 獲得済み勲章リスト */
   medals: Medal[];
 
+  // ── 恩送り（ペイ・フォワード）イベント ──────────────────
+  /** 非公開の善行ポイント（おばあちゃんを助けると加算） */
+  kizunaPoints: number;
+  /** おばあちゃんを助けたフラグ（Phase2/3 の引き金） */
+  helpedGrandma: boolean;
+  /** helpedGrandma が true になってから農場を開いた回数 */
+  kizunaTurnsAfterHelp: number;
+  /** 絆の証（特別トロフィーアイテム）の所持数 */
+  kizunaBadgeCount: number;
+
   // ── 内部統計（勲章判定用）────────────────────────────────
   /** @internal */
   _stats: {
@@ -132,6 +142,25 @@ export interface SafariState {
   consumeStamina: (amount: number) => void;
   /** スタミナを指定量回復する（100 を超えない） */
   restoreStamina: (amount: number) => void;
+
+  // ── 恩送りイベントアクション ──────────────────────────────
+  /**
+   * おばあちゃんを助ける。
+   * アイテムを消費せずにここで消費確認済みの前提で呼ぶ。
+   * helpedGrandma=true、kizunaPoints+=10。
+   */
+  helpGrandma: () => void;
+  /**
+   * 農場ページを開くたびに呼ぶ。
+   * helpedGrandma が true の場合のみカウンタを進める。
+   * 戻り値: 現在の kizunaTurnsAfterHelp（インクリメント後の値）
+   */
+  tickKizunaTurns: () => number;
+  /**
+   * 絆の証を受け取る（Phase3 完了時）。
+   * kizunaBadgeCount++、イベントフラグをリセット。
+   */
+  receiveKizunaBadge: () => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -143,6 +172,10 @@ const INITIAL_GAME_STATE = {
   logisticsQueue: [] as GameAnimal[],
   stamina: 100,
   medals: [] as Medal[],
+  kizunaPoints: 0,
+  helpedGrandma: false,
+  kizunaTurnsAfterHelp: 0,
+  kizunaBadgeCount: 0,
   _stats: {
     helpCount: 0,
     totalAnimalsCaught: 0,
@@ -285,6 +318,30 @@ export const useSafariStore = create<SafariState>()(
 
       restoreStamina: (amount) =>
         set((s) => ({ stamina: Math.min(100, s.stamina + amount) })),
+
+      // ── 恩送りイベント ────────────────────────────────────
+      helpGrandma: () =>
+        set((s) => ({
+          helpedGrandma: true,
+          kizunaPoints: s.kizunaPoints + 10,
+        })),
+
+      tickKizunaTurns: () => {
+        const { helpedGrandma, kizunaTurnsAfterHelp } = get();
+        if (!helpedGrandma) return 0;
+        const next = kizunaTurnsAfterHelp + 1;
+        set({ kizunaTurnsAfterHelp: next });
+        return next;
+      },
+
+      receiveKizunaBadge: () =>
+        set((s) => ({
+          kizunaBadgeCount: s.kizunaBadgeCount + 1,
+          kizunaPoints: s.kizunaPoints + 50,
+          // イベントをリセット（再発動しないように）
+          helpedGrandma: false,
+          kizunaTurnsAfterHelp: 0,
+        })),
     }),
 
     // ── persist 設定 ────────────────────────────────────────
@@ -300,6 +357,10 @@ export const useSafariStore = create<SafariState>()(
         logisticsQueue: s.logisticsQueue,
         stamina: s.stamina,
         medals: s.medals,
+        kizunaPoints: s.kizunaPoints,
+        helpedGrandma: s.helpedGrandma,
+        kizunaTurnsAfterHelp: s.kizunaTurnsAfterHelp,
+        kizunaBadgeCount: s.kizunaBadgeCount,
         _stats: s._stats,
       }),
     }
