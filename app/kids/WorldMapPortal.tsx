@@ -86,7 +86,6 @@ const MAP_PINS: MapPin[] = [
     x: 9,
     y: 14,
     color: "#c084fc",
-    route: "guild",
     route: "quests",
     action: "route",
     ready: true,
