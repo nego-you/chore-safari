@@ -220,8 +220,7 @@ export function GlobalHeader({ kidId, kidName, currentStreak, streakStatus }: Pr
       >
         <div
           style={{
-            maxWidth: 1024,
-            margin: "0 auto",
+            /* max-w-md ラッパーに合わせて幅制限は親に委ねる（maxWidth 指定を削除） */
             padding: "6px 10px",
             display: "flex",
             alignItems: "center",
@@ -315,4 +314,12 @@ export function GlobalHeader({ kidId, kidName, currentStreak, streakStatus }: Pr
       )}
     </>
   );
+}
+etOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+;
 }

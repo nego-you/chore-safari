@@ -1,5 +1,4 @@
-// /kids/quests — クエストにちょうせん画面。
-// 子供は ?kid= で誰がプレイ中か特定。指定が無いときはピッカーを出す。
+// /kids/[kidId]/quests — クエストにちょうせん画面。
 
 import { prisma } from "@/lib/prisma";
 import { QuestsClient } from "./QuestsClient";
