@@ -355,6 +355,7 @@ export default function BaseCampClient({
   const [selectedMedal, setSelectedMedal] = useState<(typeof MEDALS_DEF)[0] | null>(null);
   const [confetti, setConfetti] = useState(false);
   const [newMedalDef, setNewMedalDef] = useState<(typeof MEDALS_DEF)[0] | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
 
   // ── 現在のガイドの種 ID ──────────────────────────────────
   const guideSpeciesId = guide ? guide.animal.id : null;
@@ -439,8 +440,7 @@ export default function BaseCampClient({
         fontFamily: "'M PLUS Rounded 1c','Rounded Mplus 1c','Noto Sans JP',sans-serif",
         fontWeight: 700,
         userSelect: "none",
-        display: "flex",
-        flexDirection: "row",
+        position: "relative",
       }}
     >
       <style>{`
@@ -450,7 +450,9 @@ export default function BaseCampClient({
         @keyframes bc-confetti { 0%{transform:translateY(0) rotate(0);opacity:1} 100%{transform:translateY(110vh) rotate(720deg);opacity:0} }
         @keyframes bc-shimmer  { 0%,100%{opacity:1;filter:brightness(1)} 50%{opacity:.7;filter:brightness(1.5)} }
         @keyframes bc-popup    { 0%{transform:scale(.4);opacity:0} 70%{transform:scale(1.06)} 100%{transform:scale(1);opacity:1} }
-        @keyframes bc-rain     { 0%{transform:translateY(-5%) rotate(12deg)} 100%{transform:translateY(110vh) rotate(12deg)} }
+        @keyframes bc-rain      { 0%{transform:translateY(-5%) rotate(12deg)} 100%{transform:translateY(110vh) rotate(12deg)} }
+        @keyframes bc-panel-in  { 0%{transform:translateX(100%)} 100%{transform:translateX(0)} }
+        @keyframes bc-panel-out { 0%{transform:translateX(0)} 100%{transform:translateX(100%)} }
         .bc-float     { animation: bc-float 3.2s ease-in-out infinite; }
         .bc-wander    { animation: bc-wander 5s ease-in-out infinite; }
         .bc-legendary { animation: bc-legendary 4s ease-in-out infinite; }
@@ -458,6 +460,8 @@ export default function BaseCampClient({
         .bc-shimmer   { animation: bc-shimmer 2s ease-in-out infinite; }
         .anim-popup   { animation: bc-popup .45s cubic-bezier(.22,1,.36,1) forwards; }
         .bc-btn:active{ transform:translateY(4px) scale(.96); }
+        .bc-panel-in  { animation: bc-panel-in .3s cubic-bezier(.22,1,.36,1) forwards; }
+        .bc-panel-out { animation: bc-panel-out .25s ease-in forwards; }
       `}</style>
 
       <Confetti active={confetti} />
@@ -477,12 +481,12 @@ export default function BaseCampClient({
       )}
 
       {/* ════════════════════════════════════════════════════
-          左：フィールドビュー
+          フィールドビュー（全幅）
       ════════════════════════════════════════════════════ */}
       <div
         style={{
-          flex: 1,
-          position: "relative",
+          position: "absolute",
+          inset: 0,
           overflow: "hidden",
           background: skyGrad,
           transition: "background 2s ease",
@@ -636,27 +640,57 @@ export default function BaseCampClient({
         <div
           style={{
             position: "absolute", top: 12, right: 12, zIndex: 5,
-            background: "rgba(255,255,255,0.82)", borderRadius: 14,
-            padding: "4px 12px", fontSize: ".85rem", fontWeight: 800, color: "#555",
-            backdropFilter: "blur(4px)",
+            display: "flex", alignItems: "center", gap: 8,
           }}
         >
-          {weather.icon} {weather.label}
+          <div
+            style={{
+              background: "rgba(255,255,255,0.82)", borderRadius: 14,
+              padding: "4px 12px", fontSize: ".85rem", fontWeight: 800, color: "#555",
+              backdropFilter: "blur(4px)",
+            }}
+          >
+            {weather.icon} {weather.label}
+          </div>
+          {/* パネル開閉ボタン */}
+          <button
+            onClick={() => setPanelOpen(true)}
+            style={{
+              background: "rgba(27,27,47,0.85)", border: "2px solid rgba(165,214,167,0.5)",
+              borderRadius: 14, padding: "4px 12px", cursor: "pointer",
+              fontSize: ".85rem", fontWeight: 800, color: "#A5D6A7",
+              backdropFilter: "blur(4px)",
+              display: "flex", alignItems: "center", gap: 6,
+            }}
+          >
+            {guideEmoji} ☰
+          </button>
         </div>
       </div>
 
       {/* ════════════════════════════════════════════════════
-          右：コマンドパネル
+          コマンドパネル（右ドロワー）
       ════════════════════════════════════════════════════ */}
+      {panelOpen && (
+        /* 背景オーバーレイ */
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 30, background: "rgba(0,0,0,.45)", backdropFilter: "blur(2px)" }}
+          onClick={() => setPanelOpen(false)}
+        />
+      )}
       <div
+        className={panelOpen ? "bc-panel-in" : "bc-panel-out"}
         style={{
+          position: "fixed", top: 56, right: 0, bottom: 0, zIndex: 31,
           width: 220,
           background: "linear-gradient(180deg,#1B1B2F 0%,#2D2D44 100%)",
           borderLeft: "3px solid #3A3A5C",
           display: "flex", flexDirection: "column", alignItems: "center",
           justifyContent: "center", gap: 18,
           padding: "24px 16px",
-          position: "relative", overflow: "hidden", flexShrink: 0,
+          overflow: "hidden",
+          // パネルが閉じているときは pointer-events を切る
+          pointerEvents: panelOpen ? "auto" : "none",
         }}
       >
         {/* 星 */}
@@ -673,6 +707,19 @@ export default function BaseCampClient({
             ✦
           </div>
         ))}
+
+        {/* 閉じるボタン */}
+        <button
+          onClick={() => setPanelOpen(false)}
+          style={{
+            position: "absolute", top: 12, right: 12, zIndex: 2,
+            background: "rgba(255,255,255,.12)", border: "none", borderRadius: 10,
+            color: "#ccc", fontSize: "1.1rem", width: 32, height: 32,
+            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          ✕
+        </button>
 
         {/* ガイドアイコン */}
         <div style={{ textAlign: "center", zIndex: 1 }}>
