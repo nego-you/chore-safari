@@ -315,11 +315,3 @@ export function GlobalHeader({ kidId, kidName, currentStreak, streakStatus }: Pr
     </>
   );
 }
-etOpen(false)}
-        />
-      )}
-    </>
-  );
-}
-;
-}
