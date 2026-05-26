@@ -95,94 +95,98 @@ export type ChatWithAnimalResult =
   | { success: false; error: string; errorDetail: string };
 
 // -------------------------------------------------------------------
-// Ollama エラー分類ヘルパー
+// Gemini エラー分類ヘルパー
 // -------------------------------------------------------------------
 //
 // lib/ai-guide の AIGuideReactor.generateReply() は
-//   throw new Error(`Ollama error: ${result.error}`)
+//   throw new Error(`Gemini error: ${result.error}`)
 // という形で throw してくる。
-// result.error の内容は lib/ollama.ts が組み立てた文字列:
-//   "fetch failed"              -> Node.js 18+ での接続拒否
-//   "ECONNREFUSED ..."          -> 接続拒否 (旧 Node / OS 直)
-//   "Ollama HTTP 404: ..."      -> モデル未取得
-//   "Ollama HTTP 5xx: ..."      -> Ollama 内部エラー
-//   "Ollama timeout"            -> タイムアウト (AbortController)
-//   "Ollama returned empty ..." -> 空レスポンス
-//   その他                      -> 予期せぬエラー
+// result.error は lib/gemini.ts が catch した err.message 文字列:
+//   "GEMINI_API_KEY が設定されていません" -> APIキー未設定
+//   "API_KEY_INVALID" / "API key not valid" -> 無効なキー
+//   "QUOTA_EXCEEDED" / "429"               -> レート/クォータ制限
+//   "SAFETY" / "blocked"                   -> 安全フィルター発動
+//   "fetch failed" / "ECONNREFUSED" 等     -> ネットワークエラー
+//   その他                                 -> 予期せぬエラー
 
-function classifyOllamaError(err: unknown): {
+function classifyGeminiError(err: unknown): {
   error: string;
   errorDetail: string;
 } {
   const raw = err instanceof Error ? err.message : String(err);
 
-  // Node.js の fetch が接続拒否時に返す "fetch failed" / ECONNREFUSED
+  // APIキー未設定
+  if (raw.includes("GEMINI_API_KEY")) {
+    return {
+      error: "Gemini APIキーが せっていされていないよ",
+      errorDetail:
+        "[APIキー未設定] GEMINI_API_KEY 環境変数が設定されていません。\n" +
+        ".env ファイルに GEMINI_API_KEY=<your_key> を追加してください。\n" +
+        "Raw: " + raw,
+    };
+  }
+
+  // APIキー無効
+  if (
+    raw.includes("API_KEY_INVALID") ||
+    raw.includes("API key not valid") ||
+    raw.includes("invalid API key") ||
+    raw.includes("UNAUTHENTICATED")
+  ) {
+    return {
+      error: "Gemini APIキーが まちがっているよ",
+      errorDetail:
+        "[APIキー無効] GEMINI_API_KEY が無効です。\n" +
+        "Google AI Studio (https://aistudio.google.com) で正しいキーを確認してください。\n" +
+        "Raw: " + raw,
+    };
+  }
+
+  // クォータ / レート制限
+  if (
+    raw.includes("QUOTA_EXCEEDED") ||
+    raw.includes("429") ||
+    raw.includes("quota") ||
+    raw.includes("RESOURCE_EXHAUSTED")
+  ) {
+    return {
+      error: "Gemini の つかいすぎで おやすみちゅうだよ",
+      errorDetail:
+        "[クォータ制限] API のレート制限またはクォータを超えました。\n" +
+        "しばらく待ってから再試行するか、Google AI Studio でクォータ状況を確認してください。\n" +
+        "Raw: " + raw,
+    };
+  }
+
+  // 安全フィルター
+  if (
+    raw.includes("SAFETY") ||
+    raw.includes("safety") ||
+    raw.includes("blocked") ||
+    raw.includes("RECITATION")
+  ) {
+    return {
+      error: "Gemini が おへんじを ことわったよ",
+      errorDetail:
+        "[安全フィルター] Gemini の安全フィルターによりレスポンスがブロックされました。\n" +
+        "入力テキストを変えて再試行してください。\n" +
+        "Raw: " + raw,
+    };
+  }
+
+  // ネットワークエラー
   if (
     raw.includes("fetch failed") ||
     raw.includes("ECONNREFUSED") ||
     raw.includes("ENOTFOUND") ||
-    raw.includes("connect ETIMEDOUT")
+    raw.includes("ETIMEDOUT")
   ) {
     return {
-      error: "Ollamaに つながれなかったよ",
+      error: "ネットワークに つながれなかったよ",
       errorDetail:
-        "[接続拒否] Ollama が起動していないようです。\n" +
-        "ターミナルで `ollama serve` を実行してから再試行してください。\n" +
-        "Raw: " +
-        raw,
-    };
-  }
-
-  // 404 -> モデルが存在しない
-  if (raw.includes("HTTP 404") || raw.includes("model")) {
-    const model = process.env.OLLAMA_MODEL ?? "llama3.2";
-    return {
-      error: "Ollamaのモデルが みつからないよ",
-      errorDetail:
-        "[404 Not Found] モデル \"" +
-        model +
-        "\" が Ollama に存在しません。\n" +
-        "`ollama pull " +
-        model +
-        "` でダウンロードしてください。\n" +
-        "Raw: " +
-        raw,
-    };
-  }
-
-  // タイムアウト
-  if (raw.includes("timeout") || raw.includes("AbortError")) {
-    return {
-      error: "Ollamaのおへんじが こなかったよ",
-      errorDetail:
-        "[タイムアウト] Ollama の応答に時間がかかりすぎました。\n" +
-        "OLLAMA_TIMEOUT_MS 環境変数を増やすか、より軽いモデルを使ってください。\n" +
-        "Raw: " +
-        raw,
-    };
-  }
-
-  // 5xx サーバーエラー
-  if (raw.includes("HTTP 5")) {
-    return {
-      error: "Ollamaが エラーを かえしてきたよ",
-      errorDetail:
-        "[HTTP 5xx] Ollama サーバー内部でエラーが発生しました。\n" +
-        "ollama のログを確認してください。\n" +
-        "Raw: " +
-        raw,
-    };
-  }
-
-  // 空レスポンス
-  if (raw.includes("empty content")) {
-    return {
-      error: "Ollamaが なにも かえしてこなかったよ",
-      errorDetail:
-        "[空レスポンス] Ollama が空の応答を返しました。\n" +
-        "モデルのメモリ不足や設定ミスの可能性があります。\n" +
-        "Raw: " +
-        raw,
+        "[ネットワークエラー] Gemini API に接続できませんでした。\n" +
+        "インターネット接続を確認してください。\n" +
+        "Raw: " + raw,
     };
   }
 
@@ -191,8 +195,7 @@ function classifyOllamaError(err: unknown): {
     error: "AIガイドとの つうしんに しっぱいしました",
     errorDetail:
       "[予期せぬエラー] 原因不明のエラーが発生しました。\n" +
-      "Raw: " +
-      raw,
+      "Raw: " + raw,
   };
 }
 
@@ -246,10 +249,10 @@ export async function chatWithAnimal(
       };
     }
 
-    // Ollama 起因のエラーを分類して返す
-    const classified = classifyOllamaError(err);
+    // Gemini 起因のエラーを分類して返す
+    const classified = classifyGeminiError(err);
     console.error(
-      "[chatWithAnimal] Ollama error\n  errorDetail:",
+      "[chatWithAnimal] Gemini error\n  errorDetail:",
       classified.errorDetail,
       "\n  Original error object:",
       err,

@@ -9,11 +9,11 @@
 //   各メソッド共通の 3R/3C フロー:
 //     Receptor  : Prisma でユーザー状況を収集
 //     Constraint: 優先度判定・発話タイミング制御・システムプロンプト構築
-//     Reactor   : Ollama API 呼出・Zod パース
+//     Reactor   : Gemini API 呼出（generateObject で構造化出力）
 
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { ollamaChat } from "@/lib/ollama";
+import { geminiGenerateObject } from "@/lib/gemini";
 
 // ─────────────────────────────────────────────────────────────
 // Ollama レスポンス スキーマ
@@ -254,11 +254,10 @@ ${priorityText}
 【制約】
 ・相手は幼い子供（3〜8歳）です。ひらがな中心で、短く（40字以内）話してください。
 ・唐突に話しかけるので、自然に始めてください（「ねえねえ」「そういえば」などで始めてOK）。
-・以下のJSONスキーマだけを出力してください（Markdownコードブロック不可）:
-{
-  "suggestion_text": "string (40字以内のひらがな中心の一言)",
-  "emotion": "neutral|joy|blush|think|worry"
-}
+
+【出力形式】
+必ず以下のJSONのみを出力してください。Markdownコードブロックや説明文は不要です。
+{"suggestion_text": "40字以内のひらがな中心の一言", "emotion": "neutral|joy|blush|think|worry"}
     `.trim();
   }
 
@@ -303,14 +302,9 @@ ${suggestionRule}
 相手は幼い子供（3〜8歳）です。
 やさしく、ひらがな中心で、短い言葉で話してください。
 
-【出力形式の制約】
-必ず以下のJSONスキーマに従い、JSON文字列のみを出力してください。
-Markdownのコードブロック記法等は一切含めないでください。
-{
-  "reply_text": "string (ユーザーへの返答テキスト。ひらがな中心で50字以内)",
-  "emotion": "neutral|joy|blush|think",
-  "suggested_action": "none|open_camera|open_quiz"
-}
+【出力形式】
+必ず以下のJSONのみを出力してください。Markdownコードブロックや説明文は一切不要です。
+{"reply_text": "ひらがな中心で50字以内の返答", "emotion": "neutral|joy|blush|think", "suggested_action": "none|open_camera|open_quiz"}
     `.trim();
   }
 
@@ -349,38 +343,35 @@ Markdownのコードブロック記法等は一切含めないでください。
 }
 
 // ─────────────────────────────────────────────────────────────
-// 3. Reactor — Ollama API 呼出・Zod パース
+// 3. Reactor — Gemini API 呼出（generateObject で構造化出力）
 // ─────────────────────────────────────────────────────────────
 class AIGuideReactor {
-  /** チャット応答を生成（既存） */
+  /** チャット応答を生成 */
   async generateReply(systemPrompt: string, userText: string): Promise<AiResponse> {
-    const result = await ollamaChat([
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userText },
-    ]);
+    const result = await geminiGenerateObject(AiResponseSchema, systemPrompt, userText);
 
     if (!result.ok) {
-      throw new Error(`Ollama error: ${result.error}`);
+      throw new Error(`Gemini error: ${result.error}`);
     }
 
-    const parsedContent = JSON.parse(result.content);
-    return AiResponseSchema.parse(parsedContent);
+    console.log("[generateReply] object:", JSON.stringify(result.object));
+    return result.object;
   }
 
   /** 自発提案テキストを生成 */
   async generateSuggestion(systemPrompt: string): Promise<SuggestionResponse> {
     // ユーザー入力は不要。"今の状況を見て一言話して" と促すだけ。
-    const result = await ollamaChat([
-      { role: "system", content: systemPrompt },
-      { role: "user", content: "今の状況を見て、ひとこと話しかけて。" },
-    ]);
+    const result = await geminiGenerateObject(
+      SuggestionResponseSchema,
+      systemPrompt,
+      "今の状況を見て、ひとこと話しかけて。",
+    );
 
     if (!result.ok) {
-      throw new Error(`Ollama error: ${result.error}`);
+      throw new Error(`Gemini error: ${result.error}`);
     }
 
-    const parsedContent = JSON.parse(result.content);
-    return SuggestionResponseSchema.parse(parsedContent);
+    return result.object;
   }
 }
 
@@ -453,7 +444,7 @@ export class AIGuideService {
     try {
       suggestion = await this.reactor.generateSuggestion(systemPrompt);
     } catch {
-      // Ollama 未起動等のエラーは無視してサイレントフォールバック
+      // Gemini API エラーは無視してサイレントフォールバック
       return null;
     }
 

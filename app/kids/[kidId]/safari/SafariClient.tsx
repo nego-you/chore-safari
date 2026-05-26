@@ -1,6 +1,6 @@
 "use client";
 
-// /kids/safari — 2D サファリフィールド。
+// /kids/[kidId]/safari — 2D サファリフィールド。
 // バックエンド：setTrap / checkTrap / resolveTrap はそのまま使う。
 // UI は「業務リスト」をやめて、緑のフィールドに罠オブジェクトを散らす没入型に。
 

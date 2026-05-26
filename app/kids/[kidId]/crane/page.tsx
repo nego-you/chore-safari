@@ -1,5 +1,4 @@
-// /kids/crane — クレーンゲーム。
-// ?kid= で誰がプレイ中か特定。指定が無いときはピッカーを出す。
+// /kids/[kidId]/crane — クレーンゲーム。
 
 import { prisma } from "@/lib/prisma";
 import { CraneClient } from "./CraneClient";

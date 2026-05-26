@@ -60,7 +60,7 @@ export default async function QuestMasterPage() {
           📋 クエスト管理マスタ
         </h1>
         <p className="text-sm text-slate-300">
-          子供が <code className="rounded bg-black/40 px-1">/kids/quests</code>{" "}
+          子供が <code className="rounded bg-black/40 px-1">/kids/[kidId]/quests</code>{" "}
           で挑戦できるクエストを登録・編集・削除します。報酬コインと説明文を含めて変更すると即時で子供側に反映されます。
         </p>
       </header>

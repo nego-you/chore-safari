@@ -384,7 +384,7 @@ export async function checkTrap(trapId: string): Promise<CheckTrapResult> {
       data: { status: "APPEARED" },
     });
     if (upd.count === 1) {
-      revalidatePath("/kids/safari");
+      revalidatePath("/kids/[kidId]/safari", "page");
       return {
         success: true,
         status: "APPEARED",
@@ -480,7 +480,6 @@ export async function resolveTrap(
       });
 
       revalidatePath("/kids");
-      revalidatePath("/kids/safari");
       revalidatePath("/bank");
 
       return {
@@ -497,7 +496,7 @@ export async function resolveTrap(
       if (upd.count !== 1) {
         return { success: false, error: "もう しょうぶ ついてるよ" };
       }
-      revalidatePath("/kids/safari");
+      revalidatePath("/kids/[kidId]/safari", "page");
       return { success: true, caught: false, animal };
     }
   } catch (err) {
@@ -695,7 +694,7 @@ export async function startActiveHunt(
       });
     });
 
-    revalidatePath("/kids/safari");
+    revalidatePath("/kids/[kidId]/safari", "page");
 
     const animal: AnimalLite = {
       id: chosen.id,
@@ -1097,7 +1096,7 @@ export async function submitQuest(
     data: { userId, questId, status: "PENDING" },
   });
 
-  revalidatePath("/kids/quests");
+  revalidatePath("/kids/[kidId]/quests", "page");
   revalidatePath("/bank");
 
   return {
@@ -1290,7 +1289,6 @@ export async function playCraneGame(
     });
 
     revalidatePath("/kids");
-    revalidatePath("/kids/crane");
     revalidatePath("/bank");
 
     return {

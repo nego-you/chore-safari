@@ -286,7 +286,7 @@ export async function approveQuest(
 
     revalidatePath("/bank");
     revalidatePath("/kids");
-    revalidatePath("/kids/quests");
+    revalidatePath("/kids/[kidId]/quests", "page");
 
     return {
       success: true,
@@ -336,7 +336,7 @@ export async function rejectQuest(
 
   revalidatePath("/bank");
   revalidatePath("/kids");
-  revalidatePath("/kids/quests");
+  revalidatePath("/kids/[kidId]/quests", "page");
 
   return {
     success: true,
@@ -434,7 +434,7 @@ export async function createQuest(
 
     revalidatePath("/bank");
     revalidatePath("/bank/quests");
-    revalidatePath("/kids/quests");
+    revalidatePath("/kids/[kidId]/quests", "page");
 
     return {
       success: true,
@@ -485,7 +485,7 @@ export async function updateQuest(
 
     revalidatePath("/bank");
     revalidatePath("/bank/quests");
-    revalidatePath("/kids/quests");
+    revalidatePath("/kids/[kidId]/quests", "page");
 
     return {
       success: true,
@@ -522,7 +522,7 @@ export async function deleteQuest(
 
     revalidatePath("/bank");
     revalidatePath("/bank/quests");
-    revalidatePath("/kids/quests");
+    revalidatePath("/kids/[kidId]/quests", "page");
 
     return { success: true, deletedSubmissions: result };
   } catch (e) {

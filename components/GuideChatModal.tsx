@@ -158,7 +158,7 @@ export default function GuideChatModal({
     window.speechSynthesis.speak(u);
   }, []);
 
-  // ─── Ollama 送信 ──────────────────────────────────────────
+  // ─── Gemini 送信 ──────────────────────────────────────────
 
   const sendMessage = useCallback(
     (text: string) => {
@@ -177,6 +177,20 @@ export default function GuideChatModal({
           if (result.success) {
             setCurrentEmotion(result.response.emotion);
             const reply = result.response.reply_text;
+            console.log("[GuideChatModal] reply_text:", JSON.stringify(reply), "emotion:", result.response.emotion);
+            // reply_text が空の場合はエラーバブルにフォールバック
+            if (!reply || reply.trim() === "") {
+              console.error("[GuideChatModal] reply_text is empty — Gemini may not be following the JSON schema");
+              setMessages((prev) => [
+                ...prev,
+                {
+                  role: "error" as const,
+                  text: "うまくおへんじできなかったよ。もういちどためしてみて！",
+                  errorDetail: "[empty reply_text] Geminiは成功レスポンスを返したが reply_text が空文字でした。\nDocker logs で '[geminiGenerateObject] raw text:' を確認してください。",
+                },
+              ]);
+              return;
+            }
             setMessages((prev) => [
               ...prev,
               {

@@ -35,6 +35,9 @@ services:
       DATABASE_URL: postgresql://chore:chore@db:5432/chore_safari?schema=public
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      # Docker コンテナ内から見たホスト側 Ollama のアドレス。
+      # Docker Desktop (Win/Mac) では host.docker.internal が自動解決される。
+      OLLAMA_HOST: http://host.docker.internal:11434
       WATCHPACK_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
     ports:
@@ -56,6 +59,9 @@ services:
       DATABASE_URL: postgresql://chore:chore@db:5432/chore_safari?schema=public
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      # Docker コンテナ内から見たホスト側 Ollama のアドレス。
+      # Docker Desktop (Win/Mac) では host.docker.internal が自動解決される。
+      OLLAMA_HOST: http://host.docker.internal:11434
     ports:
       # ホストからの動作確認用（Cloudflare 越しではなく直接見たい時に使う）。
       - "3001:3000"
