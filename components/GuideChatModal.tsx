@@ -24,9 +24,11 @@ interface AnimalInfo {
 }
 
 interface Message {
-  role: "user" | "animal";
+  role: "user" | "animal" | "error";
   text: string;
   emotion?: AiResponse["emotion"];
+  /** role === "error" のときに表示する開発者向け詳細 */
+  errorDetail?: string;
 }
 
 interface GuideChatModalProps {
@@ -93,7 +95,7 @@ export default function GuideChatModal({
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "animal",
-      text: `${animal.animalName}だよ！ こえで はなしかけてみてね 🎤`,
+      text: animal.animalName + "だよ！ こえで はなしかけてみてね 🎤",
       emotion: "joy",
     },
   ]);
@@ -126,7 +128,6 @@ export default function GuideChatModal({
   const unlockAudio = useCallback(() => {
     if (audioUnlockedRef.current) return;
     try {
-      // 無音の Utterance を発話してブラウザの自動再生制限を解除する
       const silent = new SpeechSynthesisUtterance(" ");
       silent.volume = 0;
       window.speechSynthesis.speak(silent);
@@ -186,27 +187,38 @@ export default function GuideChatModal({
             ]);
             speak(reply);
           } else {
-            const errText =
-              "ごめんね、うまく きけなかった... もう いちど はなしかけてね 🐾";
+            // Server Action が分類したエラーを表示
             console.error(
-              "[GuideChatModal] chatWithAnimal failed:",
-              result.error,
+              "[GuideChatModal] chatWithAnimal failed",
+              "\n  error:", result.error,
+              "\n  errorDetail:", result.errorDetail,
             );
             setMessages((prev) => [
               ...prev,
-              { role: "animal", text: errText, emotion: "think" },
+              {
+                role: "error",
+                text: result.error,
+                errorDetail: result.errorDetail,
+              },
             ]);
-            speak(errText);
+            speak("ごめんね、うまく きけなかった...");
           }
         } catch (err) {
-          const errText =
-            "ごめんね、うまく きけなかった... もう いちど はなしかけてね 🐾";
+          // ネットワーク層など予期しない例外
+          const detail =
+            err instanceof Error
+              ? err.name + ": " + err.message + "\n" + (err.stack ?? "")
+              : String(err);
           console.error("[GuideChatModal] chatWithAnimal threw:", err);
           setMessages((prev) => [
             ...prev,
-            { role: "animal", text: errText, emotion: "think" },
+            {
+              role: "error",
+              text: "よみこめないエラーが でたよ",
+              errorDetail: "[クライアント例外]\n" + detail,
+            },
           ]);
-          speak(errText);
+          speak("ごめんね、よみこめないエラーが でたよ...");
         }
       });
     },
@@ -416,6 +428,74 @@ export default function GuideChatModal({
             className="flex-1 overflow-y-auto px-4 py-3 space-y-3"
           >
             {messages.map((msg, i) => {
+              // ── エラーメッセージ ───────────────────────────
+              if (msg.role === "error") {
+                return (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.25 }}
+                    className="flex flex-col gap-1"
+                  >
+                    {/* 子ども向けフレンドリーメッセージ */}
+                    <div
+                      className="self-start px-4 py-2.5 rounded-2xl leading-relaxed"
+                      style={{
+                        fontSize: "0.85rem",
+                        fontWeight: 700,
+                        background: "#FFF3E0",
+                        color: "#E65100",
+                        border: "2px solid #FFCC80",
+                        borderBottomLeftRadius: 4,
+                        maxWidth: "88%",
+                      }}
+                    >
+                      {"⚠️ "}
+                      {msg.text}
+                    </div>
+
+                    {/* 開発者向け errorDetail（コードボックス） */}
+                    {msg.errorDetail && (
+                      <div
+                        className="self-start rounded-xl overflow-hidden"
+                        style={{ maxWidth: "95%" }}
+                      >
+                        <div
+                          style={{
+                            background: "#B71C1C",
+                            color: "#FFCDD2",
+                            fontSize: "0.6rem",
+                            fontWeight: 800,
+                            padding: "3px 10px",
+                            letterSpacing: "0.05em",
+                          }}
+                        >
+                          {"🛠 DEBUG INFO"}
+                        </div>
+                        <pre
+                          style={{
+                            margin: 0,
+                            padding: "8px 10px",
+                            background: "#1C1C1E",
+                            color: "#FF6B6B",
+                            fontSize: "0.6rem",
+                            fontFamily:
+                              "'Fira Code','Courier New',monospace",
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-all",
+                            lineHeight: 1.6,
+                          }}
+                        >
+                          {msg.errorDetail}
+                        </pre>
+                      </div>
+                    )}
+                  </motion.div>
+                );
+              }
+
+              // ── 通常メッセージ（user / animal） ──────────
               const isUser = msg.role === "user";
               return (
                 <motion.div

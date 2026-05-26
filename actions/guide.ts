@@ -92,7 +92,109 @@ export async function getGuideSuggestion(
 
 export type ChatWithAnimalResult =
   | { success: true; response: AiResponse }
-  | { success: false; error: string };
+  | { success: false; error: string; errorDetail: string };
+
+// -------------------------------------------------------------------
+// Ollama エラー分類ヘルパー
+// -------------------------------------------------------------------
+//
+// lib/ai-guide の AIGuideReactor.generateReply() は
+//   throw new Error(`Ollama error: ${result.error}`)
+// という形で throw してくる。
+// result.error の内容は lib/ollama.ts が組み立てた文字列:
+//   "fetch failed"              -> Node.js 18+ での接続拒否
+//   "ECONNREFUSED ..."          -> 接続拒否 (旧 Node / OS 直)
+//   "Ollama HTTP 404: ..."      -> モデル未取得
+//   "Ollama HTTP 5xx: ..."      -> Ollama 内部エラー
+//   "Ollama timeout"            -> タイムアウト (AbortController)
+//   "Ollama returned empty ..." -> 空レスポンス
+//   その他                      -> 予期せぬエラー
+
+function classifyOllamaError(err: unknown): {
+  error: string;
+  errorDetail: string;
+} {
+  const raw = err instanceof Error ? err.message : String(err);
+
+  // Node.js の fetch が接続拒否時に返す "fetch failed" / ECONNREFUSED
+  if (
+    raw.includes("fetch failed") ||
+    raw.includes("ECONNREFUSED") ||
+    raw.includes("ENOTFOUND") ||
+    raw.includes("connect ETIMEDOUT")
+  ) {
+    return {
+      error: "Ollamaに つながれなかったよ",
+      errorDetail:
+        "[接続拒否] Ollama が起動していないようです。\n" +
+        "ターミナルで `ollama serve` を実行してから再試行してください。\n" +
+        "Raw: " +
+        raw,
+    };
+  }
+
+  // 404 -> モデルが存在しない
+  if (raw.includes("HTTP 404") || raw.includes("model")) {
+    const model = process.env.OLLAMA_MODEL ?? "llama3.2";
+    return {
+      error: "Ollamaのモデルが みつからないよ",
+      errorDetail:
+        "[404 Not Found] モデル \"" +
+        model +
+        "\" が Ollama に存在しません。\n" +
+        "`ollama pull " +
+        model +
+        "` でダウンロードしてください。\n" +
+        "Raw: " +
+        raw,
+    };
+  }
+
+  // タイムアウト
+  if (raw.includes("timeout") || raw.includes("AbortError")) {
+    return {
+      error: "Ollamaのおへんじが こなかったよ",
+      errorDetail:
+        "[タイムアウト] Ollama の応答に時間がかかりすぎました。\n" +
+        "OLLAMA_TIMEOUT_MS 環境変数を増やすか、より軽いモデルを使ってください。\n" +
+        "Raw: " +
+        raw,
+    };
+  }
+
+  // 5xx サーバーエラー
+  if (raw.includes("HTTP 5")) {
+    return {
+      error: "Ollamaが エラーを かえしてきたよ",
+      errorDetail:
+        "[HTTP 5xx] Ollama サーバー内部でエラーが発生しました。\n" +
+        "ollama のログを確認してください。\n" +
+        "Raw: " +
+        raw,
+    };
+  }
+
+  // 空レスポンス
+  if (raw.includes("empty content")) {
+    return {
+      error: "Ollamaが なにも かえしてこなかったよ",
+      errorDetail:
+        "[空レスポンス] Ollama が空の応答を返しました。\n" +
+        "モデルのメモリ不足や設定ミスの可能性があります。\n" +
+        "Raw: " +
+        raw,
+    };
+  }
+
+  // その他 / 未知のエラー
+  return {
+    error: "AIガイドとの つうしんに しっぱいしました",
+    errorDetail:
+      "[予期せぬエラー] 原因不明のエラーが発生しました。\n" +
+      "Raw: " +
+      raw,
+  };
+}
 
 export async function chatWithAnimal(
   caughtAnimalId: string,
@@ -100,7 +202,12 @@ export async function chatWithAnimal(
   userId: string,
 ): Promise<ChatWithAnimalResult> {
   if (!caughtAnimalId || !message.trim() || !userId) {
-    return { success: false, error: "パラメータが足りません" };
+    return {
+      success: false,
+      error: "パラメータが足りません",
+      errorDetail:
+        "[バリデーション] caughtAnimalId / message / userId のいずれかが空です。",
+    };
   }
 
   const user = await prisma.user.findUnique({
@@ -108,21 +215,45 @@ export async function chatWithAnimal(
     select: { id: true, role: true },
   });
   if (!user || user.role !== "CHILD") {
-    return { success: false, error: "ユーザーが みつかりません" };
+    return {
+      success: false,
+      error: "ユーザーが みつかりません",
+      errorDetail:
+        "[認証] userId=" +
+        JSON.stringify(userId) +
+        " が存在しないか CHILD ロールではありません。",
+    };
   }
 
   try {
     const service = new AIGuideService();
-    const response = await service.chat(userId, caughtAnimalId, message, "house");
+    const response = await service.chat(
+      userId,
+      caughtAnimalId,
+      message,
+      "house",
+    );
     return { success: true, response };
   } catch (err) {
     if (err instanceof Error && err.message === "CAUGHT_ANIMAL_NOT_FOUND") {
-      return { success: false, error: "どうぶつが みつかりません" };
+      return {
+        success: false,
+        error: "どうぶつが みつかりません",
+        errorDetail:
+          "[DB] caughtAnimalId=" +
+          JSON.stringify(caughtAnimalId) +
+          " が存在しません。",
+      };
     }
-    console.error("chatWithAnimal failed:", err);
-    return {
-      success: false,
-      error: "AIガイドとの つうしんに しっぱいしました。もう一度 ためしてね",
-    };
+
+    // Ollama 起因のエラーを分類して返す
+    const classified = classifyOllamaError(err);
+    console.error(
+      "[chatWithAnimal] Ollama error\n  errorDetail:",
+      classified.errorDetail,
+      "\n  Original error object:",
+      err,
+    );
+    return { success: false, ...classified };
   }
 }
