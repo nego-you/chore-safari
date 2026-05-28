@@ -1,11 +1,11 @@
 "use client";
 
 // components/GuideChatModal.tsx
-// Web Speech API を使った完全音声対話チャットモーダル
+// VOICEVOX バックエンド TTS + Web Speech API STT による完全音声対話チャットモーダル
 //   - SpeechRecognition (STT): マイクボタンタップでトグル録音
-//   - speechSynthesis (TTS): 動物の返答を自動読み上げ (ja-JP, pitch 高め)
+//   - VOICEVOX TTS: /api/synthesize に POST → WAV を AudioContext で再生
 //   - Framer Motion: マイク波紋 / 動物アイコンジャンプ
-//   - AudioContext unlock: 初回タップ時に speechSynthesis を解除
+//   - isSynthesizing: 音声生成中のローディング表示
 
 import { useState, useRef, useEffect, useTransition, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -84,6 +84,33 @@ function getSpeechRecognitionClass(): (new () => SpeechRecognition) | null {
 }
 
 // ─────────────────────────────────────────────────────────────
+// VOICEVOX TTS ヘルパー
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * /api/synthesize にテキストを送り WAV ArrayBuffer を返す。
+ * 失敗時は null を返す（呼び出し元でサイレントフォールバック）。
+ */
+async function fetchSynthesizedAudio(text: string): Promise<ArrayBuffer | null> {
+  try {
+    const res = await fetch("/api/synthesize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+      signal: AbortSignal.timeout(35_000),
+    });
+    if (!res.ok) {
+      console.error("[GuideChatModal] /api/synthesize error:", res.status, await res.text().catch(() => ""));
+      return null;
+    }
+    return await res.arrayBuffer();
+  } catch (err) {
+    console.error("[GuideChatModal] /api/synthesize fetch failed:", err);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // メインコンポーネント
 // ─────────────────────────────────────────────────────────────
 
@@ -104,11 +131,17 @@ export default function GuideChatModal({
     useState<AiResponse["emotion"]>("joy");
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  /** VOICEVOX API 呼び出し中（WAV 生成待ち）のローディング状態 */
+  const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [interimText, setInterimText] = useState("");
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const audioUnlockedRef = useRef(false);
+
+  /** AudioContext は初回ユーザーインタラクション後に生成（autoplay policy 対応） */
+  const audioContextRef = useRef<AudioContext | null>(null);
+  /** 再生中の BufferSource。正解・スキップ時に即停止できるよう保持する */
+  const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
   // sendMessage を ref で保持して SpeechRecognition コールバック内の
   // stale closure 問題を回避する
@@ -123,40 +156,76 @@ export default function GuideChatModal({
     });
   }, [messages]);
 
-  // ─── AudioContext / speechSynthesis unlock ───────────────
+  // ─── AudioContext の初期化（ユーザーインタラクション時） ──
 
-  const unlockAudio = useCallback(() => {
-    if (audioUnlockedRef.current) return;
-    try {
-      const silent = new SpeechSynthesisUtterance(" ");
-      silent.volume = 0;
-      window.speechSynthesis.speak(silent);
-      audioUnlockedRef.current = true;
-    } catch (e) {
-      console.error("[GuideChatModal] AudioContext unlock failed:", e);
+  const ensureAudioContext = useCallback(() => {
+    if (typeof window === "undefined") return null;
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContext();
     }
+    // Safari などで suspended になっている場合は resume する
+    if (audioContextRef.current.state === "suspended") {
+      audioContextRef.current.resume().catch(() => {});
+    }
+    return audioContextRef.current;
   }, []);
 
-  // ─── TTS 読み上げ ─────────────────────────────────────────
+  // ─── 再生停止 ─────────────────────────────────────────────
 
-  const speak = useCallback((text: string) => {
-    if (typeof window === "undefined" || !window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = "ja-JP";
-    u.pitch = 1.8;
-    u.rate = 1.1;
-
-    u.onstart = () => setIsSpeaking(true);
-    u.onend = () => setIsSpeaking(false);
-    u.onerror = (e) => {
-      console.error("[GuideChatModal] SpeechSynthesis error:", e.error);
-      setIsSpeaking(false);
-    };
-
-    window.speechSynthesis.speak(u);
+  const stopSpeech = useCallback(() => {
+    try {
+      audioSourceRef.current?.stop();
+    } catch {
+      // すでに停止済みの場合は無視
+    }
+    audioSourceRef.current = null;
+    setIsSpeaking(false);
   }, []);
+
+  // ─── VOICEVOX TTS 読み上げ ────────────────────────────────
+
+  const speak = useCallback(
+    async (text: string) => {
+      // 前の音声を即停止
+      stopSpeech();
+
+      const ctx = ensureAudioContext();
+      if (!ctx) return;
+
+      setIsSynthesizing(true);
+      try {
+        const arrayBuffer = await fetchSynthesizedAudio(text);
+        if (!arrayBuffer) {
+          // 音声生成失敗はサイレントフォールバック（テキストは表示済み）
+          return;
+        }
+
+        // WAV を AudioBuffer にデコードして再生
+        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+
+        const source = ctx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(ctx.destination);
+
+        source.onended = () => {
+          setIsSpeaking(false);
+          if (audioSourceRef.current === source) {
+            audioSourceRef.current = null;
+          }
+        };
+
+        audioSourceRef.current = source;
+        source.start();
+        setIsSpeaking(true);
+      } catch (err) {
+        console.error("[GuideChatModal] AudioContext decode/play error:", err);
+        setIsSpeaking(false);
+      } finally {
+        setIsSynthesizing(false);
+      }
+    },
+    [ensureAudioContext, stopSpeech],
+  );
 
   // ─── Gemini 送信 ──────────────────────────────────────────
 
@@ -199,7 +268,7 @@ export default function GuideChatModal({
                 emotion: result.response.emotion,
               },
             ]);
-            speak(reply);
+            void speak(reply);
           } else {
             // Server Action が分類したエラーを表示
             console.error(
@@ -215,7 +284,7 @@ export default function GuideChatModal({
                 errorDetail: result.errorDetail,
               },
             ]);
-            speak("ごめんね、うまく きけなかった...");
+            void speak("ごめんね、うまく きけなかった...");
           }
         } catch (err) {
           // ネットワーク層など予期しない例外
@@ -232,7 +301,7 @@ export default function GuideChatModal({
               errorDetail: "[クライアント例外]\n" + detail,
             },
           ]);
-          speak("ごめんね、よみこめないエラーが でたよ...");
+          void speak("ごめんね、よみこめないエラーが でたよ...");
         }
       });
     },
@@ -298,14 +367,20 @@ export default function GuideChatModal({
 
     return () => {
       rec.abort();
-      window.speechSynthesis?.cancel();
+      // モーダルが閉じられたら音声を即停止・AudioContext を解放
+      try { audioSourceRef.current?.stop(); } catch { /* ignore */ }
+      audioSourceRef.current = null;
+      audioContextRef.current?.close().catch(() => {});
+      audioContextRef.current = null;
     };
   }, []);
 
   // ─── マイクトグル ─────────────────────────────────────────
 
   const toggleMic = useCallback(() => {
-    unlockAudio();
+    // マイク操作時に AudioContext を初期化（autoplay policy 解除）
+    ensureAudioContext();
+
     const rec = recognitionRef.current;
     if (!rec) {
       console.error(
@@ -326,7 +401,7 @@ export default function GuideChatModal({
         console.error("[GuideChatModal] SpeechRecognition start failed:", e);
       }
     }
-  }, [isListening, unlockAudio]);
+  }, [isListening, ensureAudioContext]);
 
   const intimacy = getIntimacyLabel(animal.intimacyScore);
 
@@ -359,7 +434,7 @@ export default function GuideChatModal({
               borderBottom: "3px solid #1B5E20",
             }}
           >
-            {/* アバター: 発話中はジャンプ、推論中はスケール */}
+            {/* アバター: 発話中はジャンプ、推論中・合成中はスケール */}
             <motion.div
               className="relative flex items-center justify-center rounded-full"
               style={{
@@ -372,20 +447,20 @@ export default function GuideChatModal({
               animate={
                 isSpeaking
                   ? { y: [0, -10, 0, -7, 0], rotate: [0, -6, 6, -3, 0] }
-                  : isPending
+                  : isPending || isSynthesizing
                   ? { scale: [1, 1.12, 1] }
                   : { scale: 1, y: 0, rotate: 0 }
               }
               transition={
                 isSpeaking
                   ? { repeat: Infinity, duration: 0.55, ease: "easeInOut" }
-                  : isPending
+                  : isPending || isSynthesizing
                   ? { repeat: Infinity, duration: 0.8 }
                   : { duration: 0.2 }
               }
             >
-              {isPending ? "💭" : animal.emoji}
-              {!isPending && (
+              {isPending || isSynthesizing ? "💭" : animal.emoji}
+              {!isPending && !isSynthesizing && (
                 <span
                   className="absolute -bottom-1 -right-1"
                   style={{ fontSize: "1.1rem" }}
@@ -430,7 +505,10 @@ export default function GuideChatModal({
                 background: "rgba(0,0,0,0.25)",
                 fontSize: "1.3rem",
               }}
-              onClick={onClose}
+              onClick={() => {
+                stopSpeech();
+                onClose();
+              }}
             >
               {"✕"}
             </button>
@@ -628,10 +706,10 @@ export default function GuideChatModal({
               <button
                 key={phrase}
                 onClick={() => {
-                  unlockAudio();
+                  ensureAudioContext();
                   sendMessage(phrase);
                 }}
-                disabled={isPending || isListening}
+                disabled={isPending || isListening || isSynthesizing}
                 className="shrink-0 px-3 py-1 rounded-full text-xs font-bold transition-transform active:scale-95 disabled:opacity-50"
                 style={{
                   background: "#E8F5E9",
@@ -660,6 +738,8 @@ export default function GuideChatModal({
             >
               {isListening
                 ? "🎤 きいてるよ... はなしかけてね！"
+                : isSynthesizing
+                ? "🔄 こえを つくってるよ..."
                 : isSpeaking
                 ? "🔊 はなしてるよ..."
                 : isPending
@@ -690,26 +770,50 @@ export default function GuideChatModal({
                   />
                 ))}
 
+              {/* 合成中スピナー */}
+              {isSynthesizing && !isListening && (
+                <motion.div
+                  className="absolute rounded-full pointer-events-none"
+                  style={{
+                    width: 80,
+                    height: 80,
+                    border: "3px solid #FF9800",
+                  }}
+                  animate={{ scale: [1, 1.6], opacity: [0.8, 0] }}
+                  transition={{
+                    repeat: Infinity,
+                    duration: 1.0,
+                    ease: "easeOut",
+                  }}
+                />
+              )}
+
               {/* マイクボタン本体 */}
               <motion.button
                 onClick={toggleMic}
-                disabled={isPending}
+                disabled={isPending || isSynthesizing}
                 className="relative z-10 flex items-center justify-center rounded-full select-none"
                 style={{
                   width: 80,
                   height: 80,
                   background: isListening
                     ? "linear-gradient(135deg, #F44336, #B71C1C)"
+                    : isSynthesizing
+                    ? "linear-gradient(135deg, #FF9800, #E65100)"
                     : "linear-gradient(135deg, #4CAF50, #1B5E20)",
                   border: isListening
                     ? "4px solid #B71C1C"
+                    : isSynthesizing
+                    ? "4px solid #E65100"
                     : "4px solid #1B5E20",
                   fontSize: "2rem",
                   boxShadow: isListening
                     ? "0 8px 0 #7F0000, 0 12px 28px rgba(244,67,54,0.4)"
+                    : isSynthesizing
+                    ? "0 8px 0 #BF360C, 0 12px 28px rgba(255,152,0,0.4)"
                     : "0 8px 0 #1B5E20, 0 12px 28px rgba(76,175,80,0.4)",
-                  cursor: isPending ? "not-allowed" : "pointer",
-                  opacity: isPending ? 0.55 : 1,
+                  cursor: isPending || isSynthesizing ? "not-allowed" : "pointer",
+                  opacity: isPending || isSynthesizing ? 0.7 : 1,
                 }}
                 animate={isListening ? { scale: [1, 1.07, 1] } : { scale: 1 }}
                 transition={
@@ -719,7 +823,7 @@ export default function GuideChatModal({
                 }
                 whileTap={{ scale: 0.88, y: 5 }}
               >
-                {isListening ? "⏹" : "🎤"}
+                {isListening ? "⏹" : isSynthesizing ? "🔄" : "🎤"}
               </motion.button>
             </div>
           </div>
