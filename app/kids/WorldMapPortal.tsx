@@ -342,7 +342,7 @@ const PATHS = [
 // ── ゲームセンター内ゲーム ─────────────────────────────────────
 const ARCADE_GAMES = [
   { id: "crane", icon: "🎁", name: "クレーンゲーム", sub: "UFOキャッチャー", route: "crane", ready: true,  color: "#34d399" },
-  { id: "quiz",  icon: "❓", name: "どうぶつクイズ", sub: "ちしきをためそう",  route: "quiz",  ready: false, color: "#a78bfa" },
+  { id: "quiz",  icon: "❓", name: "はやおしクイズ", sub: "せいかいで20コイン！", route: "quiz",  ready: true,  color: "#a78bfa" },
   { id: "slot",  icon: "🎰", name: "サファリスロット",sub: "レアなどうぶつをゲット", route: "slot", ready: false, color: "#f59e0b" },
 ];
 
