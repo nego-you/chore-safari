@@ -1,5 +1,3 @@
-"use server";
-
 // app/kids/actions.ts — re-export barrel
 // Implementation has been moved to features/ sub-modules.
 // All exports are re-exported here to avoid breaking existing import paths.

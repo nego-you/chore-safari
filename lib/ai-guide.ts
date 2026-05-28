@@ -43,7 +43,7 @@ export type SuggestionResponse = z.infer<typeof SuggestionResponseSchema>;
 class AIGuideReceptor {
   /** chat() 用: CaughtAnimal + UserActivity */
   async collectData(userId: string, caughtAnimalId: string) {
-    const [caughtAnimal, activities] = await Promise.all([
+    const [caughtAnimal, activities, appearedHunts, lastGacha, lastHunt] = await Promise.all([
       prisma.caughtAnimal.findUnique({
         where: { id: caughtAnimalId },
         select: {
@@ -71,9 +71,23 @@ class AIGuideReceptor {
         where: { userId },
         select: { featureId: true, lastUsedAt: true },
       }),
+      // 出現済み罠の数（今すぐ確認できる状態）
+      prisma.hunt.count({ where: { userId, status: "APPEARED" } }),
+      // 最後にガチャをした日時
+      prisma.gachaTransaction.findFirst({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true },
+      }),
+      // 最後に狩りをした日時
+      prisma.hunt.findFirst({
+        where: { userId },
+        orderBy: { placedAt: "desc" },
+        select: { placedAt: true },
+      }),
     ]);
 
-    return { caughtAnimal, activities };
+    return { caughtAnimal, activities, appearedHunts, lastGacha, lastHunt };
   }
 
   /** suggestProactively() 用: ユーザー状況の全体収集 */
@@ -81,7 +95,7 @@ class AIGuideReceptor {
     const now = new Date();
     const threeDaysLater = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
 
-    const [user, guideAnimal, expiringAnimals, activities, pendingQuests] =
+    const [user, guideAnimal, expiringAnimals, activities, pendingQuests, appearedHunts, lastGacha, lastHunt] =
       await Promise.all([
         prisma.user.findUnique({
           where: { id: userId },
@@ -131,6 +145,20 @@ class AIGuideReceptor {
         prisma.questSubmission.count({
           where: { userId, status: "PENDING" },
         }),
+        // 出現済み罠の数
+        prisma.hunt.count({ where: { userId, status: "APPEARED" } }),
+        // 最後にガチャをした日時
+        prisma.gachaTransaction.findFirst({
+          where: { userId },
+          orderBy: { createdAt: "desc" },
+          select: { createdAt: true },
+        }),
+        // 最後に狩りをした日時
+        prisma.hunt.findFirst({
+          where: { userId },
+          orderBy: { placedAt: "desc" },
+          select: { placedAt: true },
+        }),
       ]);
 
     return {
@@ -139,6 +167,9 @@ class AIGuideReceptor {
       expiringAnimals,
       activities,
       pendingQuests,
+      appearedHunts,
+      lastGacha,
+      lastHunt,
     };
   }
 }
@@ -178,7 +209,7 @@ class AIGuideConstraint {
 
   /** 自発提案のシステムプロンプトを構築する */
   buildSuggestionPrompt(ctx: CollectedContext): string {
-    const { user, guideAnimal, expiringAnimals, activities, pendingQuests } =
+    const { user, guideAnimal, expiringAnimals, activities, pendingQuests, appearedHunts, lastGacha, lastHunt } =
       ctx;
 
     if (!guideAnimal || !user) return "";
@@ -189,45 +220,67 @@ class AIGuideConstraint {
     };
 
     // ── 優先度リストを組み立て ──
-    const priorities: string[] = [];
+    // tier1: 緊急・重要（最初の1件を確定で使う）
+    // tier2: 日常提案（ランダムに1件選ぶ）
+    const tier1: string[] = [];
+    const tier2: string[] = [];
+
+    const now = Date.now();
+    const threeDaysAgo = new Date(now - 3 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
+    const getAct = (id: string) => activities.find((a) => a.featureId === id);
 
     if (expiringAnimals.length > 0) {
       const names = expiringAnimals
         .map((a) => `${a.animal.emoji}${a.animal.genericName}`)
         .join("、");
-      priorities.push(
-        `【最優先】寿命が3日以内の仲間（${names}）のことを心配して声をかける`,
-      );
+      tier1.push(`【最優先】寿命が3日以内の仲間（${names}）のことを心配して声をかける`);
+    }
+
+    if (appearedHunts > 0) {
+      tier1.push(`罠に${appearedHunts}匹引っかかっている！今すぐサファリに確認しに行くよう強く誘う`);
     }
 
     if (user.coinBalance < 50) {
-      priorities.push(
-        "コインが少ないので、おてつだいクエストをがんばるよう励ます",
-      );
+      tier1.push("コインが少ないので、おてつだいクエストをがんばるよう励ます");
     }
 
     if (user.currentStreak >= 3) {
-      priorities.push(
-        `${user.currentStreak}日連続達成中！ ストリークをほめてモチベートする`,
-      );
+      tier1.push(`${user.currentStreak}日連続達成中！ ストリークをほめてモチベートする`);
     }
 
     if (pendingQuests > 0) {
-      priorities.push(
-        `承認待ちのクエストが${pendingQuests}件ある。親に見てもらうよう促す`,
-      );
+      tier1.push(`承認待ちのクエストが${pendingQuests}件ある。親に見てもらうよう促す`);
     }
 
-    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
-    const cameraActivity = activities.find((a) => a.featureId === "camera");
-    if (!cameraActivity || cameraActivity.lastUsedAt < threeDaysAgo) {
-      priorities.push("最近カメラ機能を使っていない。写真を撮るよう誘う");
+    // tier2: DB実績・アクティビティ履歴ベースの日常提案
+    if (!lastGacha || lastGacha.createdAt < threeDaysAgo) {
+      tier2.push("最近ガチャをやっていない。ガチャに誘う");
+    }
+    if (!lastHunt || lastHunt.placedAt < threeDaysAgo) {
+      tier2.push("最近サファリで狩りをしていない。罠を仕掛けるか狩りに行くよう誘う");
+    }
+    const raceAct = getAct("race");
+    if (!raceAct || raceAct.lastUsedAt < threeDaysAgo) {
+      tier2.push("最近カオスレースをしていない。レースに誘う");
+    }
+    const craftAct = getAct("craft");
+    if (!craftAct || craftAct.lastUsedAt < sevenDaysAgo) {
+      tier2.push("最近クラフトをしていない。道具を作るよう誘う");
+    }
+    const cameraAct = getAct("camera");
+    if (!cameraAct || cameraAct.lastUsedAt < sevenDaysAgo) {
+      tier2.push("最近カメラ機能を使っていない。写真を撮るよう誘う");
     }
 
-    const priorityText =
-      priorities.length > 0
-        ? priorities[0] // 最も優先度の高い1件のみ話しかける
-        : "特に緊急事項はない。日常の挨拶や励ましの言葉をかける";
+    let priorityText: string;
+    if (tier1.length > 0) {
+      priorityText = tier1[0]; // 緊急事項は先頭確定
+    } else if (tier2.length > 0) {
+      priorityText = tier2[Math.floor(Math.random() * tier2.length)]; // 日常提案はランダム
+    } else {
+      priorityText = "特に緊急事項はない。日常の挨拶や励ましの言葉をかける";
+    }
 
     const ageInDays = Math.floor(
       (Date.now() - guideAnimal.caughtAt.getTime()) / (1000 * 60 * 60 * 24),
@@ -265,6 +318,9 @@ ${priorityText}
     ca: CaughtAnimalData,
     activities: ActivityData,
     currentScreen: string,
+    appearedHunts: number,
+    lastGacha: { createdAt: Date } | null,
+    lastHunt: { placedAt: Date } | null,
   ): string {
     const personality = ca.personality ?? {
       firstPerson: "ぼく",
@@ -272,7 +328,7 @@ ${priorityText}
     };
 
     const phaseRule = this._phaseRule(ca.intimacyScore);
-    const suggestionRule = this._suggestionRule(activities);
+    const suggestionRule = this._suggestionRule(activities, appearedHunts, lastGacha, lastHunt);
     const ageInYears = Math.floor(
       (Date.now() - ca.caughtAt.getTime()) / (1000 * 60 * 60 * 24),
     );
@@ -318,27 +374,56 @@ ${suggestionRule}
     }
   }
 
-  private _suggestionRule(activities: ActivityData): string {
-    const rules: string[] = [];
-    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+  private _suggestionRule(
+    activities: ActivityData,
+    appearedHunts: number,
+    lastGacha: { createdAt: Date } | null,
+    lastHunt: { placedAt: Date } | null,
+  ): string {
+    const now = Date.now();
+    const threeDaysAgo = new Date(now - 3 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
+    const getAct = (id: string) =>
+      activities.find((a: { featureId: string; lastUsedAt: Date }) => a.featureId === id);
 
-    const cameraActivity = activities.find((a: { featureId: string; lastUsedAt: Date }) => a.featureId === "camera");
-    const quizActivity = activities.find((a: { featureId: string; lastUsedAt: Date }) => a.featureId === "quiz");
-
-    if (!cameraActivity || cameraActivity.lastUsedAt < threeDaysAgo) {
-      rules.push(
-        "- ユーザーは最近カメラ機能を使っていません。動物の写真を撮るよう促し、suggested_action を open_camera にしてください。",
-      );
+    // ── 最優先（確定）：出現済みの罠 ──────────────────────────────
+    // DB で実際に APPEARED 状態の Hunt がある場合は即座に誘導
+    if (appearedHunts > 0) {
+      return `- 罠に動物が引っかかっています（${appearedHunts}件）。今すぐサファリに確認しに行くよう強く誘ってください。suggested_action は none。`;
     }
-    if (!quizActivity || quizActivity.lastUsedAt < threeDaysAgo) {
-      rules.push(
-        "- ユーザーは最近クイズ機能を使っていません。サファリクイズに誘い、suggested_action を open_quiz にしてください。",
-      );
+
+    // ── 候補プール（ランダム選択で毎回違う話題に） ────────────────
+    // DB実績ベース・アクティビティ履歴ベースの提案を混ぜる
+    const pool: string[] = [];
+
+    if (!lastGacha || lastGacha.createdAt < threeDaysAgo) {
+      pool.push("- 最近ガチャをやっていません。ガチャに誘ってください。suggested_action は none。");
+    }
+    if (!lastHunt || lastHunt.placedAt < threeDaysAgo) {
+      pool.push("- 最近サファリで狩りをしていません。罠を仕掛けるか狩りに行くよう誘ってください。suggested_action は none。");
+    }
+    const raceAct = getAct("race");
+    if (!raceAct || raceAct.lastUsedAt < threeDaysAgo) {
+      pool.push("- 最近カオスレースをしていません。レースに誘ってください。suggested_action は none。");
+    }
+    const craftAct = getAct("craft");
+    if (!craftAct || craftAct.lastUsedAt < sevenDaysAgo) {
+      pool.push("- 最近クラフトをしていません。道具を作るよう誘ってください。suggested_action は none。");
+    }
+    const quizAct = getAct("quiz");
+    if (!quizAct || quizAct.lastUsedAt < threeDaysAgo) {
+      pool.push("- 最近クイズをしていません。サファリクイズに誘い、suggested_action を open_quiz にしてください。");
+    }
+    const cameraAct = getAct("camera");
+    if (!cameraAct || cameraAct.lastUsedAt < sevenDaysAgo) {
+      pool.push("- 最近カメラ機能を使っていません。動物の写真を撮るよう促し、suggested_action を open_camera にしてください。");
     }
 
-    return rules.length > 0
-      ? rules.join("\n")
-      : "特になし。suggested_action は none にし、通常の会話をしてください。";
+    if (pool.length === 0) {
+      return "特になし。suggested_action は none にし、通常の会話をしてください。";
+    }
+    // ランダムに1件選ぶ（毎回カメラ一択にならないように）
+    return pool[Math.floor(Math.random() * pool.length)];
   }
 }
 
@@ -390,7 +475,7 @@ export class AIGuideService {
     message: string,
     currentScreen: string,
   ): Promise<AiResponse> {
-    const { caughtAnimal, activities } = await this.receptor.collectData(
+    const { caughtAnimal, activities, appearedHunts, lastGacha, lastHunt } = await this.receptor.collectData(
       userId,
       caughtAnimalId,
     );
@@ -402,6 +487,9 @@ export class AIGuideService {
       caughtAnimal,
       activities,
       currentScreen,
+      appearedHunts,
+      lastGacha,
+      lastHunt,
     );
 
     const response = await this.reactor.generateReply(systemPrompt, message);

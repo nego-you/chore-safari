@@ -7,6 +7,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { findRecipe } from "@/lib/recipes";
+import { AIGuideService } from "@/lib/ai-guide";
 
 // ── 型 ────────────────────────────────────────────────────────────────
 
@@ -117,6 +118,8 @@ export async function craftItem(recipeId: string, userId: string): Promise<Craft
     });
 
     revalidatePath(`/kids`);
+    // クラフト利用履歴を記録（AIガイドの提案に反映される）
+    void AIGuideService.recordActivity(userId, "craft").catch(() => {});
 
     const masterById = new Map(materialMasters.map((m) => [m.id, m.materialId]));
 

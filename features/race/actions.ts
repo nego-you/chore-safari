@@ -7,6 +7,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { AIGuideService } from "@/lib/ai-guide";
 
 // ── メインアクション ────────────────────────────────────────────────────
 
@@ -52,6 +53,8 @@ export async function betOnRace(
 
     revalidatePath("/kids");
     revalidatePath("/bank");
+    // レース利用履歴を記録（AIガイドの提案に反映される）
+    void AIGuideService.recordActivity(userId, "race").catch(() => {});
     return { success: true, newCoinBalance: fresh.coinBalance };
   } catch (err) {
     if (err instanceof Error && err.message === "INSUFFICIENT_COINS") {
