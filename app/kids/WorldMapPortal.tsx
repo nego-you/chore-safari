@@ -859,30 +859,6 @@ export function WorldMapPortal({
           {comingSoon && <ComingSoonToast pin={comingSoon} onClose={() => setComingSoon(null)} />}
         </div>
 
-        {/* ── 経済フロー（タブレットでは横並び展開） ── */}
-        <div style={{
-          marginTop: 14, background: "rgba(255,255,255,.72)",
-          borderRadius: 20, padding: "14px 20px",
-          border: "1px solid #ede9fe",
-        }}>
-          <div style={{ fontSize: "var(--wm-flow-sz)", fontWeight: 800, color: "#7c3aed", marginBottom: 8 }}>📍 けいざいのながれ</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-            {[
-              "🏰 ギルド", "🔨 クラフト",
-              "🦁 罠スタイル", "🏹 アクティブ狩り",
-              "📦 倉庫", "🐘 どうぶつえん", "🕹️ ゲームセンター",
-            ].map((s, i, a) => (
-              <span key={i} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                <span style={{
-                  background: "#f5f3ff", border: "1px solid #ddd6fe",
-                  borderRadius: 22, padding: "4px 12px",
-                  fontSize: "var(--wm-flow-chip)", fontWeight: 700, color: "#5b21b6",
-                }}>{s}</span>
-                {i < a.length - 1 && <span style={{ color: "#a78bfa", fontSize: "var(--wm-flow-chip)" }}>→</span>}
-              </span>
-            ))}
-          </div>
-        </div>
       </div>
 
       {arcadeOpen && (

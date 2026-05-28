@@ -64,7 +64,7 @@ function getIntimacyLabel(score: number) {
 
 const QUICK_PHRASES = [
   "げんき？",
-  "なにたべたい？",
+  "ながれをおしえて！",
   "いっしょにあそぼ！",
   "すきなものなーに？",
 ];

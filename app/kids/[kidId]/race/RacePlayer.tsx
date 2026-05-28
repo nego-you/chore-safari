@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
 import { betOnRace, claimRaceReward } from "../../actions";
+import { useSafariStore } from "@/store/useSafariStore";
 
 // ─── 型定義 ───────────────────────────────────────────────────
 
@@ -165,6 +166,7 @@ type Props = {
 export function RacePlayer({ kidId, animals, coinBalance: initialCoinBalance }: Props) {
   const portalHref = `/kids/${kidId}`;
   const commentIdRef = useRef(0);
+  const syncCoins = useSafariStore((s) => s.syncCoins);
 
   // ── ランダム5匹選出 ─────────────────────────────────────────
   const [lanes, setLanes] = useState<RaceLane[]>([]);
@@ -297,7 +299,10 @@ export function RacePlayer({ kidId, animals, coinBalance: initialCoinBalance }: 
     if (didWin) {
       const reward = Math.floor(betAmount * winnerOdds);
       const res = await claimRaceReward(kidId, reward);
-      if (res.success) setCoinBalance(res.newCoinBalance);
+      if (res.success) {
+        setCoinBalance(res.newCoinBalance);
+        syncCoins(res.newCoinBalance);
+      }
     }
 
     setPhase("finished");
@@ -356,6 +361,7 @@ export function RacePlayer({ kidId, animals, coinBalance: initialCoinBalance }: 
       return;
     }
     setCoinBalance(res.newCoinBalance);
+    syncCoins(res.newCoinBalance);
     setIsBetting(false);
 
     if (intervalRef.current) clearInterval(intervalRef.current);

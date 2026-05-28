@@ -205,7 +205,7 @@ function GuideWidget({
       <span style={{ fontSize: "var(--w-em)", lineHeight: 1 }}>{guide.emoji}</span>
       <div style={{ textAlign: "left" }}>
         <div style={{ fontSize: "var(--wl-sz)", fontWeight: 800, color: "#9d174d", letterSpacing: "0.06em" }}>
-          そうべつ
+          ガイド
         </div>
         <div
           style={{
