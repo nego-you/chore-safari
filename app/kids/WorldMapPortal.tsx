@@ -21,6 +21,71 @@ const MAP_CSS = `
 @keyframes bobble{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 @keyframes walkTo{0%{transform:translate(var(--ex-start),var(--ey-start))}100%{transform:translate(var(--ex-end),var(--ey-end))}}
 @keyframes slideUp{0%{transform:translateY(110%);opacity:0}100%{transform:translateY(0);opacity:1}}
+
+/* ── iPad レスポンシブ ── */
+.wm-root {
+  --wm-max-w:     1024px;
+  --wm-px:          16px;
+  --wm-map-h:     min(calc(76vh - var(--header-h, 56px)), 680px);
+  --wm-pin-sz:      52px;
+  --wm-pin-r:       18px;
+  --wm-pin-em:      24px;
+  --wm-pin-lbl:      9px;
+  --wm-pin-lbl-w:   90px;
+  --wm-av-sz:       44px;
+  --wm-av-em:       24px;
+  --wm-av-r:        22px;
+  --wm-av-name:      9px;
+  --wm-npc-em:      18px;
+  --wm-npc-name:     8px;
+  --wm-status-sz:   11px;
+  --wm-status-pad: 5px 16px;
+  --wm-deco-sz:     24px;
+  --wm-flow-sz:     12px;
+  --wm-flow-chip:  10px;
+  --wm-new-sz:       8px;
+  --wm-badge-top:   -8px;
+  --wm-badge-right: -8px;
+  --wm-mute-sz:     36px;
+  --wm-mute-em:     18px;
+}
+@media (min-width: 768px) {
+  .wm-root {
+    --wm-max-w:    1280px;
+    --wm-px:         28px;
+    --wm-map-h:    min(calc(78vh - var(--header-h, 80px)), 840px);
+    --wm-pin-sz:     72px;
+    --wm-pin-r:      24px;
+    --wm-pin-em:     34px;
+    --wm-pin-lbl:    12px;
+    --wm-pin-lbl-w: 110px;
+    --wm-av-sz:      64px;
+    --wm-av-em:      36px;
+    --wm-av-r:       32px;
+    --wm-av-name:    12px;
+    --wm-npc-em:     28px;
+    --wm-npc-name:   11px;
+    --wm-status-sz:  14px;
+    --wm-status-pad: 8px 24px;
+    --wm-deco-sz:    36px;
+    --wm-flow-sz:    14px;
+    --wm-flow-chip:  12px;
+    --wm-new-sz:     10px;
+    --wm-badge-top:  -10px;
+    --wm-badge-right:-10px;
+    --wm-mute-sz:    48px;
+    --wm-mute-em:    24px;
+  }
+}
+/* ゲームセンターモーダル: sm以上でセンター表示 */
+@media (min-width: 768px) {
+  .wm-arcade-sheet {
+    border-radius: 28px !important;
+    max-width: 560px !important;
+    margin: auto !important;
+    margin-bottom: 0 !important;
+  }
+}
 `;
 
 function injectMapCSS() {
@@ -370,56 +435,61 @@ function ArcadeModal({ onClose, onNavigate }: {
   return (
     <div style={{
       position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,.55)",
-      display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "flex-end",
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end",
     }}>
-      <div style={{
-        background: "linear-gradient(180deg,#ecfdf5,#fff)",
-        borderRadius: "28px 28px 0 0", animation: "slideUp .32s ease-out", paddingBottom: 36,
-        maxHeight: "80vh", overflowY: "auto",
-      }}>
+      {/* wm-arcade-sheet: タブレットでは @media で中央配置・角丸・幅制限 */}
+      <div
+        className="wm-arcade-sheet"
+        style={{
+          width: "100%",
+          background: "linear-gradient(180deg,#ecfdf5,#fff)",
+          borderRadius: "28px 28px 0 0", animation: "slideUp .32s ease-out", paddingBottom: 36,
+          maxHeight: "82vh", overflowY: "auto",
+        }}
+      >
         <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 4px" }}>
           <div style={{ width: 44, height: 5, borderRadius: 3, background: "#d1d5db" }} />
         </div>
-        <div style={{ display: "flex", alignItems: "center", padding: "0 20px 14px", borderBottom: "1px solid #f3f4f6" }}>
-          <div style={{ fontSize: 32, marginRight: 14 }}>🕹️</div>
+        <div style={{ display: "flex", alignItems: "center", padding: "0 24px 14px", borderBottom: "1px solid #f3f4f6" }}>
+          <div style={{ fontSize: 36, marginRight: 16 }}>🕹️</div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 900, fontSize: 20, color: "#111827" }}>ゲームセンター</div>
-            <div style={{ fontSize: 12, color: "#9ca3af" }}>あそびたい ゲームを えらんでね！</div>
+            <div style={{ fontWeight: 900, fontSize: 22, color: "#111827" }}>ゲームセンター</div>
+            <div style={{ fontSize: 13, color: "#9ca3af" }}>あそびたい ゲームを えらんでね！</div>
           </div>
           <button onClick={onClose} style={{
             background: "#f3f4f6", border: "none", borderRadius: 20,
-            width: 36, height: 36, fontSize: 18, cursor: "pointer", color: "#6b7280",
+            width: 44, height: 44, fontSize: 20, cursor: "pointer", color: "#6b7280",
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>✕</button>
         </div>
-        <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
           {ARCADE_GAMES.map((g) => (
             <button key={g.id} onClick={() => { if (g.ready) onNavigate(g.route); }}
               style={{
-                display: "flex", alignItems: "center", gap: 16, padding: "16px 18px",
-                borderRadius: 20, border: `2.5px solid ${g.ready ? g.color + "88" : "#e5e7eb"}`,
+                display: "flex", alignItems: "center", gap: 18, padding: "18px 20px",
+                borderRadius: 22, border: `2.5px solid ${g.ready ? g.color + "88" : "#e5e7eb"}`,
                 background: g.ready ? `linear-gradient(135deg,${g.color}18,${g.color}08)` : "#f9fafb",
                 cursor: g.ready ? "pointer" : "not-allowed", textAlign: "left",
                 boxShadow: g.ready ? `0 3px 14px ${g.color}22` : "none",
                 transition: "all .18s", opacity: g.ready ? 1 : 0.65,
               }}>
               <div style={{
-                width: 58, height: 58, borderRadius: 18,
+                width: 68, height: 68, borderRadius: 20,
                 background: g.ready ? `linear-gradient(135deg,${g.color},${g.color}bb)` : "#e5e7eb",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 28, flexShrink: 0,
+                fontSize: 34, flexShrink: 0,
                 boxShadow: g.ready ? `0 3px 10px ${g.color}44` : "none",
               }}>{g.icon}</div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 800, fontSize: 16, color: "#111827", marginBottom: 3 }}>{g.name}</div>
-                <div style={{ fontSize: 12, color: "#6b7280" }}>{g.sub}</div>
-                <div style={{ marginTop: 5 }}>
+                <div style={{ fontWeight: 800, fontSize: 18, color: "#111827", marginBottom: 4 }}>{g.name}</div>
+                <div style={{ fontSize: 13, color: "#6b7280" }}>{g.sub}</div>
+                <div style={{ marginTop: 6 }}>
                   {g.ready
-                    ? <span style={{ fontSize: 11, fontWeight: 700, color: g.color, background: g.color + "18", borderRadius: 8, padding: "2px 8px" }}>▶ あそぶ</span>
-                    : <span style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", background: "#f3f4f6", borderRadius: 8, padding: "2px 8px" }}>🚧 準備中</span>}
+                    ? <span style={{ fontSize: 12, fontWeight: 700, color: g.color, background: g.color + "18", borderRadius: 8, padding: "3px 10px" }}>▶ あそぶ</span>
+                    : <span style={{ fontSize: 12, fontWeight: 700, color: "#9ca3af", background: "#f3f4f6", borderRadius: 8, padding: "3px 10px" }}>🚧 準備中</span>}
                 </div>
               </div>
-              {g.ready && <div style={{ fontSize: 20, color: g.color }}>›</div>}
+              {g.ready && <div style={{ fontSize: 24, color: g.color }}>›</div>}
             </button>
           ))}
         </div>
@@ -584,18 +654,21 @@ export function WorldMapPortal({
   } as React.CSSProperties;
 
   return (
-    <div style={{
-      background: "linear-gradient(135deg,#fef9c3,#dcfce7 40%,#dbeafe)",
-      fontFamily: "'Segoe UI',sans-serif",
-      minHeight: "calc(100vh - 52px)",
-    }}>
-      {/* ── maxWidth 1024px でタブレット全幅を活用 ── */}
-      <div style={{ maxWidth: 1024, margin: "0 auto", padding: "14px 16px 36px" }}>
+    <div
+      className="wm-root"
+      style={{
+        background: "linear-gradient(135deg,#fef9c3,#dcfce7 40%,#dbeafe)",
+        fontFamily: "'Segoe UI',sans-serif",
+        minHeight: "calc(100vh - var(--header-h, 56px))",
+      }}
+    >
+      {/* ── maxWidth を CSS var で制御（tablet: 1280px） ── */}
+      <div style={{ maxWidth: "var(--wm-max-w)", margin: "0 auto", padding: "14px var(--wm-px) 36px" }}>
 
         {/* ── マップ本体（GlobalHeader 分を引いた高さ） ── */}
         <div ref={mapRef} style={{
           position: "relative", borderRadius: 32, overflow: "hidden",
-          height: "min(calc(76vh - 52px), 680px)",
+          height: "var(--wm-map-h)",
           background: weather.bgGrad,
           boxShadow: "0 10px 40px rgba(0,0,0,.18)",
         }}>
@@ -608,7 +681,8 @@ export function WorldMapPortal({
             style={{
               position: "absolute", top: 10, right: 10, zIndex: 30,
               background: "rgba(0,0,0,.38)", border: "none", borderRadius: 14,
-              width: 36, height: 36, cursor: "pointer", fontSize: 18,
+              width: "var(--wm-mute-sz)", height: "var(--wm-mute-sz)",
+              cursor: "pointer", fontSize: "var(--wm-mute-em)",
               display: "flex", alignItems: "center", justifyContent: "center",
               backdropFilter: "blur(6px)", color: "#fff",
             }}
@@ -622,17 +696,18 @@ export function WorldMapPortal({
             { t: "🌳", x: 90, y: 3,  s: 1.1 },
             { t: "🌿", x: 1,  y: 78, s: 1.0 },
             { t: "🌴", x: 93, y: 82, s: 1.1 },
-            { t: "🏔️", x: 60, y: 2,  s: 1.4 }, // 山岳（アクティブ狩りエリアの北）
+            { t: "🏔️", x: 60, y: 2,  s: 1.4 },
             { t: "🌊", x: 72, y: 88, s: 0.9 },
             { t: "🌾", x: 20, y: 60, s: 1.0 },
             { t: "🌿", x: 55, y: 87, s: 1.1 },
-            { t: "🌲", x: 38, y: 40, s: 1.0 }, // 罠スタイル周辺の密林
+            { t: "🌲", x: 38, y: 40, s: 1.0 },
             { t: "🌲", x: 48, y: 43, s: 0.9 },
             { t: "🌿", x: 42, y: 65, s: 0.8 },
           ].map((d, i) => (
             <div key={i} style={{
               position: "absolute", left: d.x + "%", top: d.y + "%",
-              fontSize: 24 * d.s, opacity: 0.32, pointerEvents: "none", userSelect: "none",
+              fontSize: `calc(var(--wm-deco-sz) * ${d.s})`,
+              opacity: 0.32, pointerEvents: "none", userSelect: "none",
             }}>{d.t}</div>
           ))}
 
@@ -670,9 +745,9 @@ export function WorldMapPortal({
               transform: "translate(-50%,-50%)",
               zIndex: 8, textAlign: "center", pointerEvents: "none",
             }}>
-              <div style={{ fontSize: 18, animation: "bobble 3s ease-in-out infinite", animationDelay: op.oi * 0.7 + "s" }}>{op.avatar}</div>
+              <div style={{ fontSize: "var(--wm-npc-em)", animation: "bobble 3s ease-in-out infinite", animationDelay: op.oi * 0.7 + "s" }}>{op.avatar}</div>
               <div style={{
-                fontSize: 8, fontWeight: 700, color: "#fff",
+                fontSize: "var(--wm-npc-name)", fontWeight: 700, color: "#fff",
                 background: op.color, borderRadius: 8,
                 padding: "1px 5px", marginTop: 2, whiteSpace: "nowrap",
               }}>{op.yomi}</div>
@@ -693,12 +768,14 @@ export function WorldMapPortal({
                 }}>
                 {/* ピンのアイコン */}
                 <div style={{
-                  position: "relative", width: 52, height: 52, borderRadius: 18,
+                  position: "relative",
+                  width: "var(--wm-pin-sz)", height: "var(--wm-pin-sz)",
+                  borderRadius: "var(--wm-pin-r)",
                   background: grey
                     ? "linear-gradient(135deg,#9ca3af,#6b7280)"
                     : `linear-gradient(135deg,${pin.color},${pin.color}bb)`,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 24, border: "3.5px solid white",
+                  fontSize: "var(--wm-pin-em)", border: "3.5px solid white",
                   boxShadow: grey ? "0 3px 10px rgba(0,0,0,.18)" : `0 5px 16px ${pin.color}66`,
                   animation: "bobble 2.5s ease-in-out infinite",
                   animationDelay: idx * 0.22 + "s",
@@ -707,16 +784,18 @@ export function WorldMapPortal({
                   {pin.icon}
                   {pin.isNew && (
                     <div style={{
-                      position: "absolute", top: -8, right: -8,
+                      position: "absolute",
+                      top: "var(--wm-badge-top)", right: "var(--wm-badge-right)",
                       background: "#ef4444", color: "#fff",
-                      fontSize: 8, fontWeight: 800, borderRadius: 8, padding: "2px 5px",
+                      fontSize: "var(--wm-new-sz)", fontWeight: 800, borderRadius: 8, padding: "2px 5px",
                     }}>NEW</div>
                   )}
                   {grey && (
                     <div style={{
-                      position: "absolute", top: -8, right: -8,
+                      position: "absolute",
+                      top: "var(--wm-badge-top)", right: "var(--wm-badge-right)",
                       background: "#9ca3af", color: "#fff",
-                      fontSize: 8, fontWeight: 800, borderRadius: 8, padding: "2px 5px",
+                      fontSize: "var(--wm-new-sz)", fontWeight: 800, borderRadius: 8, padding: "2px 5px",
                     }}>準備中</div>
                   )}
                   {pin.id === "house" && houseAnimalCount > 0 && (
@@ -732,11 +811,11 @@ export function WorldMapPortal({
                 </div>
                 {/* ラベル */}
                 <div style={{
-                  fontSize: 9, fontWeight: 800, color: "#fff",
+                  fontSize: "var(--wm-pin-lbl)", fontWeight: 800, color: "#fff",
                   background: grey ? "rgba(80,80,80,.60)" : "rgba(0,0,0,.42)",
                   borderRadius: 8, padding: "2px 7px",
                   whiteSpace: "nowrap", backdropFilter: "blur(4px)",
-                  maxWidth: 90, textAlign: "center", lineHeight: 1.3,
+                  maxWidth: "var(--wm-pin-lbl-w)", textAlign: "center", lineHeight: 1.3,
                 }}>{pin.label}</div>
               </button>
             );
@@ -745,17 +824,18 @@ export function WorldMapPortal({
           {/* 歩行アバター */}
           <div style={walkAnimStyle}>
             <div style={{
-              width: 44, height: 44, borderRadius: 22,
+              width: "var(--wm-av-sz)", height: "var(--wm-av-sz)",
+              borderRadius: "var(--wm-av-r)",
               background: player.color + "33",
               border: `3.5px solid ${player.color}`,
               display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 24, boxShadow: `0 0 0 5px ${player.color}22`,
+              fontSize: "var(--wm-av-em)", boxShadow: `0 0 0 5px ${player.color}22`,
               animation: walking ? "bobble .3s ease-in-out infinite" : "bobble 2s ease-in-out infinite",
             }}>{player.avatar}</div>
             {/* 名前バッジ */}
             <div style={{
-              position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)",
-              fontSize: 9, fontWeight: 800, color: "#fff",
+              position: "absolute", top: -18, left: "50%", transform: "translateX(-50%)",
+              fontSize: "var(--wm-av-name)", fontWeight: 800, color: "#fff",
               background: player.color, borderRadius: 8, padding: "2px 6px", whiteSpace: "nowrap",
             }}>{player.yomi}</div>
             {walking && (
@@ -765,10 +845,10 @@ export function WorldMapPortal({
 
           {/* ステータスバー */}
           <div style={{
-            position: "absolute", bottom: 12, left: "50%", transform: "translateX(-50%)",
+            position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)",
             background: walking ? "rgba(132,94,247,.88)" : "rgba(0,0,0,.38)",
-            color: "#fff", fontSize: 11, fontWeight: 700,
-            borderRadius: 14, padding: "5px 16px",
+            color: "#fff", fontSize: "var(--wm-status-sz)", fontWeight: 700,
+            borderRadius: 14, padding: "var(--wm-status-pad)",
             backdropFilter: "blur(6px)", zIndex: 25, whiteSpace: "nowrap",
             boxShadow: "0 2px 10px rgba(0,0,0,.2)",
           }}>
@@ -781,24 +861,24 @@ export function WorldMapPortal({
 
         {/* ── 経済フロー（タブレットでは横並び展開） ── */}
         <div style={{
-          marginTop: 12, background: "rgba(255,255,255,.72)",
-          borderRadius: 20, padding: "12px 18px",
+          marginTop: 14, background: "rgba(255,255,255,.72)",
+          borderRadius: 20, padding: "14px 20px",
           border: "1px solid #ede9fe",
         }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: "#7c3aed", marginBottom: 6 }}>📍 けいざいのながれ</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+          <div style={{ fontSize: "var(--wm-flow-sz)", fontWeight: 800, color: "#7c3aed", marginBottom: 8 }}>📍 けいざいのながれ</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             {[
               "🏰 ギルド", "🔨 クラフト",
               "🦁 罠スタイル", "🏹 アクティブ狩り",
               "📦 倉庫", "🐘 どうぶつえん", "🕹️ ゲームセンター",
             ].map((s, i, a) => (
-              <span key={i} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span key={i} style={{ display: "flex", alignItems: "center", gap: 5 }}>
                 <span style={{
                   background: "#f5f3ff", border: "1px solid #ddd6fe",
-                  borderRadius: 22, padding: "3px 9px",
-                  fontSize: 10, fontWeight: 700, color: "#5b21b6",
+                  borderRadius: 22, padding: "4px 12px",
+                  fontSize: "var(--wm-flow-chip)", fontWeight: 700, color: "#5b21b6",
                 }}>{s}</span>
-                {i < a.length - 1 && <span style={{ color: "#a78bfa", fontSize: 11 }}>→</span>}
+                {i < a.length - 1 && <span style={{ color: "#a78bfa", fontSize: "var(--wm-flow-chip)" }}>→</span>}
               </span>
             ))}
           </div>

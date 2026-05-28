@@ -260,9 +260,9 @@ function GuideSelectModal({
       }}
     >
       <div
-        className="anim-popup"
+        className="anim-popup bc-modal-inner"
         style={{
-          width: "min(90vw, 560px)", borderRadius: 32, overflow: "hidden",
+          borderRadius: 32, overflow: "hidden",
           background: "linear-gradient(180deg,#FFFDF5,#FFF8E1)",
           border: "4px solid #4CAF50",
           boxShadow: "0 16px 60px rgba(0,0,0,.3)",
@@ -435,7 +435,7 @@ export default function BaseCampClient({
     <div
       style={{
         width: "100%",
-        height: "calc(100dvh - 56px)",
+        height: "calc(100dvh - var(--header-h, 56px))",
         overflow: "hidden",
         fontFamily: "'M PLUS Rounded 1c','Rounded Mplus 1c','Noto Sans JP',sans-serif",
         fontWeight: 700,
@@ -462,6 +462,59 @@ export default function BaseCampClient({
         .bc-btn:active{ transform:translateY(4px) scale(.96); }
         .bc-panel-in  { animation: bc-panel-in .3s cubic-bezier(.22,1,.36,1) forwards; }
         .bc-panel-out { animation: bc-panel-out .25s ease-in forwards; }
+
+        /* ── iPad レスポンシブ ── */
+        /* フィールド上の動物サイズ */
+        .bc-animal-common   { font-size: 2.4rem; }
+        .bc-animal-legendary{ font-size: 3.2rem; }
+        /* コマンドパネル */
+        .bc-panel {
+          width: 220px;
+          padding: 24px 16px;
+          gap: 18px;
+        }
+        /* パネル開閉ボタン */
+        .bc-open-btn {
+          padding: 4px 12px;
+          font-size: .85rem;
+        }
+        /* モーダル最大幅 */
+        .bc-modal-inner {
+          width: min(90vw, 560px);
+        }
+        .bc-medals-inner {
+          width: min(90vw, 600px);
+        }
+        /* ガイドアイコン */
+        .bc-guide-icon { font-size: 3.2rem; }
+        /* ボタン */
+        .bc-cmd-btn { padding: 16px 8px; border-radius: 22px; }
+        .bc-cmd-btn span:first-child { font-size: 2.2rem; }
+        .bc-cmd-btn span:last-child  { font-size: .78rem; }
+
+        @media (min-width: 768px) {
+          .bc-animal-common   { font-size: 3.4rem; }
+          .bc-animal-legendary{ font-size: 4.4rem; }
+          .bc-panel {
+            width: 300px;
+            padding: 32px 24px;
+            gap: 24px;
+          }
+          .bc-open-btn {
+            padding: 7px 18px;
+            font-size: 1rem;
+          }
+          .bc-modal-inner {
+            width: min(88vw, 680px);
+          }
+          .bc-medals-inner {
+            width: min(88vw, 760px);
+          }
+          .bc-guide-icon { font-size: 4.8rem; }
+          .bc-cmd-btn { padding: 22px 12px; border-radius: 28px; }
+          .bc-cmd-btn span:first-child { font-size: 3rem; }
+          .bc-cmd-btn span:last-child  { font-size: .95rem; }
+        }
       `}</style>
 
       <Confetti active={confetti} />
@@ -594,9 +647,8 @@ export default function BaseCampClient({
                     title={`${a.name}にはなしかける`}
                   >
                     <div
-                      className={anim}
+                      className={`${anim} ${a.rarity === "でんせつ" ? "bc-animal-legendary" : "bc-animal-common"}`}
                       style={{
-                        fontSize: a.rarity === "でんせつ" ? "3.2rem" : "2.4rem",
                         filter: a.rarity === "でんせつ" ? "drop-shadow(0 0 8px gold)" : "none",
                         userSelect: "none",
                       }}
@@ -655,10 +707,11 @@ export default function BaseCampClient({
           {/* パネル開閉ボタン */}
           <button
             onClick={() => setPanelOpen(true)}
+            className="bc-open-btn"
             style={{
               background: "rgba(27,27,47,0.85)", border: "2px solid rgba(165,214,167,0.5)",
-              borderRadius: 14, padding: "4px 12px", cursor: "pointer",
-              fontSize: ".85rem", fontWeight: 800, color: "#A5D6A7",
+              borderRadius: 14, cursor: "pointer",
+              fontWeight: 800, color: "#A5D6A7",
               backdropFilter: "blur(4px)",
               display: "flex", alignItems: "center", gap: 6,
             }}
@@ -679,17 +732,14 @@ export default function BaseCampClient({
         />
       )}
       <div
-        className={panelOpen ? "bc-panel-in" : "bc-panel-out"}
+        className={`bc-panel ${panelOpen ? "bc-panel-in" : "bc-panel-out"}`}
         style={{
-          position: "fixed", top: 56, right: 0, bottom: 0, zIndex: 31,
-          width: 220,
+          position: "fixed", top: "var(--header-h, 56px)", right: 0, bottom: 0, zIndex: 31,
           background: "linear-gradient(180deg,#1B1B2F 0%,#2D2D44 100%)",
           borderLeft: "3px solid #3A3A5C",
           display: "flex", flexDirection: "column", alignItems: "center",
-          justifyContent: "center", gap: 18,
-          padding: "24px 16px",
+          justifyContent: "center",
           overflow: "hidden",
-          // パネルが閉じているときは pointer-events を切る
           pointerEvents: panelOpen ? "auto" : "none",
         }}
       >
@@ -724,8 +774,8 @@ export default function BaseCampClient({
         {/* ガイドアイコン */}
         <div style={{ textAlign: "center", zIndex: 1 }}>
           <div
+            className="bc-guide-icon"
             style={{
-              fontSize: "3.2rem",
               filter: guideFieldAnimal?.rarity === "でんせつ" ? "drop-shadow(0 0 8px gold)" : "none",
             }}
           >
@@ -759,20 +809,19 @@ export default function BaseCampClient({
         ].map((btn) => (
           <button
             key={btn.label}
-            className="bc-btn"
+            className="bc-btn bc-cmd-btn"
             onClick={btn.action}
             style={{
               zIndex: 1, width: "100%",
               display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
-              padding: "16px 8px", borderRadius: 22,
               border: `3px solid ${btn.border}`,
               background: btn.bg, color: "#fff",
               cursor: "pointer",
               boxShadow: `0 6px 0 ${btn.shadow},0 10px 20px rgba(0,0,0,.3)`,
             }}
           >
-            <span style={{ fontSize: "2.2rem" }}>{btn.emoji}</span>
-            <span style={{ fontSize: ".78rem", lineHeight: 1.4, textAlign: "center" }}>{btn.label}</span>
+            <span>{btn.emoji}</span>
+            <span style={{ lineHeight: 1.4, textAlign: "center" }}>{btn.label}</span>
           </button>
         ))}
 
@@ -791,8 +840,8 @@ export default function BaseCampClient({
           onClick={(e) => { if (e.target === e.currentTarget) setModal(null); }}
         >
           <div
-            className="anim-popup"
-            style={{ width: "min(90vw, 600px)", borderRadius: 32, overflow: "hidden", background: "linear-gradient(180deg,#FFFDF5,#FFF8E1)", border: "4px solid #BCAAA4", boxShadow: "0 16px 60px rgba(0,0,0,.3)" }}
+            className="anim-popup bc-medals-inner"
+            style={{ borderRadius: 32, overflow: "hidden", background: "linear-gradient(180deg,#FFFDF5,#FFF8E1)", border: "4px solid #BCAAA4", boxShadow: "0 16px 60px rgba(0,0,0,.3)" }}
           >
             <div style={{ padding: "16px 22px", background: "linear-gradient(90deg,#4A148C,#9C27B0)", display: "flex", alignItems: "center", gap: 12 }}>
               <span style={{ fontSize: "1.8rem" }}>{modal === "medals" ? "🏅" : selectedMedal?.emoji}</span>

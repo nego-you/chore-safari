@@ -227,31 +227,31 @@ export function KidsPortal({
     return (
       <main className="h-screen overflow-hidden bg-gradient-to-b from-sky-100 via-pink-50 to-yellow-50 px-4 py-4 flex flex-col justify-center">
         <div className="mx-auto w-full max-w-3xl text-center">
-          <p className="text-2xl leading-none">🎪</p>
-          <h1 className="mt-1 text-3xl font-extrabold tracking-wide text-sky-800 sm:text-4xl">
+          <p className="text-3xl leading-none md:text-5xl">🎪</p>
+          <h1 className="mt-1 text-3xl font-extrabold tracking-wide text-sky-800 sm:text-4xl md:text-5xl">
             だれが あそぶ？
           </h1>
-          <p className="mt-1 text-sm text-sky-700/80">
+          <p className="mt-1 text-sm text-sky-700/80 md:text-base md:mt-2">
             じぶんの なまえを タッチしてね
           </p>
 
-          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3 md:gap-8 md:mt-10">
             {childList.map((child, i) => {
               const theme = themeFor(i);
               return (
                 <Link
                   key={child.id}
                   href={`/kids/${child.id}`}
-                  className={`group relative flex flex-col items-center justify-center gap-2 rounded-3xl ${theme.bg} px-6 py-5 shadow-xl shadow-sky-200/40 ring-4 ring-white transition hover:-translate-y-1 hover:ring-offset-2 hover:${theme.ring} active:translate-y-0`}
+                  className={`group relative flex flex-col items-center justify-center gap-3 rounded-3xl ${theme.bg} px-6 py-8 md:py-14 shadow-xl shadow-sky-200/40 ring-4 ring-white transition hover:-translate-y-1 hover:ring-offset-2 hover:${theme.ring} active:translate-y-0`}
                   aria-label={`${child.name} ではじめる`}
                 >
-                  <span className="text-5xl drop-shadow" aria-hidden>
+                  <span className="text-5xl drop-shadow md:text-9xl" aria-hidden>
                     {theme.emoji}
                   </span>
-                  <span className={`text-2xl font-extrabold ${theme.text}`}>
+                  <span className={`text-2xl font-extrabold md:text-4xl ${theme.text}`}>
                     <NameRuby name={child.name} />
                   </span>
-                  <span className="absolute right-3 top-3 rounded-full bg-white/70 px-3 py-1 text-xs font-bold text-sky-700">
+                  <span className="absolute right-3 top-3 rounded-full bg-white/70 px-3 py-1 text-xs font-bold text-sky-700 md:text-sm md:px-4 md:py-1.5 md:right-4 md:top-4">
                     {child.coinBalance.toLocaleString()} コイン
                   </span>
                 </Link>
@@ -259,7 +259,7 @@ export function KidsPortal({
             })}
           </div>
 
-          <p className="mt-4 text-xs text-sky-500/70">
+          <p className="mt-4 text-xs text-sky-500/70 md:text-sm">
             ※ おとなのひとは <code className="rounded bg-white/70 px-1">/bank</code> から つかえるよ
           </p>
         </div>
@@ -394,54 +394,54 @@ function BonusCelebrationModal({
 
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative mx-4 w-full max-w-lg rounded-[2.25rem] bg-gradient-to-br from-yellow-200 via-pink-200 to-sky-200 p-1 shadow-[0_30px_80px_rgba(244,114,182,0.45)]"
+        className="relative mx-4 w-full max-w-lg md:max-w-2xl rounded-[2.25rem] bg-gradient-to-br from-yellow-200 via-pink-200 to-sky-200 p-1 shadow-[0_30px_80px_rgba(244,114,182,0.45)]"
       >
-        <div className="rounded-[2rem] bg-white/95 px-6 py-10 text-center">
-          <p className="text-sm font-extrabold tracking-[0.4em] text-fuchsia-500 animate-pulse">
+        <div className="rounded-[2rem] bg-white/95 px-6 py-10 md:px-12 md:py-14 text-center">
+          <p className="text-sm md:text-base font-extrabold tracking-[0.4em] text-fuchsia-500 animate-pulse">
             ✨ おしらせ ✨
           </p>
           <div className="relative mt-5 flex items-center justify-center">
             <span
               aria-hidden
-              className="absolute text-[10rem] opacity-20 blur-md"
+              className="absolute text-[10rem] md:text-[14rem] opacity-20 blur-md"
             >
               🌟
             </span>
             <span
               aria-hidden
-              className="relative text-9xl drop-shadow-[0_8px_20px_rgba(251,191,36,0.5)] animate-bounce"
+              className="relative text-9xl md:text-[10rem] drop-shadow-[0_8px_20px_rgba(251,191,36,0.5)] animate-bounce"
             >
               🌟
             </span>
           </div>
-          <h1 className="mt-4 bg-gradient-to-r from-fuchsia-600 via-rose-500 to-amber-500 bg-clip-text text-3xl font-black leading-tight text-transparent sm:text-4xl">
+          <h1 className="mt-4 bg-gradient-to-r from-fuchsia-600 via-rose-500 to-amber-500 bg-clip-text text-3xl font-black leading-tight text-transparent sm:text-4xl md:text-5xl">
             {bonus.reason}
           </h1>
-          <p className="mt-2 text-2xl font-extrabold text-rose-500">
+          <p className="mt-2 text-2xl md:text-3xl font-extrabold text-rose-500">
             たっせい おめでとう！！
           </p>
-          <div className="mt-6 inline-flex items-baseline gap-2 rounded-3xl bg-gradient-to-br from-amber-200 to-yellow-300 px-6 py-3 shadow-inner ring-2 ring-amber-300">
-            <span className="font-mono text-5xl font-black tracking-tight text-amber-900 sm:text-6xl">
+          <div className="mt-6 inline-flex items-baseline gap-2 rounded-3xl bg-gradient-to-br from-amber-200 to-yellow-300 px-6 py-3 md:px-10 md:py-5 shadow-inner ring-2 ring-amber-300">
+            <span className="font-mono text-5xl font-black tracking-tight text-amber-900 sm:text-6xl md:text-7xl">
               {bonus.coinAmount.toLocaleString()}
             </span>
-            <span className="text-xl font-extrabold text-amber-800">
+            <span className="text-xl md:text-2xl font-extrabold text-amber-800">
               コイン
             </span>
-            <span className="text-3xl" aria-hidden>
+            <span className="text-3xl md:text-4xl" aria-hidden>
               🪙
             </span>
           </div>
-          <p className="mt-3 text-base font-extrabold text-fuchsia-500">
+          <p className="mt-3 text-base md:text-xl font-extrabold text-fuchsia-500">
             ゲット！
           </p>
           <button
             type="button"
             onClick={onAck}
-            className="mt-8 w-full rounded-full bg-gradient-to-r from-fuchsia-500 via-rose-500 to-amber-500 px-8 py-4 text-xl font-black text-white shadow-lg transition hover:brightness-110 active:scale-95"
+            className="mt-8 w-full rounded-full bg-gradient-to-r from-fuchsia-500 via-rose-500 to-amber-500 px-8 py-4 md:py-6 text-xl md:text-2xl font-black text-white shadow-lg transition hover:brightness-110 active:scale-95"
           >
             ありがとう！
           </button>
-          <p className="mt-2 text-[10px] text-slate-500">
+          <p className="mt-2 text-[10px] md:text-xs text-slate-500">
             つぎは きをつけよう！
           </p>
         </div>
@@ -482,54 +482,54 @@ function PenaltyWarningModal({
 
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative mx-4 w-full max-w-sm rounded-[2rem] bg-gradient-to-b from-rose-800 to-slate-800 p-px shadow-[0_24px_60px_rgba(0,0,0,0.6)]"
+        className="relative mx-4 w-full max-w-sm md:max-w-xl rounded-[2rem] bg-gradient-to-b from-rose-800 to-slate-800 p-px shadow-[0_24px_60px_rgba(0,0,0,0.6)]"
       >
-        <div className="rounded-[calc(2rem-1px)] bg-slate-900 px-6 py-8 text-center">
+        <div className="rounded-[calc(2rem-1px)] bg-slate-900 px-6 py-8 md:px-10 md:py-12 text-center">
           {/* アイコン */}
-          <div className="relative mx-auto mb-1 flex h-24 w-24 items-center justify-center">
+          <div className="relative mx-auto mb-1 flex h-24 w-24 md:h-36 md:w-36 items-center justify-center">
             <span
               aria-hidden
-              className="absolute text-[5rem] opacity-20 blur-md"
+              className="absolute text-[5rem] md:text-[7rem] opacity-20 blur-md"
             >
               🚨
             </span>
             <span
               aria-hidden
-              className="relative text-[4.5rem] drop-shadow-[0_4px_12px_rgba(239,68,68,0.6)]"
+              className="relative text-[4.5rem] md:text-[6rem] drop-shadow-[0_4px_12px_rgba(239,68,68,0.6)]"
             >
               🚨
             </span>
           </div>
 
           {/* タイトル */}
-          <p className="text-[11px] font-extrabold tracking-[0.35em] text-rose-400 uppercase">
+          <p className="text-[11px] md:text-sm font-extrabold tracking-[0.35em] text-rose-400 uppercase">
             ペナルティ はっせい…
           </p>
-          <h1 className="mt-2 text-2xl font-black leading-snug text-rose-100 sm:text-3xl">
+          <h1 className="mt-2 text-2xl font-black leading-snug text-rose-100 sm:text-3xl md:text-4xl">
             コインが へって<br />しまった！
           </h1>
 
           {/* 理由 */}
-          <div className="mx-auto mt-5 max-w-xs rounded-2xl border border-rose-700/50 bg-rose-950/60 px-4 py-3">
-            <p className="text-[11px] font-bold tracking-widest text-rose-400/80 mb-1">
+          <div className="mx-auto mt-5 max-w-xs md:max-w-sm rounded-2xl border border-rose-700/50 bg-rose-950/60 px-4 py-3 md:px-6 md:py-4">
+            <p className="text-[11px] md:text-sm font-bold tracking-widest text-rose-400/80 mb-1">
               りゆう
             </p>
-            <p className="text-lg font-extrabold leading-snug text-rose-100">
+            <p className="text-lg md:text-xl font-extrabold leading-snug text-rose-100">
               {penalty.reason}
             </p>
           </div>
 
           {/* 没収額 */}
-          <div className="mt-4 inline-flex items-baseline gap-1.5 rounded-full border border-rose-700/60 bg-rose-950/80 px-5 py-2.5">
-            <span className="font-mono text-4xl font-black tabular-nums text-rose-300 sm:text-5xl">
+          <div className="mt-4 inline-flex items-baseline gap-1.5 rounded-full border border-rose-700/60 bg-rose-950/80 px-5 py-2.5 md:px-8 md:py-4">
+            <span className="font-mono text-4xl font-black tabular-nums text-rose-300 sm:text-5xl md:text-6xl">
               {penalty.coinAmount.toLocaleString()}
             </span>
-            <span className="text-lg font-extrabold text-rose-400">
+            <span className="text-lg md:text-xl font-extrabold text-rose-400">
               コイン
             </span>
-            <span className="text-2xl" aria-hidden>😢</span>
+            <span className="text-2xl md:text-3xl" aria-hidden>😢</span>
           </div>
-          <p className="mt-1.5 text-sm font-bold text-rose-400/80">
+          <p className="mt-1.5 text-sm md:text-base font-bold text-rose-400/80">
             ぼっしゅうされました
           </p>
 
@@ -537,11 +537,11 @@ function PenaltyWarningModal({
           <button
             type="button"
             onClick={onAck}
-            className="mt-7 w-full rounded-full bg-gradient-to-r from-rose-700 to-slate-600 px-8 py-3.5 text-lg font-black text-white shadow-lg transition hover:brightness-110 active:scale-95"
+            className="mt-7 w-full rounded-full bg-gradient-to-r from-rose-700 to-slate-600 px-8 py-3.5 md:py-5 text-lg md:text-xl font-black text-white shadow-lg transition hover:brightness-110 active:scale-95"
           >
             ごめんなさい…
           </button>
-          <p className="mt-2 text-[10px] text-slate-500">
+          <p className="mt-2 text-[10px] md:text-xs text-slate-500">
             つぎは きをつけよう！
           </p>
         </div>

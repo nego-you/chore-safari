@@ -515,10 +515,10 @@ export function SafariClient({
   }
 
   return (
-    <main className="min-h-[calc(100vh-52px)] bg-gradient-to-b from-sky-200 via-emerald-100 to-amber-50 px-4 py-4">
+    <main className="min-h-[calc(100vh-var(--header-h,52px))] bg-gradient-to-b from-sky-200 via-emerald-100 to-amber-50 px-4 py-4 md:px-8 md:py-6">
       <style>{FIELD_KEYFRAMES}</style>
 
-      <div className="mx-auto max-w-3xl space-y-4">
+      <div className="mx-auto max-w-3xl md:max-w-5xl space-y-4 md:space-y-6">
         {/* ページタイトル */}
         <p className="text-center text-sm font-bold text-emerald-700/80">🦁 罠スタイル</p>
 
@@ -615,20 +615,20 @@ function SafariField({
     <section
       ref={fieldRef}
       onClick={handleFieldClick}
-      className={`relative aspect-[4/5] w-full overflow-hidden rounded-[2rem] bg-gradient-to-b from-sky-300 via-emerald-300 to-emerald-500 shadow-2xl ring-4 ring-white ${
+      className={`relative aspect-[4/5] md:aspect-[16/9] w-full overflow-hidden rounded-[2rem] bg-gradient-to-b from-sky-300 via-emerald-300 to-emerald-500 shadow-2xl ring-4 ring-white ${
         isPlacingMode ? "cursor-crosshair" : ""
       }`}
     >
       {/* 空グラデ */}
       <div className="absolute inset-x-0 top-0 h-1/3 bg-gradient-to-b from-sky-200/90 via-sky-100/40 to-transparent" />
       {/* 太陽と雲 */}
-      <span aria-hidden className="absolute right-6 top-4 text-5xl drop-shadow">
+      <span aria-hidden className="absolute right-6 top-4 text-5xl md:text-7xl drop-shadow">
         ☀️
       </span>
-      <span aria-hidden className="absolute left-8 top-6 text-3xl opacity-90">
+      <span aria-hidden className="absolute left-8 top-6 text-3xl md:text-5xl opacity-90">
         ☁️
       </span>
-      <span aria-hidden className="absolute left-1/2 top-12 text-2xl opacity-80">
+      <span aria-hidden className="absolute left-1/2 top-12 text-2xl md:text-4xl opacity-80">
         ☁️
       </span>
       {/* 遠景の山 */}
@@ -756,7 +756,7 @@ function FieldTrap({
     >
       <span
         aria-hidden
-        className={`block text-6xl drop-shadow-lg select-none ${
+        className={`block text-6xl md:text-8xl drop-shadow-lg select-none ${
           appeared ? "trap-rustle" : ""
         }`}
         style={{ filter: appeared ? "drop-shadow(0 0 6px #fde68a)" : undefined }}
@@ -766,11 +766,11 @@ function FieldTrap({
 
       {/* 吹き出し / 通知 */}
       {appeared ? (
-        <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-rose-500 px-3 py-1 text-xs font-extrabold text-white shadow-lg ring-2 ring-rose-200 trap-glow bubble-float">
+        <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-rose-500 px-3 py-1 md:px-5 md:py-2 text-xs md:text-sm font-extrabold text-white shadow-lg ring-2 ring-rose-200 trap-glow bubble-float">
           ！ タップして キャッチ！
         </span>
       ) : (
-        <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-white/95 px-2 py-0.5 text-[11px] font-bold text-emerald-800 shadow ring-1 ring-emerald-200 bubble-float">
+        <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-white/95 px-2 py-0.5 md:px-4 md:py-1 text-[11px] md:text-sm font-bold text-emerald-800 shadow ring-1 ring-emerald-200 bubble-float">
           ⏳ あと {remaining} びょう
         </span>
       )}
@@ -909,22 +909,22 @@ function TimingGameModal({
       aria-modal="true"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm touch-manipulation"
     >
-      <div className="mx-4 w-full max-w-md rounded-[2rem] bg-gradient-to-br from-rose-300 via-amber-200 to-emerald-200 p-1 shadow-2xl">
-        <div className="rounded-[1.7rem] bg-white p-6">
-          <p className="text-center text-sm font-extrabold tracking-widest text-rose-600">
+      <div className="mx-4 w-full max-w-md md:max-w-xl rounded-[2rem] bg-gradient-to-br from-rose-300 via-amber-200 to-emerald-200 p-1 shadow-2xl">
+        <div className="rounded-[1.7rem] bg-white p-6 md:p-10">
+          <p className="text-center text-sm md:text-base font-extrabold tracking-widest text-rose-600">
             🎯 タイミング キャッチ 🎯
           </p>
-          <p className={`mt-2 text-center text-base ${hint.className}`}>
+          <p className={`mt-2 text-center text-base md:text-xl ${hint.className}`}>
             {hint.text}
           </p>
-          <p className={`mt-0.5 text-center text-xs ${hint.className}`}>
+          <p className={`mt-0.5 text-center text-xs md:text-sm ${hint.className}`}>
             {hint.subText}
           </p>
-          <p className="mt-2 text-center text-[11px] text-slate-500">
+          <p className="mt-2 text-center text-[11px] md:text-sm text-slate-500">
             みどりの ゾーンで「キャッチ！」を おすと だいせいこう
           </p>
 
-          <div className="relative mt-5 h-12 overflow-hidden rounded-full bg-slate-100 shadow-inner">
+          <div className="relative mt-5 h-12 md:h-16 overflow-hidden rounded-full bg-slate-100 shadow-inner">
             <div
               className="absolute top-0 h-full bg-gradient-to-b from-emerald-300 to-emerald-400"
               style={{
@@ -955,7 +955,7 @@ function TimingGameModal({
             type="button"
             onClick={handleCatch}
             disabled={evaluating}
-            className="mt-6 w-full rounded-2xl bg-gradient-to-r from-rose-500 via-orange-500 to-amber-500 px-4 py-5 text-2xl font-black text-white shadow-lg transition active:scale-[0.98] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-6 w-full rounded-2xl bg-gradient-to-r from-rose-500 via-orange-500 to-amber-500 px-4 py-5 md:py-7 text-2xl md:text-3xl font-black text-white shadow-lg transition active:scale-[0.98] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {evaluating ? "けっか はんてい中…" : "🎯 キャッチ！"}
           </button>

@@ -184,16 +184,16 @@ export function QuestsClient({
   }
 
   return (
-    <main className="min-h-[calc(100vh-52px)] bg-gradient-to-b from-lime-100 via-amber-50 to-pink-50 px-4 py-4">
-      <div className="mx-auto max-w-3xl space-y-8">
+    <main className="min-h-[calc(100vh-var(--header-h,52px))] bg-gradient-to-b from-lime-100 via-amber-50 to-pink-50 px-4 py-4 md:px-8 md:py-6">
+      <div className="mx-auto max-w-3xl md:max-w-5xl space-y-8">
         {/* タイトル */}
         <section className="rounded-[2rem] bg-gradient-to-br from-lime-300 via-amber-200 to-pink-200 p-1 shadow-xl">
-          <div className="rounded-[1.75rem] bg-white/95 p-6 text-center">
-            <p className="text-5xl">⭐🗺️⭐</p>
-            <h1 className="mt-2 text-3xl font-black text-emerald-700 sm:text-4xl">
+          <div className="rounded-[1.75rem] bg-white/95 p-6 md:p-8 text-center">
+            <p className="text-5xl md:text-7xl">⭐🗺️⭐</p>
+            <h1 className="mt-2 text-3xl font-black text-emerald-700 sm:text-4xl md:text-5xl">
               クエストに ちょうせん！
             </h1>
-            <p className="mt-1 text-sm text-emerald-600/80">
+            <p className="mt-1 text-sm md:text-base text-emerald-600/80">
               「やったよ！」を おすと、おうちのひとに しんせい が とどくよ
             </p>
             <p className="mt-3 text-xs text-emerald-700/70">
@@ -258,7 +258,7 @@ export function QuestsClient({
                 </span>
               </header>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
                 {groupQuests.map((q) => {
                   const latest = latestByQuest.get(q.id);
                   return (
@@ -305,22 +305,22 @@ function QuestCard({
   const isAwaiting = status === "PENDING";
 
   return (
-    <article className="flex flex-col gap-3 rounded-3xl bg-white/95 p-5 shadow-lg ring-2 ring-lime-200">
-      <header className="flex items-center gap-3 rounded-2xl bg-gradient-to-br from-lime-100 to-amber-100 p-4 ring-1 ring-lime-200">
-        <span className="text-5xl drop-shadow" aria-hidden>
+    <article className="flex flex-col gap-3 rounded-3xl bg-white/95 p-5 md:p-6 shadow-lg ring-2 ring-lime-200">
+      <header className="flex items-center gap-3 rounded-2xl bg-gradient-to-br from-lime-100 to-amber-100 p-4 md:p-5 ring-1 ring-lime-200">
+        <span className="text-5xl md:text-6xl drop-shadow" aria-hidden>
           {quest.emoji}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-lg font-black text-emerald-800">{quest.title}</p>
+          <p className="text-lg md:text-xl font-black text-emerald-800">{quest.title}</p>
           {quest.description && (
-            <p className="text-xs text-emerald-700/80">{quest.description}</p>
+            <p className="text-xs md:text-sm text-emerald-700/80">{quest.description}</p>
           )}
           {quest.targetUsers.some((u) => u.id === selectedKid.id) && (
-            <p className="mt-1 inline-block rounded-full bg-pink-200 px-2 py-0.5 text-xs font-extrabold text-pink-900">
+            <p className="mt-1 inline-block rounded-full bg-pink-200 px-2 py-0.5 text-xs md:text-sm font-extrabold text-pink-900">
               🎀 {selectedKid.name}ちゃん専用！ 🎀
             </p>
           )}
-          <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-200 px-2 py-0.5 text-xs font-extrabold text-amber-900">
+          <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-200 px-2 py-0.5 text-xs md:text-sm font-extrabold text-amber-900">
             +{quest.rewardCoins} コイン 🪙
           </p>
         </div>
@@ -328,19 +328,19 @@ function QuestCard({
 
       {/* 状態表示 */}
       {status === "APPROVED" && (
-        <p className="rounded-xl bg-emerald-100 px-3 py-2 text-xs font-bold text-emerald-800 ring-1 ring-emerald-300">
+        <p className="rounded-xl bg-emerald-100 px-3 py-2 text-xs md:text-sm font-bold text-emerald-800 ring-1 ring-emerald-300">
           ✨ まえに OK もらったよ。また やったら しんせい できるよ
         </p>
       )}
       {status === "REJECTED" && (
-        <p className="rounded-xl bg-rose-100 px-3 py-2 text-xs font-bold text-rose-700 ring-1 ring-rose-300">
+        <p className="rounded-xl bg-rose-100 px-3 py-2 text-xs md:text-sm font-bold text-rose-700 ring-1 ring-rose-300">
           こないだは おなおし になったよ。もういちど ちょうせん！
         </p>
       )}
 
       {/* ボタン or 待機表示 */}
       {isAwaiting ? (
-        <div className="w-full rounded-2xl bg-amber-100 px-4 py-3 text-center text-base font-extrabold text-amber-800 ring-2 ring-amber-300">
+        <div className="w-full rounded-2xl bg-amber-100 px-4 py-3 md:py-5 text-center text-base md:text-lg font-extrabold text-amber-800 ring-2 ring-amber-300">
           <span className="inline-block animate-pulse">⏳ かくにん中…</span>
         </div>
       ) : (
@@ -348,7 +348,7 @@ function QuestCard({
           type="button"
           onClick={onSubmit}
           disabled={isPending}
-          className={`w-full rounded-2xl px-4 py-3 text-lg font-black tracking-wide text-white shadow-lg transition active:scale-[0.98] ${
+          className={`w-full rounded-2xl px-4 py-4 md:py-5 text-xl md:text-2xl font-black tracking-wide text-white shadow-lg transition active:scale-[0.98] ${
             isPending
               ? "cursor-not-allowed bg-gray-300 text-gray-500 shadow-none"
               : "bg-gradient-to-r from-lime-500 via-emerald-500 to-amber-500 hover:brightness-110"

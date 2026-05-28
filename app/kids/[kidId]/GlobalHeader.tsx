@@ -4,18 +4,102 @@
 //
 //  左  : 戻るボタン (マップ画面は非表示)
 //  中央: アバター + 名前 + コイン + ストリーク
-//  右  : [体力ゲージ] [ガイドキャラ] [天気]  <- 今回追加
+//  右  : [体力ゲージ] [ガイドキャラ] [天気]
 //
-// ガイドキャラをタップすると GuideChatModal が開く。
-// 体力は Zustand ストア(stamina) から取得。
+// iPad 対応: CSS カスタムプロパティ + @media (min-width: 768px) で
+// ヘッダー高さ・ウィジェット・フォントをスケールアップ。
+// --header-h は :root に公開し BaseCampClient などが参照する。
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useWeather } from "./WeatherContext";
 import { useGuide } from "./GuideContext";
 import { useSafariStore } from "@/store/useSafariStore";
 import GuideChatModal from "@/components/GuideChatModal";
+
+// ── レスポンシブ CSS トークン ─────────────────────────────────
+// :root の --header-h は SafariLayoutShell 配下のページ全体が参照できる。
+// .gh-inner に設定した vars は子コンポーネントに継承される。
+const GH_CSS = `
+:root {
+  --header-h: 56px;
+}
+@media (min-width: 768px) {
+  :root {
+    --header-h: 80px;
+  }
+}
+.gh-inner {
+  min-height: var(--header-h);
+  padding: 6px 10px;
+  --av-sz:   34px;
+  --av-r:    12px;
+  --av-em:   18px;
+  --nm-sz:   14px;
+  --cn-sz:   12px;
+  --sk-em:   12px;
+  --sk-sz:   10px;
+  --sk-r:    20px;
+  --sk-py:   1px;
+  --sk-px:   7px;
+  --w-em:    14px;
+  --wp-y:     4px;
+  --wp-x:     8px;
+  --wl-sz:    8px;
+  --wv-sz:   10px;
+  --wb-w:    36px;
+  --wb-h:     5px;
+  --wb-r:    16px;
+  --bk-sz:   13px;
+  --bk-py:   5px;
+  --bk-px:   12px;
+  --bk-r:    20px;
+  --rg:       5px;
+  --cg:       8px;
+}
+@media (min-width: 768px) {
+  .gh-inner {
+    padding: 10px 28px;
+    --av-sz:   54px;
+    --av-r:    18px;
+    --av-em:   28px;
+    --nm-sz:   20px;
+    --cn-sz:   16px;
+    --sk-em:   16px;
+    --sk-sz:   12px;
+    --sk-r:    26px;
+    --sk-py:   3px;
+    --sk-px:   12px;
+    --w-em:    22px;
+    --wp-y:     8px;
+    --wp-x:    16px;
+    --wl-sz:   11px;
+    --wv-sz:   14px;
+    --wb-w:    58px;
+    --wb-h:     8px;
+    --wb-r:    20px;
+    --bk-sz:   17px;
+    --bk-py:   10px;
+    --bk-px:   24px;
+    --bk-r:    26px;
+    --rg:      12px;
+    --cg:      16px;
+  }
+}
+`;
+
+// inject once into <head>
+let _ghCssInjected = false;
+function injectGhCSS() {
+  if (typeof document === "undefined" || _ghCssInjected) return;
+  if (document.getElementById("cs-gh-css")) { _ghCssInjected = true; return; }
+  const s = document.createElement("style");
+  s.id = "cs-gh-css";
+  s.textContent = GH_CSS;
+  document.head.appendChild(s);
+  _ghCssInjected = true;
+}
 
 // ── ストリークバッジ ───────────────────────────────────────────
 function StreakBadge({ streak, status }: { streak: number; status: string }) {
@@ -27,18 +111,18 @@ function StreakBadge({ streak, status }: { streak: number; status: string }) {
         marginTop: 2,
         display: "inline-flex",
         alignItems: "center",
-        gap: 2,
+        gap: 3,
         background: isHold ? "linear-gradient(135deg,#bfdbfe,#dbeafe)" : "linear-gradient(135deg,#fef08a,#fde68a)",
         border: isHold ? "1.5px solid #93c5fd" : "1.5px solid #fbbf24",
-        borderRadius: 20,
-        padding: "1px 7px",
-        fontSize: 10,
+        borderRadius: "var(--sk-r)",
+        padding: "var(--sk-py) var(--sk-px)",
+        fontSize: "var(--sk-sz)",
         fontWeight: 800,
         color: isHold ? "#1d4ed8" : "#92400e",
         whiteSpace: "nowrap",
       }}
     >
-      <span style={{ fontSize: 12 }}>{isHold ? "\uD83E\uDDCA" : "\uD83D\uDD25"}</span>
+      <span style={{ fontSize: "var(--sk-em)" }}>{isHold ? "🧊" : "🔥"}</span>
       {isHold ? "ピンチ！" : `れんぞく${streak}日`}
     </div>
   );
@@ -56,20 +140,20 @@ function StaminaWidget({ stamina }: { stamina: number }) {
         gap: 4,
         background: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
         border: "1.5px solid #86efac",
-        borderRadius: 16,
-        padding: "4px 8px",
+        borderRadius: "var(--wb-r)",
+        padding: "var(--wp-y) var(--wp-x)",
         minWidth: 58,
       }}
     >
-      <span style={{ fontSize: 14, lineHeight: 1 }}>{"\u26A1"}</span>
+      <span style={{ fontSize: "var(--w-em)", lineHeight: 1 }}>⚡</span>
       <div>
-        <div style={{ fontSize: 8, fontWeight: 800, color: "#166534", letterSpacing: "0.06em" }}>
+        <div style={{ fontSize: "var(--wl-sz)", fontWeight: 800, color: "#166534", letterSpacing: "0.06em" }}>
           たいりょく
         </div>
         <div
           style={{
-            width: 36,
-            height: 5,
+            width: "var(--wb-w)",
+            height: "var(--wb-h)",
             borderRadius: 4,
             background: "#d1fae5",
             overflow: "hidden",
@@ -112,23 +196,23 @@ function GuideWidget({
         gap: 4,
         background: "linear-gradient(135deg,#ffe4e6,#fce7f3)",
         border: "1.5px solid #f9a8d4",
-        borderRadius: 16,
-        padding: "4px 8px",
+        borderRadius: "var(--wb-r)",
+        padding: "var(--wp-y) var(--wp-x)",
         cursor: "pointer",
         minWidth: 58,
       }}
     >
-      <span style={{ fontSize: 18, lineHeight: 1 }}>{guide.emoji}</span>
+      <span style={{ fontSize: "var(--w-em)", lineHeight: 1 }}>{guide.emoji}</span>
       <div style={{ textAlign: "left" }}>
-        <div style={{ fontSize: 8, fontWeight: 800, color: "#9d174d", letterSpacing: "0.06em" }}>
+        <div style={{ fontSize: "var(--wl-sz)", fontWeight: 800, color: "#9d174d", letterSpacing: "0.06em" }}>
           そうべつ
         </div>
         <div
           style={{
-            fontSize: 10,
+            fontSize: "var(--wv-sz)",
             fontWeight: 700,
             color: "#be185d",
-            maxWidth: 36,
+            maxWidth: 46,
             overflow: "hidden",
             whiteSpace: "nowrap",
             textOverflow: "ellipsis",
@@ -152,18 +236,18 @@ function WeatherWidget() {
         gap: 5,
         background: "linear-gradient(135deg,#fffbeb,#fef3c7)",
         border: "1.5px solid #fcd34d",
-        borderRadius: 16,
-        padding: "4px 10px 4px 8px",
+        borderRadius: "var(--wb-r)",
+        padding: "var(--wp-y) var(--wp-x)",
         boxShadow: "1px 1px 0 #f59e0b44",
         minWidth: 58,
       }}
     >
-      <span style={{ fontSize: 18, lineHeight: 1 }}>{weather.icon}</span>
+      <span style={{ fontSize: "var(--w-em)", lineHeight: 1 }}>{weather.icon}</span>
       <div style={{ lineHeight: 1.2 }}>
-        <div style={{ fontSize: 8, fontWeight: 800, color: "#92400e", letterSpacing: "0.08em" }}>
+        <div style={{ fontSize: "var(--wl-sz)", fontWeight: 800, color: "#92400e", letterSpacing: "0.08em" }}>
           おてんき
         </div>
-        <div style={{ fontSize: 10, fontWeight: 700, color: "#b45309" }}>
+        <div style={{ fontSize: "var(--wv-sz)", fontWeight: 700, color: "#b45309" }}>
           {weather.label}
         </div>
       </div>
@@ -173,14 +257,14 @@ function WeatherWidget() {
 
 // ── アバター定義 ──────────────────────────────────────────────
 const KID_AVATAR: Record<string, { emoji: string; color: string }> = {
-  "\u7F8E\u7434": { emoji: "\uD83E\uDDB1", color: "#0ea5e9" },
-  "\u5E78\u4EC1": { emoji: "\uD83D\uDC39", color: "#f472b6" },
-  "\u53F6\u6CF0": { emoji: "\uD83E\uDDA6", color: "#34d399" },
+  "美琴": { emoji: "🦭", color: "#0ea5e9" },
+  "幸仁": { emoji: "🐹", color: "#f472b6" },
+  "叶泰": { emoji: "🦦", color: "#34d399" },
 };
 const NAME_READING: Record<string, string> = {
-  "\u7F8E\u7434": "\u307F\u3053\u3068",
-  "\u5E78\u4EC1": "\u3086\u304D\u3068",
-  "\u53F6\u6CF0": "\u304B\u306A\u305F",
+  "美琴": "みこと",
+  "幸仁": "ゆきと",
+  "叶泰": "かなた",
 };
 
 // ── メインコンポーネント ──────────────────────────────────────
@@ -199,9 +283,11 @@ export function GlobalHeader({ kidId, kidName, currentStreak, streakStatus }: Pr
   const { guide } = useGuide();
   const [chatOpen, setChatOpen] = useState(false);
 
+  useEffect(() => { injectGhCSS(); }, []);
+
   const isMapPage = pathname === `/kids/${kidId}`;
   const mapHref = `/kids/${kidId}`;
-  const av = KID_AVATAR[kidName] ?? { emoji: "\uD83D\uDC64", color: "#9ca3af" };
+  const av = KID_AVATAR[kidName] ?? { emoji: "👤", color: "#9ca3af" };
   const yomi = NAME_READING[kidName] ?? kidName;
 
   return (
@@ -218,18 +304,17 @@ export function GlobalHeader({ kidId, kidName, currentStreak, streakStatus }: Pr
           boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
         }}
       >
+        {/* gh-inner: CSS vars が定義されるルート。子コンポーネントが継承する */}
         <div
+          className="gh-inner"
           style={{
-            /* max-w-md ラッパーに合わせて幅制限は親に委ねる（maxWidth 指定を削除） */
-            padding: "6px 10px",
             display: "flex",
             alignItems: "center",
-            gap: 6,
-            minHeight: 56,
+            gap: "var(--cg)",
           }}
         >
           {/* 左: 戻るボタン */}
-          <div style={{ flex: "0 0 52px", display: "flex", justifyContent: "flex-start" }}>
+          <div style={{ flex: "0 0 auto", display: "flex", justifyContent: "flex-start" }}>
             {!isMapPage && (
               <Link
                 href={mapHref}
@@ -239,15 +324,16 @@ export function GlobalHeader({ kidId, kidName, currentStreak, streakStatus }: Pr
                   alignItems: "center",
                   background: "rgba(0,0,0,0.06)",
                   border: "none",
-                  borderRadius: 20,
-                  padding: "5px 12px",
-                  fontSize: 13,
+                  borderRadius: "var(--bk-r)",
+                  padding: "var(--bk-py) var(--bk-px)",
+                  fontSize: "var(--bk-sz)",
                   fontWeight: 800,
                   color: "#374151",
                   textDecoration: "none",
+                  whiteSpace: "nowrap",
                 }}
               >
-                ←
+                ← もどる
               </Link>
             )}
           </div>
@@ -259,29 +345,29 @@ export function GlobalHeader({ kidId, kidName, currentStreak, streakStatus }: Pr
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              gap: 8,
+              gap: "var(--cg)",
             }}
           >
             <div
               style={{
-                width: 34,
-                height: 34,
-                borderRadius: 12,
+                width: "var(--av-sz)",
+                height: "var(--av-sz)",
+                borderRadius: "var(--av-r)",
                 background: `linear-gradient(135deg,${av.color}33,${av.color}22)`,
                 border: `2px solid ${av.color}66`,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 18,
+                fontSize: "var(--av-em)",
                 flexShrink: 0,
               }}
             >
               {av.emoji}
             </div>
             <div style={{ lineHeight: 1.2 }}>
-              <div style={{ fontSize: 14, fontWeight: 800, color: "#1f2937" }}>{yomi}</div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#d97706", display: "flex", alignItems: "center", gap: 3 }}>
-                {"\uD83E\uDE99"}
+              <div style={{ fontSize: "var(--nm-sz)", fontWeight: 800, color: "#1f2937" }}>{yomi}</div>
+              <div style={{ fontSize: "var(--cn-sz)", fontWeight: 700, color: "#d97706", display: "flex", alignItems: "center", gap: 3 }}>
+                🪙
                 <span style={{ fontVariantNumeric: "tabular-nums" }}>{coins.toLocaleString()}</span>
               </div>
               {currentStreak > 0 && <StreakBadge streak={currentStreak} status={streakStatus} />}
@@ -289,7 +375,7 @@ export function GlobalHeader({ kidId, kidName, currentStreak, streakStatus }: Pr
           </div>
 
           {/* 右: 体力 + ガイドキャラ + 天気 */}
-          <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--rg)", flexShrink: 0 }}>
             <StaminaWidget stamina={stamina} />
             {guide && (
               <GuideWidget kidId={kidId} onOpenChat={() => setChatOpen(true)} />
