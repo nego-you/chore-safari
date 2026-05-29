@@ -91,10 +91,24 @@ export interface SafariState {
   /** 絆の証（特別トロフィーアイテム）の所持数 ＝ 受け取ったお返しの累計 */
   kizunaBadgeCount: number;
   /**
-   * 最後に絆イベント（お願い／お返し）を表示・評価した日付（"YYY/M/D"）。
-   * 1日に1回までに制限するためのゲート。
+   * きょうの「予定」を立てた日付（"YYYY/M/D"）。
+   * 1日1回だけ「今日イベントが あるか／ないか・お願いか お返しか」を抽選する。
    */
-  lastKizunaDate: string | null;
+  kizunaPlanDate: string | null;
+  /**
+   * きょうの予定の中身。
+   *   "ask"    … きょうは お願いイベントを出す予定
+   *   "return" … きょうは お返しイベントを出す予定
+   *   "none"   … きょうは イベントなし
+   */
+  kizunaPlanKind: "ask" | "return" | "none" | null;
+  /**
+   * 実際にイベントを発火した日付（"YYYY/M/D"）。
+   * これがある日付＝もう今日は出さない（1日1回上限）。
+   * 予定があっても、発火タイミングはページ遷移ごとに確率判定するので
+   * 「その日の最初の画面」に固定されず ランダムに散る。
+   */
+  kizunaFiredDate: string | null;
 
   // ── 内部統計（勲章判定用）────────────────────────────────
   /** @internal */
@@ -171,10 +185,13 @@ export interface SafariState {
    */
   redeemReturn: () => void;
   /**
-   * きょうの絆スロットを使用済みにする（1日1回ゲート）。
-   * イベントを出した・出さなかったに関わらず、評価したら呼ぶ。
+   * きょうの予定を確定する（1日1回だけ抽選した結果を保存）。
    */
-  markKizunaShownToday: (date: string) => void;
+  planKizunaDay: (date: string, kind: "ask" | "return" | "none") => void;
+  /**
+   * きょう実際にイベントを発火したことを記録する（以降その日は出さない）。
+   */
+  markKizunaFired: (date: string) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -190,7 +207,9 @@ const INITIAL_GAME_STATE = {
   kindnessCount: 0,
   pendingReturns: 0,
   kizunaBadgeCount: 0,
-  lastKizunaDate: null as string | null,
+  kizunaPlanDate: null as string | null,
+  kizunaPlanKind: null as "ask" | "return" | "none" | null,
+  kizunaFiredDate: null as string | null,
   _stats: {
     helpCount: 0,
     totalAnimalsCaught: 0,
@@ -350,7 +369,10 @@ export const useSafariStore = create<SafariState>()(
           kizunaPoints: s.kizunaPoints + 20,
         })),
 
-      markKizunaShownToday: (date) => set({ lastKizunaDate: date }),
+      planKizunaDay: (date, kind) =>
+        set({ kizunaPlanDate: date, kizunaPlanKind: kind }),
+
+      markKizunaFired: (date) => set({ kizunaFiredDate: date }),
 
       // ── BGM ────────────────────────────────────────────────
       toggleBGMMute: () => set((s) => ({ bgmMuted: !s.bgmMuted })),
@@ -360,10 +382,18 @@ export const useSafariStore = create<SafariState>()(
     {
       name: "safari-store", // localStorage キー名
       storage: createJSONStorage(() => localStorage),
-      // 旧スキーマ（helpedGrandma 等）からの移行用バージョン
-      version: 3,
+      // 旧スキーマからの移行用バージョン
+      version: 4,
       migrate: (persisted, version) => {
         const s = (persisted ?? {}) as Record<string, unknown>;
+        if (version < 4) {
+          // v4: 絆イベントを「予定（1日1回抽選）＋発火（ランダムなタイミング）」に分離。
+          //     旧 lastKizunaDate は廃止。
+          s.kizunaPlanDate = null;
+          s.kizunaPlanKind = null;
+          s.kizunaFiredDate = null;
+          delete s.lastKizunaDate;
+        }
         if (version < 3) {
           // v3: bgmMuted を追加
           if (s.bgmMuted === undefined) s.bgmMuted = false;
@@ -374,7 +404,6 @@ export const useSafariStore = create<SafariState>()(
           const helped = s.helpedGrandma === true;
           s.kindnessCount = helped ? 1 : 0;
           s.pendingReturns = helped ? 1 : 0;
-          s.lastKizunaDate = null;
           delete s.helpedGrandma;
           delete s.kizunaTurnsAfterHelp;
         }
@@ -394,8 +423,42 @@ export const useSafariStore = create<SafariState>()(
         kindnessCount: s.kindnessCount,
         pendingReturns: s.pendingReturns,
         kizunaBadgeCount: s.kizunaBadgeCount,
-        lastKizunaDate: s.lastKizunaDate,
+        kizunaPlanDate: s.kizunaPlanDate,
+        kizunaPlanKind: s.kizunaPlanKind,
+        kizunaFiredDate: s.kizunaFiredDate,
         _stats: s._stats,
+      }),
+    }
+  )
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 内部ヘルパー：勲章のチェック & 解除
+// ─────────────────────────────────────────────────────────────────────────────
+function _checkAndUnlockMedals(
+  get: () => SafariState,
+  set: (partial: Partial<SafariState>) => void
+): Medal[] {
+  const state = get();
+  const today = new Date().toLocaleDateString("ja-JP");
+  const newMedals: Medal[] = [];
+
+  const nextMedals = MEDAL_DEFS.reduce<Medal[]>((acc, def) => {
+    const existing = state.medals.find((m) => m.id === def.id);
+    if (existing) return [...acc, existing]; // 既取得はスキップ
+    if (def.check(state)) {
+      const unlocked: Medal = { id: def.id, emoji: def.emoji, name: def.name, unlockedAt: today };
+      newMedals.push(unlocked);
+      return [...acc, unlocked];
+    }
+    return [...acc, { id: def.id, emoji: def.emoji, name: def.name, unlockedAt: null }];
+  }, []);
+
+  if (newMedals.length > 0) {
+    set({ medals: nextMedals });
+  }
+  return newMedals;
+}
       }),
     }
   )

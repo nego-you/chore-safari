@@ -32,7 +32,14 @@ interface Animal {
   lifespanDays: number;
   hunger: number;
   state: AnimalState;
-  lastPoopTime: number;
+  // ── 動きの個性 ──────────────────────────────
+  moveSpeed: number;      // RAFごとのlerp係数（小さい=ゆっくり、大きい=はやい）
+  moveInterval: number;   // 次の目標地点を決めるまでの目安時間(ms)
+  nextMoveTime: number;   // 次に目標を更新するタイムスタンプ
+  waddleDuration: number; // よちよちアニメの1周期(秒)
+  // ── うんち（食後遅延方式）───────────────────
+  lastFedTime: number | null; // 最後にエサを食べたタイムスタンプ
+  poopDelay: number;          // 食後何ms後にうんちをするか
 }
 
 interface FoodItem {
@@ -89,9 +96,7 @@ interface DragState {
 const FIELD_W = 460;
 const FIELD_H = 320;
 const ANIMAL_SIZE = 52;
-const MOVE_INTERVAL = 2400;
 const HUNGER_TICK = 9000;
-const POOP_INTERVAL = 20000;
 const FEED_COST = 50;
 
 const DIET_META: Record<Diet, { icon: string; label: string; color: string; bg: string; border: string }> = {
@@ -113,11 +118,40 @@ function canEat(diet: Diet, cat: FoodCategory): boolean {
   return false;
 }
 
-const INITIAL_ANIMALS: Omit<Animal, "lastPoopTime">[] = [
-  { id: 1, name: "ライオン", emoji: "🦁", diet: "CARNIVORE", pos: { x: 60,  y: 80  }, target: { x: 60,  y: 80  }, dir: "right", moving: false, lifespanDays: 12, hunger: 60, state: "idle" },
-  { id: 2, name: "ウサギ",   emoji: "🐰", diet: "HERBIVORE", pos: { x: 200, y: 160 }, target: { x: 200, y: 160 }, dir: "left",  moving: false, lifespanDays: 5,  hunger: 30, state: "idle" },
-  { id: 3, name: "パンダ",   emoji: "🐼", diet: "HERBIVORE", pos: { x: 340, y: 90  }, target: { x: 340, y: 90  }, dir: "right", moving: false, lifespanDays: 20, hunger: 80, state: "idle" },
-  { id: 4, name: "ひつじ",   emoji: "🐑", diet: "HERBIVORE", pos: { x: 130, y: 230 }, target: { x: 130, y: 230 }, dir: "left",  moving: false, lifespanDays: 8,  hunger: 45, state: "idle" },
+// 動物ごとの動きの個性とうんちのリズム
+const INITIAL_ANIMALS: Animal[] = [
+  {
+    id: 1, name: "ライオン", emoji: "🦁", diet: "CARNIVORE",
+    pos: { x: 60, y: 80 }, target: { x: 60, y: 80 }, dir: "right", moving: false,
+    lifespanDays: 12, hunger: 60, state: "idle",
+    moveSpeed: 0.022, moveInterval: 4500, nextMoveTime: Date.now() + 3000,
+    waddleDuration: 0.60,   // どっしりゆったり
+    lastFedTime: null, poopDelay: 42000,
+  },
+  {
+    id: 2, name: "ウサギ", emoji: "🐰", diet: "HERBIVORE",
+    pos: { x: 200, y: 160 }, target: { x: 200, y: 160 }, dir: "left", moving: false,
+    lifespanDays: 5, hunger: 30, state: "idle",
+    moveSpeed: 0.072, moveInterval: 1000, nextMoveTime: Date.now() + 200,
+    waddleDuration: 0.20,   // ぴょんぴょんはやい
+    lastFedTime: null, poopDelay: 20000,
+  },
+  {
+    id: 3, name: "パンダ", emoji: "🐼", diet: "HERBIVORE",
+    pos: { x: 340, y: 90 }, target: { x: 340, y: 90 }, dir: "right", moving: false,
+    lifespanDays: 20, hunger: 80, state: "idle",
+    moveSpeed: 0.012, moveInterval: 7000, nextMoveTime: Date.now() + 6000,
+    waddleDuration: 0.90,   // のんびりゆっくり
+    lastFedTime: null, poopDelay: 55000,
+  },
+  {
+    id: 4, name: "ひつじ", emoji: "🐑", diet: "HERBIVORE",
+    pos: { x: 130, y: 230 }, target: { x: 130, y: 230 }, dir: "left", moving: false,
+    lifespanDays: 8, hunger: 45, state: "idle",
+    moveSpeed: 0.040, moveInterval: 2600, nextMoveTime: Date.now() + 1000,
+    waddleDuration: 0.38,   // ふつうくらい
+    lastFedTime: null, poopDelay: 33000,
+  },
 ];
 
 // ============================================================
@@ -238,7 +272,7 @@ export default function RanchClient() {
   const poopCount   = storeInventory["poop"]   ?? 0;
 
   // ★ ローカル state（牧場固有：動物の動き・空腹・フンドロップ・UI）
-  const [animals,   setAnimals]   = useState<Animal[]>(INITIAL_ANIMALS.map(a => ({ ...a, lastPoopTime: Date.now() - rand(0, POOP_INTERVAL) })));
+  const [animals,   setAnimals]   = useState<Animal[]>(INITIAL_ANIMALS);
   const [poops,     setPoops]     = useState<PoopDrop[]>([]);
   // ★ DELETED: const [inventory, setInventory] = useState<Inventory>({ coins: 1200, poop: 0, grass: 5 });
   const [particles, setParticles] = useState<Particle[]>([]);
@@ -255,26 +289,27 @@ export default function RanchClient() {
   // ★ DELETED: inventoryRef（ストアの getState() で代替）
   const dragRef     = useRef(drag);      useEffect(() => { dragRef.current      = drag;      }, [drag]);
 
-  // -- movement --
-  useEffect(() => {
-    const iv = setInterval(() => {
-      setAnimals(prev => prev.map(a => {
-        const t = randPos();
-        return { ...a, target: t, moving: true, dir: t.x > a.pos.x ? "right" : "left" };
-      }));
-    }, MOVE_INTERVAL);
-    return () => clearInterval(iv);
-  }, []);
-
+  // -- movement（目標更新＋移動を1つのRAFループに統合）--
+  // 動物ごとに nextMoveTime を持つのでバラバラのタイミングで向きを変える
   useEffect(() => {
     let raf: number;
     const step = () => {
+      const now = Date.now();
       setAnimals(prev => prev.map(a => {
-        if (!a.moving) return a;
-        const nx = lerp(a.pos.x, a.target.x, 0.035);
-        const ny = lerp(a.pos.y, a.target.y, 0.035);
-        const arrived = dist({ x: nx, y: ny }, a.target) < 2;
-        return { ...a, pos: { x: nx, y: ny }, moving: !arrived };
+        // 目標地点の更新（動物ごとに異なるインターバル ±30%ジッタ）
+        let cur = a;
+        if (now >= a.nextMoveTime) {
+          const t = randPos();
+          const jitter = a.moveInterval * (0.7 + Math.random() * 0.6);
+          cur = { ...a, target: t, moving: true, dir: t.x > a.pos.x ? "right" : "left",
+                  nextMoveTime: now + jitter };
+        }
+        // 位置をなめらかに更新（moveSpeedで速度が動物ごとに違う）
+        if (!cur.moving) return cur;
+        const nx = lerp(cur.pos.x, cur.target.x, cur.moveSpeed);
+        const ny = lerp(cur.pos.y, cur.target.y, cur.moveSpeed);
+        const arrived = dist({ x: nx, y: ny }, cur.target) < 2;
+        return { ...cur, pos: { x: nx, y: ny }, moving: !arrived };
       }));
       raf = requestAnimationFrame(step);
     };
@@ -290,16 +325,16 @@ export default function RanchClient() {
     return () => clearInterval(iv);
   }, []);
 
-  // -- poop drop --
+  // -- poop drop（食後 poopDelay ms 経過したら1回だけ出る）--
   useEffect(() => {
     const iv = setInterval(() => {
       const now = Date.now();
       setAnimals(prev => {
         const newPoops: PoopDrop[] = [];
         const next = prev.map(a => {
-          if (now - a.lastPoopTime > POOP_INTERVAL) {
+          if (a.lastFedTime !== null && now - a.lastFedTime >= a.poopDelay) {
             newPoops.push({ id: poopId.current++, pos: { x: a.pos.x + rand(-12, 12), y: a.pos.y + rand(-6, 6) }, collecting: false });
-            return { ...a, lastPoopTime: now };
+            return { ...a, lastFedTime: null }; // リセット（次の食事まで出ない）
           }
           return a;
         });
@@ -413,16 +448,16 @@ export default function RanchClient() {
 
     setAnimals(prev => prev.map(x => {
       if (x.id !== animalId) return x;
-      if (isSuper) {
-        setTimeout(() => setPoops(p => [...p, { id: poopId.current++, pos: { x: x.pos.x + rand(-8, 8), y: x.pos.y + 14 }, collecting: false }]), 700);
-      }
-      return { ...x, hunger: Math.max(0, x.hunger - food.hungerRestore), state: isSuper ? "superHappy" : "happy" };
+      // lastFedTime を更新 → poopDelay 後にうんちが出る
+      return { ...x, hunger: Math.max(0, x.hunger - food.hungerRestore),
+               state: isSuper ? "superHappy" : "happy",
+               lastFedTime: Date.now() };
     }));
 
     spawnParticles(animalId, cx, cy, "success");
     const msg = isSuper
-      ? `💖 ${a.name} が だいよろこび！💩ドロップ！`
-      : `😊 ${a.name} が もぐもぐ！`;
+      ? `💖 ${a.name} が だいよろこび！しばらくすると💩するよ`
+      : `😊 ${a.name} が もぐもぐ！しばらくすると💩するよ`;
     addToast(msg, "success");
     setTimeout(() => setAnimals(prev => prev.map(x => x.id === animalId ? { ...x, state: "idle" } : x)), 950);
   }, [spawnParticles, addToast, consumeInventory, spendCoins]);
@@ -620,7 +655,7 @@ export default function RanchClient() {
               s === "superHappy" ? "eat-super 0.85s ease-in-out forwards" :
               s === "happy"      ? "eat-happy 0.75s ease-in-out forwards" :
               s === "refuse"     ? "refuse-anim 0.8s ease-in-out forwards" :
-              a.moving           ? "waddle 0.4s ease-in-out infinite" :
+              a.moving           ? `waddle ${a.waddleDuration}s ease-in-out infinite` :
                                    `idle-bob ${2 + a.id * 0.3}s ease-in-out infinite`;
 
             const dt = DIET_META[a.diet];
