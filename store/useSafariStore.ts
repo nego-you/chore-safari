@@ -459,35 +459,3 @@ function _checkAndUnlockMedals(
   }
   return newMedals;
 }
-      }),
-    }
-  )
-);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 内部ヘルパー：勲章のチェック & 解除
-// ─────────────────────────────────────────────────────────────────────────────
-function _checkAndUnlockMedals(
-  get: () => SafariState,
-  set: (partial: Partial<SafariState>) => void
-): Medal[] {
-  const state = get();
-  const today = new Date().toLocaleDateString("ja-JP");
-  const newMedals: Medal[] = [];
-
-  const nextMedals = MEDAL_DEFS.reduce<Medal[]>((acc, def) => {
-    const existing = state.medals.find((m) => m.id === def.id);
-    if (existing) return [...acc, existing]; // 既取得はスキップ
-    if (def.check(state)) {
-      const unlocked: Medal = { id: def.id, emoji: def.emoji, name: def.name, unlockedAt: today };
-      newMedals.push(unlocked);
-      return [...acc, unlocked];
-    }
-    return [...acc, { id: def.id, emoji: def.emoji, name: def.name, unlockedAt: null }];
-  }, []);
-
-  if (newMedals.length > 0) {
-    set({ medals: nextMedals });
-  }
-  return newMedals;
-}
