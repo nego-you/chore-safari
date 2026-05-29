@@ -1,7 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useSafariStore } from "@/store/useSafariStore";
-import { KizunaEventDialog } from "@/components/KizunaEventDialog";
 
 const CROPS = {
   wheat:  { icon:"🌾", label:"むぎ",        hours:4  },
@@ -192,24 +191,7 @@ export default function FarmUI() {
   const coins            = useSafariStore((s) => s.coins);
   const addToInventory   = useSafariStore((s) => s.addToInventory);
 
-  // ── 恩送りイベント
-  const helpedGrandma      = useSafariStore((s) => s.helpedGrandma);
-  const tickKizunaTurns    = useSafariStore((s) => s.tickKizunaTurns);
-  const receiveKizunaBadge = useSafariStore((s) => s.receiveKizunaBadge);
-  const [kizunaRescueOpen, setKizunaRescueOpen] = useState(false);
-
-  const kizunaCheckedRef = useRef(false);
-  useEffect(() => {
-    if (kizunaCheckedRef.current) return;
-    kizunaCheckedRef.current = true;
-    if (!helpedGrandma) return;
-    const turns = tickKizunaTurns();
-    if (turns >= 3) {
-      const t = setTimeout(() => setKizunaRescueOpen(true), 1200);
-      return () => clearTimeout(t);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // ── おたがいさまイベントは <KizunaManager />（レイアウト共通）が制御する ──
 
   const [cells, setCells]           = useState(loadCells);
   const [weather]                   = useState("sunny");
@@ -447,17 +429,6 @@ export default function FarmUI() {
         }}>{toast}</div>
       )}
 
-      {/* ── 恩送りイベント ── */}
-      {kizunaRescueOpen && (
-        <KizunaEventDialog
-          phase="TYPHOON_RESCUE"
-          onComplete={() => {
-            receiveKizunaBadge();
-            setKizunaRescueOpen(false);
-            showToast("🏅 きずなの しょうを うけとった！ はたけも なおったよ！✨");
-          }}
-        />
-      )}
     </div>
   );
 }

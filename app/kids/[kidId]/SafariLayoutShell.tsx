@@ -9,6 +9,7 @@ import { GuideProvider } from "./GuideContext";
 import type { GuideInfo } from "./GuideContext";
 import { GlobalHeader } from "./GlobalHeader";
 import { useSafariStore } from "@/store/useSafariStore";
+import { KizunaManager } from "@/components/KizunaManager";
 
 // DB -> Store ブリッジ
 function StoreInitializer({ kidId, coinBalance }: { kidId: string; coinBalance: number }) {
@@ -53,6 +54,8 @@ export function SafariLayoutShell({
           streakStatus={streakStatus}
         />
         {children}
+        {/* どのステージでも「おたがいさま」イベントを発生させる */}
+        <KizunaManager />
       </GuideProvider>
     </WeatherProvider>
   );

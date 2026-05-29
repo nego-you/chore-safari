@@ -352,25 +352,25 @@ export default function FlowClient() {
           />
         </FlowSection>
 
-        {/* ── 5. おんがえしの ながれ ── */}
+        {/* ── 5. おたがいさま の ながれ ── */}
         <FlowSection
           no={5}
           icon="💝"
-          title="おんがえしの ながれ"
-          caption="やさしくすると、あとで だれかが たすけにきてくれる"
+          title="おたがいさま の ながれ"
+          caption="こまってる人が いたら、そっと てを かそう"
           color="#ec4899"
         >
           <FlowChain
             color="#ec4899"
             steps={[
               { emoji: "🤲", label: "こまってる人を\nたすける" },
-              { emoji: "⛈️", label: "すうじつご\nピンチ！" },
-              { emoji: "🤝", label: "むかし たすけた人が\nきてくれる" },
-              { emoji: "✨", label: "ありがとう！" },
+              { emoji: "😊", label: "こころが\nあったかい" },
+              { emoji: "🤝", label: "いつか だれかも\nてを かしてくれる" },
+              { emoji: "💚", label: "おたがいさま！" },
             ]}
           />
           <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#be185d", textAlign: "center" }}>
-            すぐ ごほうびが なくても、やさしさは ちゃんと もどってくるよ 😊
+            ごほうびの ためじゃ なくて、たすけたいから たすけるんだ 😊
           </p>
         </FlowSection>
 

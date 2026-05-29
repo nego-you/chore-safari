@@ -77,15 +77,24 @@ export interface SafariState {
   /** 獲得済み勲章リスト */
   medals: Medal[];
 
-  // ── 恩送り（ペイ・フォワード）イベント ──────────────────
-  /** 非公開の善行ポイント（おばあちゃんを助けると加算） */
+  // ── おたがいさま（善意の手助け）イベント ────────────────
+  /** 非公開の善行ポイント（だれかを助けるたびに加算） */
   kizunaPoints: number;
-  /** おばあちゃんを助けたフラグ（Phase2/3 の引き金） */
-  helpedGrandma: boolean;
-  /** helpedGrandma が true になってから農場を開いた回数 */
-  kizunaTurnsAfterHelp: number;
-  /** 絆の証（特別トロフィーアイテム）の所持数 */
+  /** これまでに善意で手助けした回数（累計） */
+  kindnessCount: number;
+  /**
+   * まだ返ってきていない「お返し手助け」の残数。
+   * 手助けするたびに +1、お返しを受け取るたびに -1。
+   * この数だけ、あとで だれかが助けに来てくれる（助けた回数に応じる）。
+   */
+  pendingReturns: number;
+  /** 絆の証（特別トロフィーアイテム）の所持数 ＝ 受け取ったお返しの累計 */
   kizunaBadgeCount: number;
+  /**
+   * 最後に絆イベント（お願い／お返し）を表示・評価した日付（"YYY/M/D"）。
+   * 1日に1回までに制限するためのゲート。
+   */
+  lastKizunaDate: string | null;
 
   // ── 内部統計（勲章判定用）────────────────────────────────
   /** @internal */
@@ -143,24 +152,23 @@ export interface SafariState {
   /** スタミナを指定量回復する（100 を超えない） */
   restoreStamina: (amount: number) => void;
 
-  // ── 恩送りイベントアクション ──────────────────────────────
+  // ── おたがいさまイベントアクション ────────────────────────
   /**
-   * おばあちゃんを助ける。
-   * アイテムを消費せずにここで消費確認済みの前提で呼ぶ。
-   * helpedGrandma=true、kizunaPoints+=10。
+   * だれかを善意で手助けしたときに呼ぶ。
+   * kindnessCount++、pendingReturns++（あとで1回ぶん返ってくる）、kizunaPoints+=10。
+   * 見返りの約束はしない（純粋な善意）。
    */
-  helpGrandma: () => void;
+  recordKindness: () => void;
   /**
-   * 農場ページを開くたびに呼ぶ。
-   * helpedGrandma が true の場合のみカウンタを進める。
-   * 戻り値: 現在の kizunaTurnsAfterHelp（インクリメント後の値）
+   * お返しの手助けを1回受け取る。
+   * pendingReturns--（0未満にはならない）、kizunaBadgeCount++、kizunaPoints+=20。
    */
-  tickKizunaTurns: () => number;
+  redeemReturn: () => void;
   /**
-   * 絆の証を受け取る（Phase3 完了時）。
-   * kizunaBadgeCount++、イベントフラグをリセット。
+   * きょうの絆スロットを使用済みにする（1日1回ゲート）。
+   * イベントを出した・出さなかったに関わらず、評価したら呼ぶ。
    */
-  receiveKizunaBadge: () => void;
+  markKizunaShownToday: (date: string) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -173,9 +181,10 @@ const INITIAL_GAME_STATE = {
   stamina: 100,
   medals: [] as Medal[],
   kizunaPoints: 0,
-  helpedGrandma: false,
-  kizunaTurnsAfterHelp: 0,
+  kindnessCount: 0,
+  pendingReturns: 0,
   kizunaBadgeCount: 0,
+  lastKizunaDate: null as string | null,
   _stats: {
     helpCount: 0,
     totalAnimalsCaught: 0,
@@ -319,35 +328,44 @@ export const useSafariStore = create<SafariState>()(
       restoreStamina: (amount) =>
         set((s) => ({ stamina: Math.min(100, s.stamina + amount) })),
 
-      // ── 恩送りイベント ────────────────────────────────────
-      helpGrandma: () =>
+      // ── おたがいさまイベント ──────────────────────────────
+      recordKindness: () =>
         set((s) => ({
-          helpedGrandma: true,
+          kindnessCount: s.kindnessCount + 1,
+          pendingReturns: s.pendingReturns + 1,
           kizunaPoints: s.kizunaPoints + 10,
         })),
 
-      tickKizunaTurns: () => {
-        const { helpedGrandma, kizunaTurnsAfterHelp } = get();
-        if (!helpedGrandma) return 0;
-        const next = kizunaTurnsAfterHelp + 1;
-        set({ kizunaTurnsAfterHelp: next });
-        return next;
-      },
-
-      receiveKizunaBadge: () =>
+      redeemReturn: () =>
         set((s) => ({
+          pendingReturns: Math.max(0, s.pendingReturns - 1),
           kizunaBadgeCount: s.kizunaBadgeCount + 1,
-          kizunaPoints: s.kizunaPoints + 50,
-          // イベントをリセット（再発動しないように）
-          helpedGrandma: false,
-          kizunaTurnsAfterHelp: 0,
+          kizunaPoints: s.kizunaPoints + 20,
         })),
+
+      markKizunaShownToday: (date) => set({ lastKizunaDate: date }),
     }),
 
     // ── persist 設定 ────────────────────────────────────────
     {
       name: "safari-store", // localStorage キー名
-           storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => localStorage),
+      // 旧スキーマ（helpedGrandma 等）からの移行用バージョン
+      version: 2,
+      migrate: (persisted, version) => {
+        const s = (persisted ?? {}) as Record<string, unknown>;
+        if (version < 2) {
+          // v1 の絆フィールドを新スキーマへ読み替える。
+          // 過去に1度でも助けていれば 1 回ぶんのお返しを引き継ぐ。
+          const helped = s.helpedGrandma === true;
+          s.kindnessCount = helped ? 1 : 0;
+          s.pendingReturns = helped ? 1 : 0;
+          s.lastKizunaDate = null;
+          delete s.helpedGrandma;
+          delete s.kizunaTurnsAfterHelp;
+        }
+        return s;
+      },
       // 内部統計も含めて全フィールドを保存
       partialize: (s) => ({
         activeKidId: s.activeKidId,
@@ -358,18 +376,19 @@ export const useSafariStore = create<SafariState>()(
         stamina: s.stamina,
         medals: s.medals,
         kizunaPoints: s.kizunaPoints,
-        helpedGrandma: s.helpedGrandma,
-        kizunaTurnsAfterHelp: s.kizunaTurnsAfterHelp,
+        kindnessCount: s.kindnessCount,
+        pendingReturns: s.pendingReturns,
         kizunaBadgeCount: s.kizunaBadgeCount,
+        lastKizunaDate: s.lastKizunaDate,
         _stats: s._stats,
       }),
     }
   )
 );
 
-// ─────────────────��──────────────────────��────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 // 内部ヘルパー：勲章のチェック & 解除
-// ──────────────────��────────────────────────────��─────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 function _checkAndUnlockMedals(
   get: () => SafariState,
   set: (partial: Partial<SafariState>) => void

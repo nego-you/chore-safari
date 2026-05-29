@@ -10,8 +10,7 @@
 import { useRouter } from "next/navigation";
 import React, { useEffect, useRef, useState } from "react";
 import { useWeather, type WeatherInfo } from "./[kidId]/WeatherContext";
-import { useSafariStore } from "@/store/useSafariStore";
-import { KizunaEventDialog } from "@/components/KizunaEventDialog";
+import { KizunaManager } from "@/components/KizunaManager";
 
 // ── CSS アニメーション（一度だけ <head> に注入） ──────────────
 const MAP_CSS = `
@@ -577,26 +576,7 @@ export function WorldMapPortal({
   const [arcadeOpen, setArcadeOpen] = useState(false);
   const [comingSoon, setComingSoon] = useState<MapPin | null>(null);
 
-  // ── 恩送りイベント（種まきフェーズ） ──────────────────────────────────────
-  const inventory        = useSafariStore((s) => s.inventory);
-  const helpedGrandma    = useSafariStore((s) => s.helpedGrandma);
-  const helpGrandma      = useSafariStore((s) => s.helpGrandma);
-  const consumeInventory = useSafariStore((s) => s.consumeInventory);
-  const [kizunaEventOpen, setKizunaEventOpen] = useState(false);
-
-  // マップロード時に 25% の確率でおばあちゃんイベント発火
-  // （helpedGrandma が false の間のみ、一度だけ per session）
-  const kizunaTriedRef = useRef(false);
-  useEffect(() => {
-    if (kizunaTriedRef.current) return;
-    kizunaTriedRef.current = true;
-    if (!helpedGrandma && Math.random() < 0.25) {
-      // 500ms 後に表示（画面が落ち着いてから）
-      const t = setTimeout(() => setKizunaEventOpen(true), 500);
-      return () => clearTimeout(t);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // ── おたがいさまイベントは <KizunaManager />（下部）が全画面共通で制御する ──
 
   const player = players[activePlayer] ?? players[0];
 
@@ -882,19 +862,8 @@ export function WorldMapPortal({
         <ArcadeModal onClose={() => setArcadeOpen(false)} onNavigate={handleArcadeNavigate} />
       )}
 
-      {/* ── 恩送りイベント（種まきフェーズ）────────────────────────────── */}
-      {kizunaEventOpen && (
-        <KizunaEventDialog
-          phase="GRANDMA_SEED"
-          hasItem={(inventory["grass"] ?? 0) >= 1}
-          onGiveItem={() => {
-            consumeInventory("grass", 1);
-            helpGrandma();
-            // ダイアログは GRANDMA_THANKS ステップへ（onDecline で閉じる）
-          }}
-          onDecline={() => setKizunaEventOpen(false)}
-        />
-      )}
+      {/* ── おたがいさまイベント（全画面共通の制御）──────────────────── */}
+      <KizunaManager />
     </div>
   );
 }
