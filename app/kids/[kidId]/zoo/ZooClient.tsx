@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useSafariStore } from "@/store/useSafariStore";
 
 /* ============================================================
    どうぶつえん（やさしいバージョン）
@@ -206,7 +207,18 @@ function Tooltip({ text }: { text: string }) {
 /* ============================================================
    MAIN
    ============================================================ */
+// のうじょうそざいケア設定
+const FARM_CARE_ITEMS: { key: string; emoji: string; label: string; cleanBoost: number }[] = [
+  { key: "carrot", emoji: "🥕", label: "にんじん", cleanBoost: 8 },
+  { key: "wheat",  emoji: "🌾", label: "むぎ",    cleanBoost: 6 },
+  { key: "corn",   emoji: "🌽", label: "とうもろこし", cleanBoost: 6 },
+];
+
 export default function ZooClient() {
+  // ── グローバルストア（農場インベントリ連携）
+  const storeInventory   = useSafariStore((s) => s.inventory);
+  const consumeInventory = useSafariStore((s) => s.consumeInventory);
+
   const [gs, setGs] = useState<GameState>({
     inventory: { coins: 120, seed: 0, material: 0 },
     cleanliness: 80,
@@ -311,6 +323,16 @@ export default function ZooClient() {
 
   function removeAnimal(areaId: Habitat, slot: number) {
     setGs(p => { const c = { ...p, placedAnimals: { ...p.placedAnimals, [areaId]: [...p.placedAnimals[areaId]] } }; c.placedAnimals[areaId][slot] = null; return c; });
+  }
+
+  // のうじょうのそざいで どうぶつえんを おそだてする
+  function useFarmCare(itemKey: string, cleanBoost: number) {
+    if ((storeInventory[itemKey] ?? 0) <= 0) return;
+    consumeInventory(itemKey, 1);
+    setGs(prev => ({ ...prev, cleanliness: Math.min(100, prev.cleanliness + cleanBoost) }));
+    setSparkles(true);
+    const item = FARM_CARE_ITEMS.find(i => i.key === itemKey);
+    showToast(`${item?.emoji ?? "🌿"} どうぶつたちが よろこんだ！ きれいさ +${cleanBoost}`);
   }
 
   /* ── Derived ── */
@@ -516,6 +538,49 @@ export default function ZooClient() {
           </div>
         );
       })}
+
+      {/* ── FARM CARE ── */}
+      <div style={{ margin: "14px 16px 0", background: "#fff", borderRadius: 20, padding: "12px 14px", boxShadow: "0 2px 12px rgba(0,0,0,.07)", border: "2px solid #bbf7d022" }}>
+        <div style={{ fontWeight: 900, fontSize: 14, color: "#15803d", marginBottom: 4 }}>🌾 のうじょうのもので おせわ</div>
+        <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 10 }}>
+          農場で育てた作物を使うと、きれいさが上がるよ！
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {FARM_CARE_ITEMS.map(item => {
+            const count = storeInventory[item.key] ?? 0;
+            const ok = count > 0 && animalCount > 0;
+            return (
+              <button
+                key={item.key}
+                onClick={() => ok && useFarmCare(item.key, item.cleanBoost)}
+                style={{
+                  flex: "1 1 28%",
+                  borderRadius: 14, border: `2px solid ${ok ? "#86efac" : "#e5e7eb"}`,
+                  background: ok ? "linear-gradient(135deg,#dcfce7,#bbf7d0)" : "#f9fafb",
+                  color: ok ? "#15803d" : "#9ca3af",
+                  cursor: ok ? "pointer" : "not-allowed",
+                  padding: "10px 6px", textAlign: "center", fontFamily: "inherit",
+                  transition: "all 0.2s",
+                }}
+              >
+                <div style={{ fontSize: 28 }}>{item.emoji}</div>
+                <div style={{ fontSize: 11, fontWeight: 800, marginTop: 3 }}>{item.label}</div>
+                <div style={{ fontSize: 10, marginTop: 2, opacity: 0.8 }}>
+                  {count > 0 ? `のこり ${count}個` : "なし"}
+                </div>
+                <div style={{ fontSize: 10, marginTop: 2, color: ok ? "#16a34a" : "#9ca3af", fontWeight: 700 }}>
+                  🧹 +{item.cleanBoost}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        {animalCount === 0 && (
+          <div style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", marginTop: 6 }}>
+            どうぶつを てんじすると つかえるよ！
+          </div>
+        )}
+      </div>
 
       {/* ── INVENTORY ── */}
       <div style={{ margin: "14px 16px 0", background: "#fff", borderRadius: 20, padding: "12px 14px", boxShadow: "0 2px 12px rgba(0,0,0,.07)" }}>

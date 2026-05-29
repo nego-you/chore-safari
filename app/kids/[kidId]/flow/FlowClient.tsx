@@ -337,17 +337,48 @@ export default function FlowClient() {
           no={4}
           icon="📦"
           title="そざいの ながれ"
-          caption="あつめて → はこんで → どうぐを つくる"
+          caption="あつめて → はこんで → いろんな ばしょで つかう"
           color="#3b82f6"
         >
+          {/* 収集〜輸送 */}
           <FlowChain
             color="#3b82f6"
             steps={[
-              { emoji: "🌾", label: "あつめる" },
+              { emoji: "🌾", label: "のうじょうで\nあつめる" },
               { emoji: "🏠", label: "おうち" },
               { emoji: "📦", label: "ぶつりゅう\nセンター" },
+            ]}
+          />
+          {/* 3つの使いみち */}
+          <div style={{ textAlign: "center", fontSize: 13, fontWeight: 800, color: "#64748b" }}>
+            ⬇ つかいみちが 3つ！ ⬇
+          </div>
+          <SubRow
+            tag="🔨 クラフト"
+            tagColor="#3b82f6"
+            color="#3b82f6"
+            steps={[
               { emoji: "🔨", label: "クラフト\nこうぼう" },
-              { emoji: "🪤", label: "わな・エサ・\nどうぐ" },
+              { emoji: "🪤", label: "わな・\nどうぐ" },
+            ]}
+          />
+          <SubRow
+            tag="🐄 牧場エサ"
+            tagColor="#f59e0b"
+            color="#f59e0b"
+            steps={[
+              { emoji: "🥕", label: "にんじんや\nくさ" },
+              { emoji: "😊", label: "どうぶつが\nよろこぶ！" },
+              { emoji: "💩", label: "💩ゲット！" },
+            ]}
+          />
+          <SubRow
+            tag="🦁 動物園"
+            tagColor="#ec4899"
+            color="#ec4899"
+            steps={[
+              { emoji: "🥬", label: "のうじょうの\nもの" },
+              { emoji: "🧹", label: "きれいさ\nアップ！" },
             ]}
           />
         </FlowSection>

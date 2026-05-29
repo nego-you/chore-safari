@@ -16,7 +16,7 @@ import { useSafariStore } from "@/store/useSafariStore";
 interface Vec2 { x: number; y: number; }
 
 type Diet = "HERBIVORE" | "CARNIVORE" | "OMNIVORE";
-type FoodType = "grass" | "feed";
+type FoodType = "grass" | "carrot" | "feed";
 type FoodCategory = "PLANT" | "MEAT";
 type AnimalState = "idle" | "happy" | "superHappy" | "refuse";
 
@@ -101,8 +101,9 @@ const DIET_META: Record<Diet, { icon: string; label: string; color: string; bg: 
 };
 
 const FOOD: Record<FoodType, FoodItem> = {
-  grass: { type: "grass", category: "PLANT", emoji: "🌿", label: "農場のくさ",   cost: 1,        hungerRestore: 55, superSynergy: true  },
-  feed:  { type: "feed",  category: "MEAT",  emoji: "🍖", label: "コインのエサ", cost: FEED_COST, hungerRestore: 30, superSynergy: false },
+  grass:  { type: "grass",  category: "PLANT", emoji: "🌿", label: "農場のくさ",    cost: 1,        hungerRestore: 55, superSynergy: true  },
+  carrot: { type: "carrot", category: "PLANT", emoji: "🥕", label: "農場のにんじん", cost: 1,        hungerRestore: 45, superSynergy: true  },
+  feed:   { type: "feed",   category: "MEAT",  emoji: "🍖", label: "コインのエサ",  cost: FEED_COST, hungerRestore: 30, superSynergy: false },
 };
 
 function canEat(diet: Diet, cat: FoodCategory): boolean {
@@ -231,9 +232,10 @@ export default function RanchClient() {
   const consumeInventory = useSafariStore((s) => s.consumeInventory);
   const spendCoins     = useSafariStore((s) => s.spendCoins);
 
-  // 便利ゲッター（インベントリ内の草・フン）
-  const grassCount = storeInventory["grass"] ?? 0;
-  const poopCount  = storeInventory["poop"]  ?? 0;
+  // 便利ゲッター（インベントリ内の草・にんじん・フン）
+  const grassCount  = storeInventory["grass"]  ?? 0;
+  const carrotCount = storeInventory["carrot"] ?? 0;
+  const poopCount   = storeInventory["poop"]   ?? 0;
 
   // ★ ローカル state（牧場固有：動物の動き・空腹・フンドロップ・UI）
   const [animals,   setAnimals]   = useState<Animal[]>(INITIAL_ANIMALS.map(a => ({ ...a, lastPoopTime: Date.now() - rand(0, POOP_INTERVAL) })));
@@ -403,6 +405,8 @@ export default function RanchClient() {
     // ★ AFTER : consumeInventory / spendCoins → ストアへ反映
     if (foodType === "grass") {
       consumeInventory("grass", 1);
+    } else if (foodType === "carrot") {
+      consumeInventory("carrot", 1);
     } else {
       spendCoins(FEED_COST);
     }
@@ -457,11 +461,19 @@ export default function RanchClient() {
         // ★ BEFORE: inventoryRef.current で在庫確認
         // ★ AFTER : useSafariStore.getState() でストアの最新値を同期参照
         const { inventory: si, coins: sc } = useSafariStore.getState();
-        const canAfford = d.type === "grass" ? (si["grass"] ?? 0) > 0 : sc >= FEED_COST;
+        const canAfford =
+          d.type === "grass"   ? (si["grass"]   ?? 0) > 0 :
+          d.type === "carrot"  ? (si["carrot"]  ?? 0) > 0 :
+          sc >= FEED_COST;
         if (canAfford) {
           feedAnimal(hit.id, d.type);
         } else {
-          addToast(d.type === "grass" ? "🌿 くさ が たりないよ！" : "🪙 コイン が たりないよ！", "refuse");
+          addToast(
+            d.type === "grass"  ? "🌿 くさ が たりないよ！" :
+            d.type === "carrot" ? "🥕 にんじん が たりないよ！" :
+            "🪙 コイン が たりないよ！",
+            "refuse"
+          );
         }
       }
     }
@@ -725,13 +737,13 @@ export default function RanchClient() {
           <div style={{ fontSize:"0.72rem", fontWeight:700, color:"#888", marginBottom:10, textAlign:"center", letterSpacing:1 }}>
             ▼ エサをドラッグして動物にわたそう ▼
           </div>
-          <div style={{ display:"flex", gap:12 }}>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
             {/* grass */}
             {(() => {
               const ok = grassCount > 0;
               return (
                 <div onMouseDown={e => ok && onDragStart(e,"grass")} onTouchStart={e => ok && onDragStart(e,"grass")}
-                  style={{ flex:1, borderRadius:16, padding:"12px 8px", textAlign:"center", touchAction:"none",
+                  style={{ flex:"1 1 30%", borderRadius:16, padding:"12px 8px", textAlign:"center", touchAction:"none",
                     background: ok ? "linear-gradient(135deg,#4ade80,#16a34a)" : "#e5e7eb",
                     color: ok ? "#fff" : "#9ca3af", cursor: ok ? "grab" : "not-allowed",
                     boxShadow: ok ? "0 4px 12px rgba(74,222,128,0.4)" : "none", transition:"all 0.2s" }}>
@@ -744,12 +756,30 @@ export default function RanchClient() {
                 </div>
               );
             })()}
+            {/* carrot */}
+            {(() => {
+              const ok = carrotCount > 0;
+              return (
+                <div onMouseDown={e => ok && onDragStart(e,"carrot")} onTouchStart={e => ok && onDragStart(e,"carrot")}
+                  style={{ flex:"1 1 30%", borderRadius:16, padding:"12px 8px", textAlign:"center", touchAction:"none",
+                    background: ok ? "linear-gradient(135deg,#fb923c,#ea580c)" : "#e5e7eb",
+                    color: ok ? "#fff" : "#9ca3af", cursor: ok ? "grab" : "not-allowed",
+                    boxShadow: ok ? "0 4px 12px rgba(251,146,60,0.4)" : "none", transition:"all 0.2s" }}>
+                  <div style={{ fontSize:"1.8rem" }}>🥕</div>
+                  <div style={{ fontSize:"0.75rem", fontWeight:800 }}>農場のにんじん</div>
+                  <div style={{ fontSize:"0.6rem", opacity:0.85, marginTop:2 }}>のこり {carrotCount}本</div>
+                  <div style={{ fontSize:"0.58rem", marginTop:4, opacity:0.85 }}>
+                    <span style={{ background:"rgba(255,255,255,0.22)", borderRadius:6, padding:"1px 6px" }}>🌿そうしょく 🍀ざっしょく</span>
+                  </div>
+                </div>
+              );
+            })()}
             {/* feed (meat) */}
             {(() => {
               const ok = coins >= FEED_COST;
               return (
                 <div onMouseDown={e => ok && onDragStart(e,"feed")} onTouchStart={e => ok && onDragStart(e,"feed")}
-                  style={{ flex:1, borderRadius:16, padding:"12px 8px", textAlign:"center", touchAction:"none",
+                  style={{ flex:"1 1 30%", borderRadius:16, padding:"12px 8px", textAlign:"center", touchAction:"none",
                     background: ok ? "linear-gradient(135deg,#fbbf24,#d97706)" : "#e5e7eb",
                     color: ok ? "#fff" : "#9ca3af", cursor: ok ? "grab" : "not-allowed",
                     boxShadow: ok ? "0 4px 12px rgba(251,191,36,0.4)" : "none", transition:"all 0.2s" }}>
@@ -771,7 +801,7 @@ export default function RanchClient() {
             fontSize:"3.2rem", pointerEvents:"none", zIndex:9999,
             animation:"drag-item 0.3s ease-in-out infinite",
             filter:"drop-shadow(0 4px 10px rgba(0,0,0,0.35))" }}>
-            {drag.type === "grass" ? "🌿" : "🍖"}
+            {drag.type === "grass" ? "🌿" : drag.type === "carrot" ? "🥕" : "🍖"}
           </div>
         )}
       </div>
