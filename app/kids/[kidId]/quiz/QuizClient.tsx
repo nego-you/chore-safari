@@ -36,6 +36,12 @@ const GENRES = [
   { id: "kids",      label: "こどもクイズ", emoji: "🌟" },
 ];
 
+const DIFFICULTIES = [
+  { id: "easy",   label: "やさしい",   emoji: "🌱" },
+  { id: "normal", label: "ふつう",     emoji: "⭐" },
+  { id: "hard",   label: "むずかしい", emoji: "🔥" },
+];
+
 // ── VOICEVOX TTS ──────────────────────────────────────────────────────────
 async function speakVoicevox(text: string): Promise<void> {
   try {
@@ -88,11 +94,11 @@ function cancelSpeech() {
 }
 
 // ── Gemini API（サーバールート経由） ─────────────────────────────────────
-async function fetchQuestion(genreLabel: string, usedQuestions: string[]) {
+async function fetchQuestion(genreLabel: string, usedQuestions: string[], difficulty: string) {
   const res = await fetch("/api/quiz/hayaoshi", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ genre: genreLabel, usedQuestions }),
+    body: JSON.stringify({ genre: genreLabel, usedQuestions, difficulty }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as { error?: string };
@@ -282,6 +288,7 @@ export function QuizClient({ initialKidId, kids }: Props) {
 
   // ── クイズ状態 ─────────────────────────────────────────────────────────
   const [genre, setGenre]             = useState(GENRES[0]);
+  const [difficulty, setDifficulty]   = useState(DIFFICULTIES[0]);
   const [currentQ, setCurrentQ]       = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState("");
@@ -294,6 +301,7 @@ export function QuizClient({ initialKidId, kids }: Props) {
   const [voiceResult, setVoiceResult] = useState("");
   const [voiceCorrect, setVoiceCorrect] = useState<boolean | null>(null);
   const [buzzing, setBuzzing]         = useState(false);
+  const [showBuzzPopup, setShowBuzzPopup] = useState(false);
   const [coinAwarded, setCoinAwarded] = useState(false);
 
   // ── 音声認識 ───────────────────────────────────────────────────────────
@@ -341,6 +349,8 @@ export function QuizClient({ initialKidId, kids }: Props) {
     setAnswered(true);
     setPhraseActive(false);
     setBuzzing(false);
+    setShowBuzzPopup(false);
+    setRevealAnswer(false);
     stopMic();
     awardCoins();
     speakVoicevox("せいかい！すごいね！");
@@ -351,6 +361,8 @@ export function QuizClient({ initialKidId, kids }: Props) {
     setAnswered(true);
     setPhraseActive(false);
     setBuzzing(false);
+    setShowBuzzPopup(false);
+    setRevealAnswer(false);
     stopMic();
     setVoiceResult(""); setVoiceCorrect(null);
     speakVoicevox("ざんねん！またちょうせんしてね！");
@@ -363,7 +375,11 @@ export function QuizClient({ initialKidId, kids }: Props) {
     setIsSpeaking(false);
     setPhraseActive(false);
     setBuzzing(true);
+    setShowBuzzPopup(true);
     setVoiceResult(""); setVoiceCorrect(null);
+    // 「はやおし！」の演出は一瞬だけ表示し、すぐに司会者ボタン＆マイク欄を出す
+    setTimeout(() => setShowBuzzPopup(false), 1100);
+    // マイクは使える環境でだけバックグラウンドで起動（失敗しても司会者ボタンで進める）
     setTimeout(() => startMic(), 400);
     speakVoicevox("はやおし！");
   };
@@ -372,12 +388,12 @@ export function QuizClient({ initialKidId, kids }: Props) {
   const generateQ = async () => {
     if (loading) return;
     setLoading(true); setError("");
-    setBuzzing(false); setAnswered(false); setCorrect(null);
+    setBuzzing(false); setShowBuzzPopup(false); setAnswered(false); setCorrect(null);
     setRevealAnswer(false); setPhraseActive(false);
     setVoiceResult(""); setVoiceCorrect(null); setCoinAwarded(false);
     cancelSpeech(); stopMic();
     try {
-      const q = await fetchQuestion(genre.label, used);
+      const q = await fetchQuestion(genre.label, used, difficulty.id);
       if (!q.phrases || !q.phrases.length) q.phrases = [q.question || "問題"];
       setCurrentQ(q);
       setUsed(u => [...u, (q.phrases as string[]).join("")]);
@@ -427,6 +443,26 @@ export function QuizClient({ initialKidId, kids }: Props) {
               <span>{g.emoji}</span><span>{g.label}</span>
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* 難易度選択 */}
+      <div className="px-4 pb-3">
+        <div className="flex items-center gap-2">
+          <span className="text-white/40 text-xs font-bold flex-shrink-0">むずかしさ</span>
+          <div className="flex gap-2 flex-1">
+            {DIFFICULTIES.map(d => (
+              <button key={d.id}
+                onClick={() => { setDifficulty(d); setCurrentQ(null); setAnswered(false); setCorrect(null); setUsed([]); }}
+                className={`flex-1 flex items-center justify-center gap-1 px-2 py-2 rounded-xl text-sm font-bold transition-all ${
+                  difficulty.id === d.id
+                    ? "bg-amber-500 text-white shadow-lg shadow-amber-500/40"
+                    : "bg-white/10 text-white/60 hover:bg-white/20"
+                }`}>
+                <span>{d.emoji}</span><span>{d.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -505,9 +541,20 @@ export function QuizClient({ initialKidId, kids }: Props) {
                 <AnimatePresence>
                   {revealAnswer && !answered && (
                     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                      className="mt-2 bg-slate-800/80 border border-white/10 rounded-xl px-4 py-2 text-center">
+                      className="mt-2 bg-slate-800/80 border border-white/10 rounded-xl px-4 py-3 text-center">
                       <p className="text-white/30 text-xs mb-0.5">しかいしゃのみ</p>
                       <p className="text-white font-black text-2xl">{currentQ.answer as string}</p>
+                      {/* 答えを見た状態からも正解・不正解にできる */}
+                      <div className="flex gap-2 mt-3">
+                        <motion.button whileTap={{ scale: 0.95 }} onClick={doCorrect}
+                          className="flex-1 py-2.5 bg-green-500 rounded-xl text-white font-black text-base shadow-lg shadow-green-500/40">
+                          ✅ せいかいにする
+                        </motion.button>
+                        <motion.button whileTap={{ scale: 0.95 }} onClick={doWrong}
+                          className="flex-1 py-2.5 bg-red-500/80 rounded-xl text-white font-black text-base shadow-lg shadow-red-500/30">
+                          ❌ ちがう
+                        </motion.button>
+                      </div>
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -554,7 +601,7 @@ export function QuizClient({ initialKidId, kids }: Props) {
                         : <div className="w-3 h-3 rounded-full bg-white/20" />
                       }
                       <span className="text-white/70 text-sm font-bold">
-                        {listening ? "🎤 こたえて！" : voiceResult ? "きこえたよ" : "マイク準備中…"}
+                        {listening ? "🎤 こたえて！" : voiceResult ? "きこえたよ" : "🎤 こえか、したのボタンでこたえてね"}
                       </span>
                       {!listening && (
                         <button onClick={startMic} className="ml-1 px-3 py-1 bg-white/15 hover:bg-white/25 rounded-lg text-white/60 text-xs font-bold transition-all">
@@ -620,9 +667,9 @@ export function QuizClient({ initialKidId, kids }: Props) {
         </motion.button>
       </div>
 
-      {/* 早押しポップアップ */}
+      {/* 早押しポップアップ（一瞬だけ表示してすぐ消える） */}
       <AnimatePresence>
-        {buzzing && (
+        {showBuzzPopup && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-40 pointer-events-none">
             <motion.div initial={{ scale: 0, rotate: -12 }} animate={{ scale: 1, rotate: 0 }} exit={{ scale: 0 }}
@@ -631,11 +678,6 @@ export function QuizClient({ initialKidId, kids }: Props) {
               style={{ background: "linear-gradient(135deg,#6366f1,#a855f7)", boxShadow: "0 0 80px rgba(99,102,241,0.7)" }}>
               <motion.div animate={{ scale: [1, 1.15, 1] }} transition={{ repeat: Infinity, duration: 0.55 }} className="text-6xl mb-3">⚡</motion.div>
               <p className="text-white font-black text-3xl drop-shadow-lg">はやおし！</p>
-              {micSupported && (
-                <p className="text-white/75 text-base mt-2 font-bold">
-                  {listening ? "🎤 こたえて！" : "マイク準備中…"}
-                </p>
-              )}
             </motion.div>
           </motion.div>
         )}
