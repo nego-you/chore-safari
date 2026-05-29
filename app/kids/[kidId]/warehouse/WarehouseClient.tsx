@@ -248,8 +248,8 @@ export function WarehouseClient({
   }
 
   return (
-    <main className="min-h-[calc(100vh-52px)] bg-gradient-to-b from-sky-100 via-indigo-50 to-violet-100 px-4 py-4">
-      <div className="mx-auto max-w-3xl space-y-6">
+    <main className="min-h-[calc(100vh-52px)] bg-gradient-to-b from-sky-100 via-indigo-50 to-violet-100 px-4 py-4 md:px-8 md:py-6">
+      <div className="mx-auto max-w-3xl md:max-w-5xl space-y-6">
         {/* ヒーロー：コンプリート率 */}
         <section className="rounded-[2rem] bg-gradient-to-br from-sky-400 via-indigo-400 to-violet-400 p-1 shadow-xl ring-4 ring-white">
           <div className="rounded-[1.7rem] bg-white/95 px-6 py-6 text-center backdrop-blur">
@@ -327,7 +327,7 @@ export function WarehouseClient({
           {myAnimals.length === 0 ? (
             <p className="mt-3 text-xs text-slate-400">まだ どうぶつを つかまえていないよ。サファリへ いこう！</p>
           ) : (
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 space-y-2 md:space-y-0 md:grid md:grid-cols-2 md:gap-3">
               {myAnimals.map((ca) => {
                 const isLegendary = ca.animal.lifespanYears >= 999;
 
@@ -420,7 +420,7 @@ export function WarehouseClient({
           <p className="text-[11px] text-indigo-500 mt-0.5">
             道具の名前を タップで 歴史と 効果を 表示
           </p>
-          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
             {tools.map((t) => (
               <button
                 key={t.id}

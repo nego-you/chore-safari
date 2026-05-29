@@ -69,8 +69,8 @@ export default async function GuildPage({ params }: { params: Params }) {
           </div>
         </section>
 
-        {/* 主要クエストへの導線 */}
-        <section className="grid grid-cols-1 gap-3">
+        {/* 主要クエストへの導線（iPad では 2 カラム） */}
+        <section className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
           <GuildLink
             href={`/kids/${kid.id}/quests`}
             emoji="📜"

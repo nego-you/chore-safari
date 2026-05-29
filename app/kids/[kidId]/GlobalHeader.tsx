@@ -33,6 +33,9 @@ const GH_CSS = `
 .gh-inner {
   min-height: var(--header-h);
   padding: 6px 10px;
+  width: 100%;
+  max-width: 1024px;
+  margin: 0 auto;
   --av-sz:   34px;
   --av-r:    12px;
   --av-em:   18px;
@@ -61,6 +64,7 @@ const GH_CSS = `
 @media (min-width: 768px) {
   .gh-inner {
     padding: 10px 28px;
+    max-width: 1280px;
     --av-sz:   54px;
     --av-r:    18px;
     --av-em:   28px;

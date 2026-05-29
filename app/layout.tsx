@@ -64,7 +64,13 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full touch-manipulation bg-stone-200">
-        <div className="w-full max-w-md mx-auto min-h-screen bg-white relative shadow-2xl [transform:translateZ(0)]">
+        {/*
+          スマホ(Pixel 9a など)では従来どおり max-w-md の「アプリカード」表示。
+          iPad(md=768px〜)では幅制約を解放し、各ページが持つ自前の
+          max-w / md: ブレークポイントが効くようにする。これまではこの
+          wrapper が 448px に握り潰し、子ページの iPad 対応が無効化されていた。
+        */}
+        <div className="w-full max-w-md md:max-w-none mx-auto min-h-screen bg-white md:bg-transparent relative shadow-2xl md:shadow-none [transform:translateZ(0)]">
           {children}
         </div>
       </body>
