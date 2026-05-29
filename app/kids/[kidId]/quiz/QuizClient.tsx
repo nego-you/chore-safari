@@ -87,41 +87,18 @@ function cancelSpeech() {
   // Audio 要素は onended で自動解放されるため特別な処理不要
 }
 
-// ── Anthropic API ─────────────────────────────────────────────────────────
+// ── Gemini API（サーバールート経由） ─────────────────────────────────────
 async function fetchQuestion(genreLabel: string, usedQuestions: string[]) {
-  const usedHint = usedQuestions.length
-    ? `\n以下は出題済みなので絶対に出さないこと:\n${usedQuestions.slice(-5).join("\n")}`
-    : "";
-
-  const prompt = `あなたは子ども向け早押しクイズの問題作成者です。ジャンル「${genreLabel}」から問題を1問作成してください。対象は幼児〜小学校低学年です。やさしい日本語を使ってください。${usedHint}
-
-以下の3種類からランダムに1つ選び、JSONのみ返答してください。前置き・説明・マークダウン不要。
-
-phrasesは意味のかたまりで3〜4個に分割。最初は遠回し、後半ほど具体的になるよう設計。
-hint1は軽いヒント、hint2はより具体的なヒント。やさしい言葉で。
-
-1. {"type":"text","phrases":["フレーズ1","フレーズ2","フレーズ3"],"answer":"答え","hint1":"軽いヒント","hint2":"具体的なヒント","answerReading":"答えのひらがな"}
-2. {"type":"kanji_cross","phrases":["フレーズ1","フレーズ2","フレーズ3"],"top":"漢字","bottom":"漢字","left":"漢字","right":"漢字","answer":"中央の漢字1文字","hint1":"軽いヒント","hint2":"具体的なヒント","answerReading":"答えのひらがな"}
-3. {"type":"logic_sequence","phrases":["フレーズ1","フレーズ2","フレーズ3"],"items":["要素1","要素2","要素3","要素4","?"],"answer":"答え","hint1":"軽いヒント","hint2":"具体的なヒント","answerReading":"答えのひらがな"}`;
-
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await fetch("/api/quiz/hayaoshi", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1000,
-      messages: [{ role: "user", content: prompt }],
-    }),
+    body: JSON.stringify({ genre: genreLabel, usedQuestions }),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { error?: { message?: string } };
-    throw new Error(err?.error?.message || `APIエラー: ${res.status}`);
+    const err = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(err?.error || `APIエラー: ${res.status}`);
   }
-  const data = await res.json() as { content?: Array<{ text: string }> };
-  const raw = data.content?.[0]?.text || "";
-  const m = raw.match(/\{[\s\S]*\}/);
-  if (!m) throw new Error("パース失敗: " + raw.slice(0, 120));
-  return JSON.parse(m[0]);
+  return res.json();
 }
 
 // ── あいまい答え合わせ ────────────────────────────────────────────────────
@@ -294,10 +271,8 @@ export function QuizClient({ initialKidId, kids }: Props) {
   const syncCoins  = useSafariStore((s) => s.syncCoins);
   const storeCoins = useSafariStore((s) => s.coins);
 
-  // ── 子供選択 ───────────────────────────────────────────────────────────
-  const [selectedKid, setSelectedKid] = useState<Kid | null>(
-    kids.find(k => k.id === initialKidId) ?? kids[0] ?? null,
-  );
+  // ── 子供特定（URL の kidId 固定。選択UIは不要） ────────────────────────
+  const selectedKid = kids.find(k => k.id === initialKidId) ?? kids[0] ?? null;
   const portalHref = `/kids/${selectedKid?.id ?? ""}`;
 
   // ── ストア初期化 ───────────────────────────────────────────────────────
@@ -437,22 +412,6 @@ export function QuizClient({ initialKidId, kids }: Props) {
         </div>
       </div>
 
-      {/* 子供選択（複数いる場合） */}
-      {kids.length > 1 && (
-        <div className="px-4 pb-2 flex gap-2 overflow-x-auto scrollbar-hide">
-          {kids.map(k => (
-            <button key={k.id}
-              onClick={() => setSelectedKid(k)}
-              className={`flex-shrink-0 px-3 py-1.5 rounded-xl text-sm font-bold transition-all ${
-                selectedKid?.id === k.id
-                  ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/40"
-                  : "bg-white/10 text-white/60 hover:bg-white/20"
-              }`}>
-              {k.name}
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* ジャンル選択 */}
       <div className="px-4 pb-3">
