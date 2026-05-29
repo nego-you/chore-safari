@@ -293,6 +293,20 @@ const MAP_PINS: MapPin[] = [
     ready: true,
     isNew: true,
   },
+  // ── 左下：ぜんぶの ながれ（NEW）
+  {
+    id: "flow",
+    icon: "🧭",
+    label: "ながれ",
+    sub: "ぜんぶの ながれを みる",
+    x: 26,
+    y: 62,
+    color: "#14b8a6",
+    route: "flow",
+    action: "route",
+    ready: true,
+    isNew: true,
+  },
   // ── 中央：自分の家（トリアージハブ）
   {
     id: "house",
@@ -330,6 +344,9 @@ const PATHS = [
   { from: "logistics",      to: "race"           },
   // 図鑑 → 倉庫
   { from: "dictionary",     to: "logistics"      },
+  // 図鑑 → ながれ → 罠サファリ
+  { from: "dictionary",     to: "flow"           },
+  { from: "flow",           to: "safari-passive" },
   // 動物園 → ゲームセンター
   { from: "zoo",            to: "arcade"         },
   // サファリ → 自分の家 → 牧場・動物園
