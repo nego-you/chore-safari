@@ -45,6 +45,7 @@ interface Animal {
   rarity:      "COMMON" | "RARE" | "EPIC" | "LEGENDARY";
   activeTime:  "DAY" | "NIGHT" | "ANY";
   waterAnimal: boolean;
+  description: string;
   quiz:        Quiz;
 }
 
@@ -65,24 +66,34 @@ interface Heart     { id: number; x: number; }
 
 const ANIMALS: Animal[] = [
   { id:"rabbit",    name:"ウサギ",          emoji:"🐰", trait:"FAST",   traitName:"すばやい",   rarity:"COMMON",    activeTime:"DAY",   waterAnimal:false,
+    description:"ながい みみで とおくの おとを キャッチ！かたむければ おとが きた ほうこうも わかるよ。じそく 50キロで かけぬける しぜんかいの スプリンター！",
     quiz:{ q:"ウサギの ながい みみは なんの ため？",            choices:["おとを よくきくため","かざりのため","まくらに なるため"], ans:0 } },
   { id:"deer",      name:"シカ",            emoji:"🦌", trait:"FAST",   traitName:"すばやい",   rarity:"COMMON",    activeTime:"DAY",   waterAnimal:false,
+    description:"オスだけが もつ ツノは まいとし はえかわる！わかれ目の かずで だいたいの とし が わかるよ。あきに でっかい こえで なく「もうそう」が かっこいい！",
     quiz:{ q:"シカの つので わかること は？",                  choices:["オスかメスか","なんさいか","なにを たべるか"], ans:1 } },
   { id:"lion",      name:"ライオン",        emoji:"🦁", trait:"LARGE",  traitName:"おおきい",   rarity:"EPIC",      activeTime:"ANY",   waterAnimal:false,
+    description:"むれの リーダーは じつは メスたち！えものを つかまえるのも メスの しごと。オスは ライオンの なかで いちばん あぶない てきと たたかって むれを まもるよ！",
     quiz:{ q:"ライオンの むれの リーダーは？",                  choices:["いちばん おおきい オス","メスたち","いちばん つよい コ"], ans:1 } },
   { id:"crocodile", name:"ワニ",            emoji:"🐊", trait:"LARGE",  traitName:"おおきい",   rarity:"RARE",      activeTime:"ANY",   waterAnimal:true,
+    description:"きょうりゅうと おなじ じだいから すがたが ほとんど かわっていない「いきた かせき」！くちを あけて じっとしているのは、たいおんを あげるため なんだよ。",
     quiz:{ q:"ワニが じっと うごかない りゆうは？",             choices:["ねむっている","たいおんを あげるため","こわいから"], ans:1 } },
   { id:"hippo",     name:"カバ",            emoji:"🦛", trait:"LARGE",  traitName:"おおきい",   rarity:"RARE",      activeTime:"NIGHT", waterAnimal:true,
+    description:"あかい「あせ」は じつは あせじゃない！ひふを まもる にゅうえきで、こうきんこうかも あるよ。みずの なかで えいおよぎが とくい！ひるは みずで ひなたぼっこ、よるに くさを たべに いくよ。",
     quiz:{ q:"カバが あかい あせを かく りゆうは？",            choices:["あつくて あせが でる","ひふを まもるため","おこっているサイン"], ans:1 } },
   { id:"owl",       name:"ワシミミズク",    emoji:"🦉", trait:"FLYING", traitName:"そらをとぶ", rarity:"RARE",      activeTime:"NIGHT", waterAnimal:false,
+    description:"めが おおきすぎて うごかせない！だから くびを 270どまで まわして まわりを みるよ。はねに とくしゅな こうぞうで、とぶ ときの おとが ほぼ ゼロ。しずかな よるの かりうどだ！",
     quiz:{ q:"フクロウは くびを どのくらい まわせる？",         choices:["90ど","180ど","270ど"], ans:2 } },
   { id:"eagle",     name:"ワシ",            emoji:"🦅", trait:"FLYING", traitName:"そらをとぶ", rarity:"RARE",      activeTime:"DAY",   waterAnimal:false,
+    description:"しりょくは にんげんの ８ばい！たかい そらから じめんを はしる ウサギが みえるよ。はばたかずに かぜに のって くるくる まわる「サーマル」で らくに たかく とべる！",
     quiz:{ q:"ワシの しりょく は ひとの なんばい？",            choices:["２ばい","５ばい","８ばい"], ans:2 } },
   { id:"frog",      name:"アマガエル",      emoji:"🐸", trait:"FAST",   traitName:"すばやい",   rarity:"COMMON",    activeTime:"ANY",   waterAnimal:true,
+    description:"ひふで こきゅうも できるし みずも のめるよ！あしの ゆびに すいばんが あって、かがみも のぼれる。あめの まえに よく なくので「てんきよほう カエル」ともよばれるよ！",
     quiz:{ q:"カエルは ひふで なにを するの？",                choices:["こきゅうする","みずをのむ","りょうほう"], ans:2 } },
   { id:"yeti",      name:"イエティ",        emoji:"🦍", trait:"LARGE",  traitName:"おおきい",   rarity:"LEGENDARY", activeTime:"ANY",   waterAnimal:false,
+    description:"ヒマラヤさんみゃくに すむと いわれる しんぴの きょじん！でっかい あしあとが みつかっているけど、しょうたいは いまも なぞ。「せつじんおに」と おそれられる せかい さいきょうクラスの UMA！",
     quiz:{ q:"イエティが すむ といわれるのは？",               choices:["アマゾン","ヒマラヤさんみゃく","しんかい"], ans:1 } },
   { id:"trex",      name:"ティラノサウルス",emoji:"🦖", trait:"LARGE",  traitName:"おおきい",   rarity:"LEGENDARY", activeTime:"ANY",   waterAnimal:false,
+    description:"かみつく ちからは ちきゅうの いきもの ざんしで さいきょうクラス！みじかい うでは じつは きんにくもりもりで つよかった。いまの とりは この この しそんと いわれているよ！",
     quiz:{ q:"ティラノサウルスの うでは なぜ みじかい？",       choices:["そだたなかった","こうかがえきだった","たべものを とるため"], ans:1 } },
 ];
 
@@ -973,16 +984,28 @@ export default function HuntClient() {
                 </div>
                 <div style={{
                   fontFamily:"var(--font)", fontSize:16, fontWeight:"bold",
-                  color:"#9d174d", marginBottom:4,
+                  color:"#9d174d", marginBottom:6,
                 }}>
-                  💕 なかよくなりたい！
+                  💕 {animal.name} が あらわれた！
+                </div>
+                {/* 動物説明（fun fact） */}
+                <div style={{
+                  fontFamily:"var(--font)", fontSize:12, color:"#374151",
+                  lineHeight:1.7, textAlign:"left",
+                  background:"#fff7ed", borderRadius:12,
+                  padding:"10px 12px", marginBottom:6,
+                  border:"1px solid #fed7aa",
+                }}>
+                  <span style={{ fontSize:11, color:"#ea580c", fontWeight:"bold", display:"block", marginBottom:3 }}>
+                    📖 しってた？
+                  </span>
+                  {animal.description}
                 </div>
                 <div style={{
-                  fontFamily:"var(--font)", fontSize:12, color:"#6b7280",
-                  lineHeight:1.6,
+                  fontFamily:"var(--font)", fontSize:12, color:"#9d174d",
+                  fontWeight:"bold",
                 }}>
-                  <span style={{ fontWeight:"bold", color:"#374151" }}>{animal.name}</span>
-                  の ことを しっていれば<br />きっと なかよく なれるよ！
+                  クイズに こたえて なかよくなろう！
                 </div>
               </div>
 
@@ -1051,14 +1074,42 @@ export default function HuntClient() {
                   }}>
                     {animal.emoji}
                   </div>
+                  {/* 正解後：動物説明カード */}
+                  <div style={{
+                    fontFamily:"var(--font)", fontSize:12, color:"#374151",
+                    lineHeight:1.7, textAlign:"left",
+                    background:"#f0fdf4", borderRadius:14,
+                    padding:"12px 14px", width:"100%",
+                    border:"2px solid #bbf7d0",
+                  }}>
+                    <span style={{ fontSize:11, color:"#059669", fontWeight:"bold", display:"block", marginBottom:4 }}>
+                      ✨ {animal.name} の すごい ところ
+                    </span>
+                    {animal.description}
+                  </div>
                 </>
               ) : (
-                <div style={{
-                  fontFamily:"var(--font)", fontSize:18, fontWeight:"bold",
-                  color:"#9ca3af", textAlign:"center",
-                }}>
-                  ── にげちゃった… ──
-                </div>
+                <>
+                  <div style={{
+                    fontFamily:"var(--font)", fontSize:18, fontWeight:"bold",
+                    color:"#9ca3af", textAlign:"center",
+                  }}>
+                    ── にげちゃった… ──
+                  </div>
+                  {/* 不正解後：説明で学べる */}
+                  <div style={{
+                    fontFamily:"var(--font)", fontSize:12, color:"#374151",
+                    lineHeight:1.7, textAlign:"left",
+                    background:"#fefce8", borderRadius:14,
+                    padding:"12px 14px", width:"100%",
+                    border:"2px solid #fde047",
+                  }}>
+                    <span style={{ fontSize:11, color:"#ca8a04", fontWeight:"bold", display:"block", marginBottom:4 }}>
+                      📖 おぼえておこう！ {animal.emoji} {animal.name}
+                    </span>
+                    {animal.description}
+                  </div>
+                </>
               )}
               <button className="pop-btn green" onClick={doContinue}
                 style={{ width:"100%", marginTop:6 }}>
