@@ -39,7 +39,7 @@ export default async function SafariPage({
   const initialKid =
     kidParam && kids.some((k) => k.id === kidParam) ? kidParam : null;
 
-  const [ownedTrapRows, activeTraps, caughtAnimals] = await Promise.all([
+  const [ownedTrapRows, activeTraps] = await Promise.all([
     // この子が持っている TRAP 型の道具だけを返す。
     initialKid
       ? prisma.userTool.findMany({
@@ -56,15 +56,6 @@ export default async function SafariPage({
       where: { status: { in: ["PLACED", "APPEARED"] } },
       orderBy: { appearsAt: "asc" },
       include: { targetAnimal: true },
-    }),
-    prisma.caughtAnimal.findMany({
-      where: { caughtBy: { isTestAccount: false } },
-      orderBy: { caughtAt: "desc" },
-      take: 200,
-      include: {
-        animal: true,
-        caughtBy: { select: { id: true, name: true } },
-      },
     }),
   ]);
 
@@ -107,31 +98,12 @@ export default async function SafariPage({
     },
   }));
 
-  const catches = caughtAnimals.map((c) => ({
-    id: c.id,
-    animal: {
-      id: c.animal.id,
-      animalId: c.animal.animalId,
-      name: c.animal.name,
-      genericName: c.animal.genericName,
-      specificName: c.animal.specificName,
-      emoji: c.animal.emoji,
-      rarity: c.animal.rarity as "COMMON" | "RARE" | "EPIC" | "LEGENDARY",
-      description: c.animal.description,
-      imageUrl: c.animal.imageUrl,
-      isExtinct: c.animal.isExtinct,
-    },
-    caughtBy: { id: c.caughtBy.id, name: c.caughtBy.name },
-    caughtAt: c.caughtAt.toISOString(),
-  }));
-
   return (
     <SafariClient
       initialKidId={initialKid}
       kids={kids}
       ownedTraps={ownedTraps}
       activeTraps={traps}
-      catches={catches}
       huntStaminaRemaining={huntStamina?.remaining ?? null}
       huntStaminaLimit={huntStamina?.limit ?? 3}
     />

@@ -65,19 +65,11 @@ type TrapDTO = {
   targetAnimal: Animal;
 };
 
-type CatchEntry = {
-  id: string;
-  animal: Animal;
-  caughtBy: { id: string; name: string };
-  caughtAt: string;
-};
-
 type Props = {
   initialKidId: string | null;
   kids: KidLite[];
   ownedTraps: UserToolRow[];  // UserTool (type=TRAP) のみ
   activeTraps: TrapDTO[];
-  catches: CatchEntry[];
   // アクティブ狩り（BOW/SPEAR）の本日残り回数。罠スタイル自体は無制限なので nullable。
   huntStaminaRemaining?: number | null;
   huntStaminaLimit?: number;
@@ -298,19 +290,7 @@ const FIELD_KEYFRAMES = `
   }
   .ssr-zoom-bounce { animation: ssr-zoom-bounce 0.9s cubic-bezier(.34,1.56,.64,1) both; }
 
-  /* 図鑑のSSRカードが虹色に光る枠 */
-  @keyframes ssr-card-rainbow {
-    0%   { box-shadow: 0 0 8px 3px #ff4400, inset 0 0 4px #ffd700; border-color: #ffd700; }
-    20%  { box-shadow: 0 0 12px 4px #ff8800, inset 0 0 6px #ffe066; border-color: #ffe066; }
-    40%  { box-shadow: 0 0 14px 5px #ffcc00, inset 0 0 8px #fff0a0; border-color: #ffc200; }
-    60%  { box-shadow: 0 0 12px 4px #ff6600, inset 0 0 6px #ffd700; border-color: #ff8800; }
-    80%  { box-shadow: 0 0 10px 3px #ff3300, inset 0 0 4px #ffaa00; border-color: #ffa000; }
-    100% { box-shadow: 0 0 8px 3px #ff4400, inset 0 0 4px #ffd700; border-color: #ffd700; }
-  }
-  .ssr-card-glow {
-    animation: ssr-card-rainbow 1.8s ease-in-out infinite;
-    border: 2px solid #ffd700;
-  }
+
 
   /* SSRバッジがぴかぴか点滅 */
   @keyframes ssr-badge-pulse {
@@ -325,15 +305,12 @@ export function SafariClient({
   kids,
   ownedTraps,
   activeTraps: initialTraps,
-  catches: initialCatches,
   huntStaminaRemaining = null,
   huntStaminaLimit = 3,
 }: Props) {
   const [kidId, setKidId] = useState<string | null>(initialKidId);
   const [trapTools, setTrapTools] = useState<UserToolRow[]>(ownedTraps);
   const [traps, setTraps] = useState<TrapDTO[]>(initialTraps);
-  const [catches, setCatches] = useState<CatchEntry[]>(initialCatches);
-
   const [gameTrap, setGameTrap] = useState<TrapDTO | null>(null);
   const [result, setResult] = useState<
     | { kind: "caught"; animal: Animal }
@@ -351,7 +328,6 @@ export function SafariClient({
 
   useEffect(() => setTrapTools(ownedTraps), [ownedTraps]);
   useEffect(() => setTraps(initialTraps), [initialTraps]);
-  useEffect(() => setCatches(initialCatches), [initialCatches]);
 
   const selectedKid = kidId ? kids.find((k) => k.id === kidId) ?? null : null;
   const myTraps = useMemo(
@@ -467,15 +443,6 @@ export function SafariClient({
     }
     setTraps((prev) => prev.filter((t) => t.id !== trap.id));
     if (r.caught) {
-      setCatches((prev) => [
-        {
-          id: `tmp-${Date.now()}`,
-          animal: r.animal,
-          caughtBy: { id: trap.userId, name: selectedKid?.name ?? "" },
-          caughtAt: r.caughtAt,
-        },
-        ...prev,
-      ]);
       setResult({ kind: "caught", animal: r.animal });
     } else {
       setResult({ kind: "escaped", animal: r.animal });
@@ -534,8 +501,7 @@ export function SafariClient({
         {/* もちもの（仕掛けるフォーム） */}
         <Pouch traps={trapTools} onSubmit={handleSetTrap} />
 
-        {/* かぞくのどうぶつずかん */}
-        <Zukan catches={catches} />
+
       </div>
 
       {gameTrap && (
@@ -1154,97 +1120,3 @@ function ResultModal({
   );
 }
 
-// ────────── かぞくのどうぶつずかん ──────────
-function Zukan({ catches }: { catches: CatchEntry[] }) {
-  const grouped = useMemo(() => {
-    const map = new Map<
-      string,
-      { animal: Animal; total: number; latest: CatchEntry }
-    >();
-    for (const c of catches) {
-      const key = c.animal.animalId;
-      const cur = map.get(key);
-      if (!cur) {
-        map.set(key, { animal: c.animal, total: 1, latest: c });
-      } else {
-        cur.total += 1;
-        if (c.caughtAt > cur.latest.caughtAt) cur.latest = c;
-      }
-    }
-    const rank: Record<Rarity, number> = {
-      LEGENDARY: 0, EPIC: 1, RARE: 2, COMMON: 3,
-    };
-    return [...map.values()].sort((a, b) => {
-      const dr = rank[a.animal.rarity] - rank[b.animal.rarity];
-      if (dr !== 0) return dr;
-      return b.latest.caughtAt.localeCompare(a.latest.caughtAt);
-    });
-  }, [catches]);
-
-  return (
-    <section className="rounded-3xl bg-white/90 p-4 shadow-lg ring-1 ring-emerald-200 backdrop-blur">
-      <div className="mb-3 flex items-center gap-3">
-        <span className="text-2xl" aria-hidden>📖</span>
-        <div>
-          <h2 className="text-base font-extrabold text-emerald-800">
-            かぞくの どうぶつずかん
-          </h2>
-          <p className="text-[11px] text-emerald-700/80">
-            ぜんぶで {catches.length} ひき
-          </p>
-        </div>
-      </div>
-      {grouped.length === 0 ? (
-        <p className="rounded-2xl bg-emerald-50 p-3 text-center text-xs text-emerald-700">
-          まだ なにも つかまえてないよ。
-        </p>
-      ) : (
-        <ul className="grid gap-2 sm:grid-cols-2">
-          {grouped.map((g) => {
-            const s = RARITY_STYLE[g.animal.rarity];
-            const ssr = isSSRAnimal(g.animal);
-            return (
-              <li
-                key={g.animal.animalId}
-                className={`rounded-xl px-3 py-2 ${ssr ? "ssr-card-glow" : `${s.bg} ring-1 ${s.ring}`}`}
-                style={ssr ? {
-                  background: "linear-gradient(135deg, #1a0800 0%, #2d1200 40%, #1a0800 100%)",
-                } : undefined}
-              >
-                <div className="flex items-center gap-2">
-                  <span
-                    className="text-3xl drop-shadow"
-                    aria-hidden
-                    style={ssr ? { filter: "drop-shadow(0 0 8px #ffd700)" } : undefined}
-                  >
-                    {g.animal.emoji}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className={`text-sm font-black ${ssr ? "text-yellow-300" : s.text}`}>
-                        {g.animal.specificName || g.animal.name}
-                      </p>
-                      {ssr ? (
-                        <span className="ssr-badge rounded-full px-2 py-0 text-[9px] font-black text-white" style={{ background: "linear-gradient(90deg,#ff6b00,#ffd700,#ff4500)" }}>
-                          {SSR_LABEL}
-                        </span>
-                      ) : (
-                        <span className={`rounded-full bg-white/70 px-1.5 py-0 text-[9px] font-extrabold ${s.text}`}>
-                          {RARITY_LABEL[g.animal.rarity]}
-                        </span>
-                      )}
-                    </div>
-                    <p className={`text-[10px] font-bold ${ssr ? "text-amber-400" : s.text}`}>
-                      ×{g.total} · さいきん {formatDate(g.latest.caughtAt)} ·{" "}
-                      <NameRuby name={g.latest.caughtBy.name} />
-                    </p>
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
-  );
-}
