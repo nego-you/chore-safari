@@ -152,6 +152,12 @@ export interface SafariState {
   /** スタミナを指定量回復する（100 を超えない） */
   restoreStamina: (amount: number) => void;
 
+  // ── BGM ────────────────────────────────────────────────────
+  /** BGM をミュートするか否か（localStorage に保存） */
+  bgmMuted: boolean;
+  /** BGM ミュートをトグルする */
+  toggleBGMMute: () => void;
+
   // ── おたがいさまイベントアクション ────────────────────────
   /**
    * だれかを善意で手助けしたときに呼ぶ。
@@ -202,6 +208,7 @@ export const useSafariStore = create<SafariState>()(
       // ── 初期値 ────────────────────────────────────────────
       activeKidId: null,
       coins: 0,
+      bgmMuted: false,
       ...INITIAL_GAME_STATE,
 
       // ── ユーザー切り替え ──────────────────────────────────
@@ -344,6 +351,9 @@ export const useSafariStore = create<SafariState>()(
         })),
 
       markKizunaShownToday: (date) => set({ lastKizunaDate: date }),
+
+      // ── BGM ────────────────────────────────────────────────
+      toggleBGMMute: () => set((s) => ({ bgmMuted: !s.bgmMuted })),
     }),
 
     // ── persist 設定 ────────────────────────────────────────
@@ -351,9 +361,13 @@ export const useSafariStore = create<SafariState>()(
       name: "safari-store", // localStorage キー名
       storage: createJSONStorage(() => localStorage),
       // 旧スキーマ（helpedGrandma 等）からの移行用バージョン
-      version: 2,
+      version: 3,
       migrate: (persisted, version) => {
         const s = (persisted ?? {}) as Record<string, unknown>;
+        if (version < 3) {
+          // v3: bgmMuted を追加
+          if (s.bgmMuted === undefined) s.bgmMuted = false;
+        }
         if (version < 2) {
           // v1 の絆フィールドを新スキーマへ読み替える。
           // 過去に1度でも助けていれば 1 回ぶんのお返しを引き継ぐ。
@@ -370,6 +384,7 @@ export const useSafariStore = create<SafariState>()(
       partialize: (s) => ({
         activeKidId: s.activeKidId,
         coins: s.coins,
+        bgmMuted: s.bgmMuted,
         inventory: s.inventory,
         animalsInYard: s.animalsInYard,
         logisticsQueue: s.logisticsQueue,

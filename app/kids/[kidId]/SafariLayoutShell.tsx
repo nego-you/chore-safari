@@ -1,6 +1,6 @@
 "use client";
 
-// SafariLayoutShell — layout.tsx から呼ばれるクライアントラッパー。
+// SafariLayoutShell -- layout.tsx から呼ばれるクライアントラッパー。
 // WeatherProvider + GuideProvider を提供し、GlobalHeader + {children} を縦積みで表示する。
 
 import { useEffect } from "react";
@@ -10,6 +10,7 @@ import type { GuideInfo } from "./GuideContext";
 import { GlobalHeader } from "./GlobalHeader";
 import { useSafariStore } from "@/store/useSafariStore";
 import { KizunaManager } from "@/components/KizunaManager";
+import { BGMPlayer } from "@/components/BGMPlayer";
 
 // DB -> Store ブリッジ
 function StoreInitializer({ kidId, coinBalance }: { kidId: string; coinBalance: number }) {
@@ -54,8 +55,8 @@ export function SafariLayoutShell({
           streakStatus={streakStatus}
         />
         {children}
-        {/* どのステージでも「おたがいさま」イベントを発生させる */}
         <KizunaManager />
+        <BGMPlayer />
       </GuideProvider>
     </WeatherProvider>
   );

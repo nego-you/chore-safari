@@ -4,7 +4,7 @@
 //
 //  左  : 戻るボタン (マップ画面は非表示)
 //  中央: アバター + 名前 + コイン + ストリーク
-//  右  : [体力ゲージ] [ガイドキャラ] [天気]
+//  右  : [体力ゲージ] [ガイドキャラ] [天気] [BGMミュート]
 //
 // iPad 対応: CSS カスタムプロパティ + @media (min-width: 768px) で
 // ヘッダー高さ・ウィジェット・フォントをスケールアップ。
@@ -230,6 +230,38 @@ function GuideWidget({
 }
 
 // ── 天気ウィジェット ──────────────────────────────────────────
+// ── BGM ミュートボタン ────────────────────────────────────────
+function BGMMuteButton() {
+  const muted = useSafariStore((s) => s.bgmMuted);
+  const toggleBGMMute = useSafariStore((s) => s.toggleBGMMute);
+  return (
+    <button
+      onClick={toggleBGMMute}
+      title={muted ? "BGMをオンにする" : "BGMをオフにする"}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: muted
+          ? "linear-gradient(135deg,#f1f5f9,#e2e8f0)"
+          : "linear-gradient(135deg,#ede9fe,#ddd6fe)",
+        border: muted ? "1.5px solid #cbd5e1" : "1.5px solid #a78bfa",
+        borderRadius: "var(--wb-r)",
+        padding: "var(--wp-y) var(--wp-x)",
+        cursor: "pointer",
+        fontSize: "var(--w-em)",
+        lineHeight: 1,
+        minWidth: 36,
+        minHeight: 36,
+        flexShrink: 0,
+      }}
+      aria-label={muted ? "BGMをオンにする" : "BGMをオフにする"}
+    >
+      {muted ? "🔇" : "🎵"}
+    </button>
+  );
+}
+
 function WeatherWidget() {
   const weather = useWeather();
   return (
@@ -385,6 +417,7 @@ export function GlobalHeader({ kidId, kidName, currentStreak, streakStatus }: Pr
               <GuideWidget kidId={kidId} onOpenChat={() => setChatOpen(true)} />
             )}
             <WeatherWidget />
+            <BGMMuteButton />
           </div>
         </div>
       </header>
