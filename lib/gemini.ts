@@ -36,11 +36,13 @@ export type GeminiObjectResult<T> =
  * @param schema      - Zod スキーマ（レスポンスの形状）
  * @param systemPrompt - キャラクター設定・出力形式を記述したシステムプロンプト
  * @param userText    - ユーザーの入力テキスト
+ * @param options     - 任意の生成オプション（temperature など）。省略時は従来挙動。
  */
 export async function geminiGenerateObject<T>(
   schema: z.ZodSchema<T>,
   systemPrompt: string,
   userText: string,
+  options?: { temperature?: number },
 ): Promise<GeminiObjectResult<T>> {
   try {
     const provider = createProvider();
@@ -48,6 +50,7 @@ export async function geminiGenerateObject<T>(
       model: provider(GEMINI_MODEL_NAME),
       system: systemPrompt,
       prompt: userText,
+      ...(options?.temperature != null ? { temperature: options.temperature } : {}),
     });
 
     console.log("[geminiGenerateObject] raw text:", text);

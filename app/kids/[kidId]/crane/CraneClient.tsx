@@ -74,6 +74,7 @@ const MS = {
   depthInMs:    1200,
   depthOutMs:    400,
   moveY:        1500,
+  clawClose:     420,   // ツメが閉じきるまで（掴む瞬間の判定に使う）
   grab:         1200,
   retract:       700,
   returnX:      1800,
@@ -220,16 +221,17 @@ export function CraneClient({ initialKidId, kids }: Props) {
       let reachedShow = false;
 
       try {
-        // ① DROPPING: ケーブル降下
+        // ① DROPPING: ケーブル降下（アームは空のまま・まだ何も掴んでいない）
         setMState("DROPPING");
         setCableExtended(true);
-        setCarriedEmojis([material.emoji]);
         await wait(MS.moveY);
 
-        // ② GRABBING: ツ��を閉じて API 呼び出し
+        // ② GRABBING: 山に届いてからツメを閉じ、閉じ切った瞬間に景品を掴む
         setMState("GRABBING");
-        setClawClosed(true);
         const grabStart = Date.now();
+        setClawClosed(true);
+        await wait(MS.clawClose);          // ツメが閉じるアニメぶん待つ
+        setCarriedEmojis([material.emoji]); // ← 掴んだ瞬間に初めてアイテムが出現する
 
         let result: Awaited<ReturnType<typeof playCraneGame>>;
         try {
@@ -277,11 +279,16 @@ export function CraneClient({ initialKidId, kids }: Props) {
           setOutcome({ kind: "dropped", prize });
           setMState("SHOW");
         } else {
+          // 取り出し口の上まで戻りきるのを待つ
           await wait(Math.max(MS.retract, MS.returnX) + 100);
+          // ツメを開く → 景品は重力で取り出し口へ落下する
+          setFallingAtX(X_START);
           setClawClosed(false);
-          await wait(MS.dropping);
+          setFalling(true);
+          await wait(MS.fall);
           setXTransition("none");
           setCarriedEmojis([]);
+          setFalling(false);
           // ゲット成功 → インベントリに追加
           addToInventory(material.id, 1);
           reachedShow = true;
@@ -593,6 +600,27 @@ function PlayArea({
   return (
     <div className="relative aspect-[5/6] w-full overflow-hidden rounded-2xl bg-gradient-to-b from-sky-100 via-amber-50 to-amber-200 shadow-inner">
 
+      {/* ガラスの常時反射（左上のつや） */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-[45]"
+        style={{
+          background:
+            "linear-gradient(135deg, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.12) 14%, transparent 34%)",
+        }}
+      />
+      {/* ピカッと横切る光のスイープ */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 z-[46] w-1/3"
+        style={{
+          left: "-33%",
+          background:
+            "linear-gradient(100deg, transparent, rgba(255,255,255,0.75) 50%, transparent)",
+          animation: "glass-shine 4.5s ease-in-out 1.2s infinite",
+        }}
+      />
+
       {/* 奥の壁グラデーション */}
       <div
         aria-hidden
@@ -665,13 +693,23 @@ function PlayArea({
           zIndex: 25,
         }}
       >
-        <div className="h-3 w-16 rounded-md bg-gradient-to-b from-slate-700 to-slate-900 shadow-lg" />
+        {/* モーターヘッド（メタリック） */}
+        <div
+          className="h-3.5 w-16 rounded-md"
+          style={{
+            background: "linear-gradient(180deg,#e2e8f0 0%,#94a3b8 32%,#475569 70%,#1e293b 100%)",
+            boxShadow:
+              "inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -1px 1px rgba(0,0,0,0.4), 0 2px 5px rgba(0,0,0,0.45)",
+          }}
+        />
 
         <div
           style={{
-            width: "3px",
+            width: "4px",
             height: cableExtended ? CABLE_EXTENDED : "0px",
-            background: "linear-gradient(to bottom, #475569, #334155 30%, #1e293b)",
+            background:
+              "linear-gradient(90deg,#1e293b 0%,#94a3b8 45%,#e2e8f0 50%,#475569 60%,#1e293b 100%)",
+            borderRadius: "2px",
             transition: cableExtended
               ? `height ${MS.moveY}ms cubic-bezier(.55,.06,.36,1)`
               : `height ${MS.retract}ms ease-in`,
@@ -679,24 +717,43 @@ function PlayArea({
           }}
         />
 
-        <div className="relative flex h-10 w-12 items-end justify-center">
+        {/* ツメの付け根（メタリックなナット） */}
+        <div
+          className="h-3 w-6 rounded-full"
+          style={{
+            background: "radial-gradient(circle at 35% 30%,#f1f5f9,#64748b 55%,#1e293b)",
+            boxShadow: "inset 0 1px 1px rgba(255,255,255,0.6),0 2px 3px rgba(0,0,0,0.4)",
+          }}
+        />
+
+        <div className="relative -mt-1 flex h-10 w-12 items-end justify-center">
           <span
-            className="absolute -left-1 bottom-0 block h-7 w-2 rounded-b-md bg-gradient-to-b from-slate-500 to-slate-800"
+            className="absolute -left-1 bottom-0 block h-7 w-2.5 rounded-b-lg"
             style={{
+              background: "linear-gradient(90deg,#1e293b,#94a3b8 45%,#cbd5e1 55%,#334155)",
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.5),0 1px 2px rgba(0,0,0,0.45)",
               transform: clawClosed ? "rotate(15deg)" : "rotate(42deg)",
               transformOrigin: "top center",
               transition: "transform 0.4s cubic-bezier(.34,1.56,.64,1)",
             }}
           />
           <span
-            className="absolute -right-1 bottom-0 block h-7 w-2 rounded-b-md bg-gradient-to-b from-slate-500 to-slate-800"
+            className="absolute -right-1 bottom-0 block h-7 w-2.5 rounded-b-lg"
             style={{
+              background: "linear-gradient(90deg,#334155,#cbd5e1 45%,#94a3b8 55%,#1e293b)",
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.5),0 1px 2px rgba(0,0,0,0.45)",
               transform: clawClosed ? "rotate(-15deg)" : "rotate(-42deg)",
               transformOrigin: "top center",
               transition: "transform 0.4s cubic-bezier(.34,1.56,.64,1)",
             }}
           />
-          <span className="block h-3 w-7 rounded-b-md bg-slate-700 shadow" />
+          <span
+            className="block h-3 w-7 rounded-b-md"
+            style={{
+              background: "linear-gradient(180deg,#cbd5e1,#475569 60%,#1e293b)",
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.55),0 1px 2px rgba(0,0,0,0.4)",
+            }}
+          />
 
           {carriedEmojis.length > 0 && !falling && (
             <div
@@ -706,6 +763,15 @@ function PlayArea({
                 opacity: mState === "SHOW" ? 0 : 1,
               }}
             >
+              {/* 景品のうしろの光（つやっとした立体感） */}
+              <span
+                aria-hidden
+                className="absolute left-1/2 top-2 -z-10 block h-12 w-12 -translate-x-1/2 rounded-full"
+                style={{
+                  background:
+                    "radial-gradient(circle,rgba(255,255,240,0.9),rgba(255,236,170,0.35) 55%,transparent 72%)",
+                }}
+              />
               {carriedEmojis.map((emoji, i) => {
                 const spread = carriedEmojis.length - 1;
                 const offset = spread === 0 ? 0 : (i - spread / 2) * 14;
@@ -713,15 +779,38 @@ function PlayArea({
                   <span
                     key={i}
                     aria-hidden
-                    className="absolute left-1/2 top-0 text-4xl drop-shadow"
+                    className="absolute left-1/2 top-0 text-4xl"
                     style={{
                       transform: `translate(calc(-50% + ${offset}px), ${i * 3}px) rotate(${(i - spread / 2) * 6}deg)`,
+                      filter: "drop-shadow(0 3px 3px rgba(0,0,0,0.35))",
                     }}
                   >
                     {emoji}
                   </span>
                 );
               })}
+              {/* キラキラ星（ピカピカ演出） */}
+              {[
+                { left: "8%",  top: "-6px", delay: "0s",   size: "0.9rem" },
+                { left: "78%", top: "2px",  delay: "0.5s", size: "1.1rem" },
+                { left: "55%", top: "26px", delay: "0.9s", size: "0.8rem" },
+              ].map((s, i) => (
+                <span
+                  key={`sp-${i}`}
+                  aria-hidden
+                  className="absolute select-none"
+                  style={{
+                    left: s.left,
+                    top: s.top,
+                    fontSize: s.size,
+                    color: "#fde68a",
+                    textShadow: "0 0 6px rgba(255,255,200,0.9)",
+                    animation: `sparkle 1.4s ease-in-out ${s.delay} infinite`,
+                  }}
+                >
+                  ✦
+                </span>
+              ))}
             </div>
           )}
         </div>
@@ -882,6 +971,18 @@ const CSS_KEYFRAMES = `
     50%  { transform: translateX(8px); }
     75%  { transform: translateX(-6px); }
     100% { transform: translateX(0); }
+  }
+  /* 筐体ガラスの反射スイープ（ピカッと光が横切る） */
+  @keyframes glass-shine {
+    0%   { transform: translateX(-160%) skewX(-18deg); opacity: 0; }
+    8%   { opacity: 0.85; }
+    24%  { transform: translateX(160%) skewX(-18deg);  opacity: 0; }
+    100% { transform: translateX(160%) skewX(-18deg);  opacity: 0; }
+  }
+  /* 景品まわりのキラキラ星（ピカピカ） */
+  @keyframes sparkle {
+    0%, 100% { transform: scale(0) rotate(0deg);    opacity: 0; }
+    50%      { transform: scale(1) rotate(90deg);   opacity: 1; }
   }
 `;
 

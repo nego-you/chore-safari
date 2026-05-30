@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 // ── Zod スキーマ（3種類の問題形式を union で定義） ─────────────────────────
 
 const BaseSchema = z.object({
-  phrases: z.array(z.string()).min(2).max(4),
+  phrases: z.array(z.string()).min(2).max(3),
   answer: z.string(),
   hint1: z.string(),
   hint2: z.string(),
@@ -41,34 +41,47 @@ const QuizSchema = z.union([TextSchema, KanjiCrossSchema, LogicSequenceSchema]);
 
 // ── 難易度ガイド ────────────────────────────────────────────────────────────
 
+// 全体的にやさしめ。幼児〜小学校低学年の子が楽しめる範囲に下げてある。
 const DIFFICULTY_GUIDE: Record<string, string> = {
-  easy: `【難易度：やさしい】対象は年長〜小学1年生。
-身近なものを題材にしますが、すぐ分かる超簡単な問題は避け、少しだけ考える問題にしてください。
-ひらがな中心のやさしい日本語。漢字を使う場合はふりがな相当のやさしさを保つ。`,
-  normal: `【難易度：ふつう】対象は小学2〜4年生。
-理科・社会・生活・国語の基礎知識を使う、少し歯ごたえのある問題にしてください。
-答えがすぐ分からず、フレーズやヒントを聞いて考える必要があるレベル。`,
-  hard: `【難易度：むずかしい】対象は小学5〜6年生以上。
-雑学・歴史・理科・漢字・計算・なぞなぞなど、大人でも少し考えるくらいの本格的な問題にしてください。
-ありきたりで簡単な問題は禁止。ひねりのある、知的な問題を作ってください。`,
+  easy: `【難易度：やさしい】対象は年中〜小学1年生（幼児）。
+どうぶつ・たべもの・みぢかなもの・いろ・かたちなど、子どもがよく知っているものを題材に。
+ヒントを聞けばすぐ分かるくらい、とてもやさしい問題にしてください。`,
+  normal: `【難易度：ふつう】対象は小学1〜2年生。
+生活・しぜん・かんたんな常識など、小さい子でも知っている身近な題材を中心に。
+少しだけ考えるけれど、低学年の子なら答えられるやさしいレベルにしてください。`,
+  hard: `【難易度：むずかしい】対象は小学3〜4年生。
+理科・社会・生活の基礎など、小学生が学校で習う範囲で少し考える問題にしてください。
+あくまで小学生向け。大人向けの難しい雑学・専門用語・むずかしい漢字の知識は使わないこと。`,
 };
 
 // ── システムプロンプト ──────────────────────────────────────────────────────
 
-function buildSystemPrompt(difficulty: string): string {
+function buildSystemPrompt(difficulty: string, chosenType: string): string {
   const diffGuide = DIFFICULTY_GUIDE[difficulty] ?? DIFFICULTY_GUIDE.easy;
-  return `あなたは子ども向け早押しクイズの問題作成者です。
+  return `あなたは早押しクイズの問題作成者です。
 
 ${diffGuide}
 
-以下の3種類からランダムに1つ選び、JSONのみ返答してください。前置き・説明・マークダウン不要。
+【出題形式】今回は必ず "${chosenType}" 形式で1問だけ作り、JSONのみ返答してください。前置き・説明・マークダウン不要。
 
-phrasesは意味のかたまりで3〜4個に分割。最初は遠回し、後半ほど具体的になるよう設計。
-hint1は軽いヒント、hint2はより具体的なヒント。難易度に合わせた言葉づかいで。
+【ひらがなルール（最重要）】難易度に関わらず、phrases・hint1・hint2・answerReading は必ず全てひらがなで書いてください。漢字・カタカナ・アルファベット・数字は使わないこと（数字も「いち」「に」などひらがなにする）。answer も text と logic_sequence では必ずひらがなで書く。
+※例外：kanji_cross の top/bottom/left/right/answer のみ漢字1文字でよい（漢字パズルのため）。その場合も phrases・hint・answerReading はひらがな。
 
-1. {"type":"text","phrases":["フレーズ1","フレーズ2","フレーズ3"],"answer":"答え","hint1":"軽いヒント","hint2":"具体的なヒント","answerReading":"答えのひらがな"}
-2. {"type":"kanji_cross","phrases":["フレーズ1","フレーズ2","フレーズ3"],"top":"漢字","bottom":"漢字","left":"漢字","right":"漢字","answer":"中央の漢字1文字","hint1":"軽いヒント","hint2":"具体的なヒント","answerReading":"答えのひらがな"}
-3. {"type":"logic_sequence","phrases":["フレーズ1","フレーズ2","フレーズ3"],"items":["要素1","要素2","要素3","要素4","?"],"answer":"答え","hint1":"軽いヒント","hint2":"具体的なヒント","answerReading":"答えのひらがな"}`;
+【ランダム性】毎回まったく違う題材・切り口にし、表現も毎回変えてください。前回と似た言い回しや定番すぎる問題は避け、新鮮で意外性のある問いにしてください。
+
+【みじかく（重要）】phrasesは2〜3個だけ。各フレーズはできるだけ短く（目安7〜12文字、最大でも15文字）。長い説明文は禁止。テンポよく読める短い言葉にすること。最初は遠回し、後半ほど具体的に。
+hint1は軽いヒント、hint2はより具体的なヒント。どちらも短く。
+
+形式ごとのJSON:
+1. {"type":"text","phrases":["ふれーず1","ふれーず2"],"answer":"こたえ","hint1":"かるいひんと","hint2":"ぐたいてきなひんと","answerReading":"こたえのひらがな"}
+2. {"type":"kanji_cross","phrases":["ふれーず1","ふれーず2","ふれーず3"],"top":"漢字","bottom":"漢字","left":"漢字","right":"漢字","answer":"中央の漢字1文字","hint1":"かるいひんと","hint2":"ぐたいてきなひんと","answerReading":"こたえのひらがな"}
+3. {"type":"logic_sequence","phrases":["ふれーず1","ふれーず2","ふれーず3"],"items":["ようそ1","ようそ2","ようそ3","ようそ4","?"],"answer":"こたえ","hint1":"かるいひんと","hint2":"ぐたいてきなひんと","answerReading":"こたえのひらがな"}`;
+}
+
+// 出題形式をランダムに選ぶ（text を厚めに）
+const TYPE_POOL = ["text", "text", "text", "logic_sequence", "kanji_cross"] as const;
+function pickType(): string {
+  return TYPE_POOL[Math.floor(Math.random() * TYPE_POOL.length)];
 }
 
 export async function POST(req: NextRequest) {
@@ -84,12 +97,22 @@ export async function POST(req: NextRequest) {
   const difficulty = (body.difficulty ?? "easy").trim();
 
   const usedHint = usedQuestions.length
-    ? `\n以下は出題済みなので絶対に出さないこと:\n${usedQuestions.slice(-5).join("\n")}`
+    ? `\n以下は出題済みなので絶対に出さないこと（言い回しを変えただけの類似問題も禁止）:\n${usedQuestions.slice(-8).join("\n")}`
     : "";
 
-  const userPrompt = `ジャンル「${genre}」から問題を1問作成してください。${usedHint}`;
+  // 毎回違う問題・違う表現にするためのランダム要素
+  const chosenType = pickType();
+  const variety = Math.random().toString(36).slice(2, 8);
 
-  const result = await geminiGenerateObject(QuizSchema, buildSystemPrompt(difficulty), userPrompt);
+  const userPrompt = `ジャンル「${genre}」から問題を1問作成してください。${usedHint}
+（ランダムシード:${variety} ／ 毎回まったく違う題材と表現にすること）`;
+
+  const result = await geminiGenerateObject(
+    QuizSchema,
+    buildSystemPrompt(difficulty, chosenType),
+    userPrompt,
+    { temperature: 1.1 },
+  );
 
   if (!result.ok) {
     console.warn("[/api/quiz/hayaoshi] Gemini failed:", result.error);

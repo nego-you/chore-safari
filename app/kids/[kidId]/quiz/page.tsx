@@ -1,4 +1,4 @@
-// /kids/[kidId]/quiz — 早押しクイズ。正解で +20 コイン。
+// /kids/[kidId]/quiz — 早押しクイズ（ゲームセンター方式）。1プレイ20コイン消費、正解で難易度別に20/30/40コイン。
 
 import { prisma } from "@/lib/prisma";
 import { QuizClient } from "./QuizClient";
