@@ -64,9 +64,6 @@ services:
       DATABASE_URL: postgresql://chore:chore@db:5432/chore_safari?schema=public
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
-      # Docker コンテナ内から見たホスト側 Ollama のアドレス。
-      # Docker Desktop (Win/Mac) では host.docker.internal が自動解決される。
-      OLLAMA_HOST: http://host.docker.internal:11434
       # FastAPI TTS ブリッジ（/api/synthesize プロキシ先）
       BACKEND_URL: http://backend:8000
       WATCHPACK_POLLING: "true"
@@ -92,9 +89,6 @@ services:
       DATABASE_URL: postgresql://chore:chore@db:5432/chore_safari?schema=public
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
-      # Docker コンテナ内から見たホスト側 Ollama のアドレス。
-      # Docker Desktop (Win/Mac) では host.docker.internal が自動解決される。
-      OLLAMA_HOST: http://host.docker.internal:11434
       # FastAPI TTS ブリッジ（/api/synthesize プロキシ先）
       BACKEND_URL: http://backend:8000
     ports:

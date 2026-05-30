@@ -2,7 +2,7 @@
 // Gemini API クライアント（Vercel AI SDK: @ai-sdk/google）
 //
 //   GEMINI_API_KEY : Google AI Studio で取得した API キー
-//   GEMINI_MODEL   : 例) gemini-1.5-flash / gemini-2.0-flash / gemini-2.5-flash
+//   GEMINI_MODEL   : 例) gemini-2.5-flash / gemini-2.0-flash（gemini-1.5-flash は廃止済み）
 //
 // generateText + 手動 JSON パースにより、
 // Gemini の structured output サポートに依存せず安定して動作する。
@@ -12,7 +12,7 @@ import { generateText } from "ai";
 import { z } from "zod";
 
 export const GEMINI_MODEL_NAME =
-  process.env.GEMINI_MODEL ?? "gemini-1.5-flash";
+  process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
 
 /** GEMINI_API_KEY を注入した Google プロバイダーを生成する */
 function createProvider() {

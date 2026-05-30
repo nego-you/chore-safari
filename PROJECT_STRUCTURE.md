@@ -1,338 +1,325 @@
-# Chore Safari - プロジェクト構造ガイド（新・エコシステム版）
+# Chore Safari — プロジェクト構造ガイド
 
-**最終更新**: 2026-05-25（大規模リフォーム版）
-**プロジェクト**: Chore Safari（チョア・サファリ）
-**言語**: TypeScript / React + Next.js (App Router) + PostgreSQL
+**最終更新**: 2026-05-30（現状の実装に合わせて全面改訂）
+**言語 / FW**: TypeScript / React 19 + Next.js 16（App Router）+ PostgreSQL 16（Prisma 6）
+
+> このドキュメントは **現状のコードベースの実態** を記述します。
+> 過去に「狩り・武器を廃止しテイム（仲間入り）へ全面刷新する」という構想（旧 `docs/REDESIGN_PLAN.md` /
+> `prisma/schema.proposed.prisma`）がありましたが、**DB スキーマ・ルーティング・状態管理のいずれも未実装のまま破棄**
+> されました。現在のアプリは旧来の「狩り（Hunt）」モデルを土台に、農場・牧場・物流などの施設や
+> Gemini／VOICEVOX 連携を後付けで拡張した構成です。
 
 ---
 
 ## 📋 目次
 
-1. [プロジェクト概要](#プロジェクト概要)
-2. [コアシステム（8つのながれ）](#コアシステム)
-3. [ディレクトリ構造図](#ディレクトリ構造図)
-4. [主要ディレクトリ解説](#主要ディレクトリ解説)
-5. [データモデル一覧](#データモデル一覧)
-6. [状態管理の設計方針](#状態管理の設計方針)
-7. [技術スタック](#技術スタック)
+1. [全体アーキテクチャ](#全体アーキテクチャ)
+2. [ディレクトリ構造](#ディレクトリ構造)
+3. [主要画面（ワールドマップの施設）](#主要画面ワールドマップの施設)
+4. [データモデル一覧](#データモデル一覧)
+5. [状態管理の実態](#状態管理の実態)
+6. [AI・音声連携](#ai音声連携)
+7. [既知の課題・技術的負債](#既知の課題技術的負債)
 
 ---
 
-## プロジェクト概要
+## 全体アーキテクチャ
 
-### コンセプト
+```
+                ┌──────────────────────────────────────────────┐
+                │  ブラウザ（PWA / iPad 対応）                 │
+                │   - ワールドマップ（施設へのハブ）           │
+                │   - Zustand store（localStorage 永続化）     │
+                │   - BGMPlayer / KizunaManager / 天気演出     │
+                └───────────────┬──────────────────────────────┘
+                                │
+        ┌───────────────────────┼───────────────────────────────┐
+        ▼                       ▼                               ▼
+┌────────────────┐   ┌──────────────────────┐    ┌──────────────────────┐
+│ Server Actions │   │ Route Handlers (api) │    │ FastAPI ブリッジ      │
+│ features/*     │   │ quiz / race / crane  │    │ /api/synthesize       │
+│ app/**/actions │   │ gacha / coins / …    │    │   → VOICEVOX engine   │
+└───────┬────────┘   └──────────┬───────────┘    └──────────────────────┘
+        │                       │
+        ▼                       ▼
+┌────────────────┐   ┌──────────────────────┐
+│ Prisma (Postgres)│  │ Google Gemini        │
+│ コイン/図鑑/狩り │  │ クイズ・実況・AI対話 │
+└────────────────┘   └──────────────────────┘
+```
 
-**「動物と仲良くなり、自然と共生し、他者に優しくする」**
-
-現実のお手伝い・学習を通じてコインを稼ぎ、そのコインと知恵を使って様々な時代・生息地の動物たちと友達になる、温かいエコシステム型の知育プラットフォーム。武器や狩りの概念を完全に廃止し、音楽・おもちゃ・好きな食べ物で動物の心を開くテイム（仲間入り）システムへ刷新。
-
-### コアシステム（8つのながれ）
-
-**1. お手伝いと親の承認（Quest & Bank）**
-子供がお手伝いを報告 → 親が Bank 画面から承認 → コインが DB に付与される。
-ペナルティは「どうぶつ保護活動への寄付（自動控除）」として温かく表現。
-
-**2. 動物とのふれあい（Field & Tame）**
-フィールドで動物に出会い、楽器・おもちゃ・誘いエサでテイム（仲間入り）させる。
-仲間になった動物は BaseCamp へ。その後、牧場 or 動物園へ自由に配置。
-
-**3. 動物の日々の世話（BaseCamp / Farm）**
-動物には空腹度・機嫌ステータスがある。エサをあげないと糞を落とさなくなり、
-おもちゃで遊んであげないと機嫌が下がる（AI 対話のトーンにも影響）。
-
-**4. 完全エコな循環（Farm → Garden → 工房）**
-牧場の糞を回収 → 農場で肥料として使い野菜を育てる → 収穫して動物のエサに。
-足りない分のエサや肥料のみコインで購入する補填システム。
-
-**5. インベントリ管理（倉庫）**
-糞・肥料・野菜・素材・おもちゃ等を統合インベントリ（UserInventoryItem）で管理。
-カテゴリ別に分類して倉庫画面に表示する。
-
-**6. 経済の娯楽（ゲームセンター Arcade）**
-クレーンゲーム（素材獲得）とカオスレース（Ollama 実況）を Arcade に集約。
-コイン消費の主要な場として機能する。
-
-**7. スタミナのながれ**
-最大スタミナは固定で現実時間のみで回復。スタミナゼロでも図鑑・AI 会話・
-眺めるだけで過ごせる動線を確保する。
-
-**8. 恩送りのながれ（Kizuna Events）**
-マップ上の NPC にアイテムを無償であげると kizunaPoints が蓄積。
-農場の台風などピンチ時に、かつて助けた NPC の縁者が無償で助けてくれる。
-詰み防止（動物ゼロでエコサイクルが止まった時の救済）としても機能する。
+- **データ取得**は基本 React Server Components（各 `page.tsx` で `prisma` 直接呼び出し、`export const dynamic = "force-dynamic"`）。
+- **更新系**は `features/*/actions.ts` または各ルートの `actions.ts`（Server Actions）。
+- **動的生成系**（毎回 LLM を叩く）は Route Handler（`app/api/`）。
+- **ゲーム内のコイン・在庫・スタミナ等**は Zustand + localStorage に保持（[状態管理の実態](#状態管理の実態) 参照）。
 
 ---
 
-## ディレクトリ構造図
+## ディレクトリ構造
 
 ```
 chore-safari/
 ├── app/                                # Next.js App Router
-│   ├── api/
-│   │   ├── alexa/                      # Alexa 連携
-│   │   ├── chat/                       # AI キャラクター対話 API（Ollama）
-│   │   ├── manifest/                   # PWA マニフェスト
-│   │   ├── quiz/                       # Ollama クイズ自動生成
-│   │   └── race/                       # Ollama レース実況生成
+│   ├── layout.tsx / page.tsx           # ルート（トップ）
+│   ├── globals.css
 │   │
-│   ├── bank/                           # 親用銀行・マネジメントポータル
-│   │   ├── dev/                        # 開発用デバッグページ
-│   │   ├── penalties/                  # ペナルティ（寄付）マスタ管理
+│   ├── api/                            # Route Handlers
+│   │   ├── alexa/                      # Alexa 連携
+│   │   ├── coins/                      # コイン残高取得/同期
+│   │   ├── crane/                      # クレーンゲーム抽選
+│   │   ├── gacha/                      # ガチャ抽選
+│   │   ├── manifest/                   # PWA マニフェスト（子供ごとアイコン）
+│   │   ├── quest/submit/              # クエスト申請
+│   │   ├── quiz/generate/             # 図鑑クイズ生成（Gemini）
+│   │   ├── quiz/hayaoshi/             # 早押しクイズ生成（Gemini・3形式/3難易度）
+│   │   └── synthesize/                # VOICEVOX TTS プロキシ（→ FastAPI backend）
+│   │
+│   ├── bank/                           # 親用 銀行・マネジメントポータル
+│   │   ├── page.tsx                    # 承認ダッシュボード
+│   │   ├── BankPortal.tsx / QuestReviewPanel.tsx / BonusPanel.tsx / PenaltyPanel.tsx / ChoreButton.tsx
+│   │   ├── actions.ts                  # 承認・ボーナス・ペナルティの Server Actions
 │   │   ├── quests/                     # クエストマスタ管理
-│   │   └── page.tsx                    # 承認ダッシュボード
+│   │   ├── penalties/                  # ペナルティマスタ管理
+│   │   └── dev/                        # 開発用デバッグページ
 │   │
 │   └── kids/
-│       ├── page.tsx                    # 子供選択画面
-│       └── [kidId]/                    # 個別子供エリア（ワールドマップハブ）
-│           ├── page.tsx                # ワールドマップ（ハブ画面）
+│       ├── page.tsx / KidsPortal.tsx   # 子供選択
+│       ├── WorldMapPortal.tsx          # ★ワールドマップ（全施設へのハブ・天気・BGM）
+│       ├── config.ts                   # GACHA_COST / CRANE_COST 等の定数
+│       ├── actions.ts
+│       └── [kidId]/                    # 個別子供エリア
+│           ├── layout.tsx / page.tsx / loading.tsx / error.tsx
+│           ├── GlobalHeader.tsx        # コイン残高等の共通ヘッダー
+│           ├── SafariLayoutShell.tsx   # 子供エリアの共通シェル
+│           ├── GuideContext.tsx        # AI ガイド（相棒）の状態共有
+│           ├── WeatherContext.tsx      # 全画面共通の天気
+│           ├── actions.ts
 │           │
-│           ├── basecamp/               # BaseCamp（旧 house/）
-│           │   ├── page.tsx            # 仲間一覧・ふれあいハブ
-│           │   └── [companionId]/      # 個別動物ふれあい詳細
-│           │       └── page.tsx        # AI 会話・エサやり・おもちゃ
-│           │
-│           ├── field/                  # フィールド（旧 safari/）
-│           │   ├── page.tsx            # ステージ選択マップ
-│           │   └── [stageId]/          # ステージ別フィールド
-│           │       └── page.tsx        # テイムゲーム画面
-│           │
-│           ├── farm/                   # 牧場（新設）
-│           │   ├── page.tsx            # 牧場全体（動物一覧・糞回収）
-│           │   └── [plotId]/           # 区画詳細（配置動物の世話）
-│           │       └── page.tsx
-│           │
-│           ├── zoo/                    # 動物園（新設）
-│           │   └── page.tsx            # 展示中の動物一覧
-│           │
-│           ├── garden/                 # 農場・菜園（新設）
-│           │   └── page.tsx            # 区画ごとの野菜育成
-│           │
-│           ├── workshop/               # 工房（旧 craft/）
-│           │   └── page.tsx            # 素材 → アイテムクラフト
-│           │
-│           ├── arcade/                 # ゲームセンター（旧 crane/ + race/ を統合）
-│           │   ├── page.tsx            # ゲームセンターハブ
-│           │   ├── crane/              # クレーンゲーム（素材獲得）
-│           │   │   └── page.tsx
-│           │   └── race/               # カオスレース（Ollama 実況）
-│           │       └── page.tsx
-│           │
-│           ├── dictionary/             # 動物図鑑（継続）
-│           │   ├── page.tsx            # 全種一覧・クイズ
-│           │   └── [animalId]/         # 個別動物図鑑
-│           │       └── page.tsx
-│           │
-│           ├── guild/                  # クエストギルド（継続）
-│           │   └── page.tsx            # クエスト申請・状況確認
-│           │
-│           └── warehouse/              # 倉庫（統合インベントリ）
-│               └── page.tsx            # カテゴリ別アイテム一覧
+│           ├── quests/                 # クエスト申請（おてつだい）
+│           ├── guild/                  # ギルド（コイン稼ぎ/消費系の入口を集約するハブ）
+│           ├── craft/                  # クラフト工房（素材 → 道具）
+│           ├── crane/                  # クレーンゲーム（素材獲得）
+│           ├── safari/                 # サファリ（狩り）
+│           │   └── hunt/               #   タイミングゲーム本体（罠/弓/槍）
+│           ├── dictionary/             # 博物図鑑（+ 図鑑クイズ）
+│           ├── house/                  # 自分の家（BaseCampClient・捕獲動物のハブ）
+│           ├── ranch/                  # 牧場（動物を育てる・うんち）
+│           ├── farm/                   # 農場（作物を収穫）
+│           ├── zoo/                    # 動物園（展示・学び）
+│           ├── logistics/              # 物流センター（エサ配送）
+│           ├── flow/                   # ぜんぶの「ながれ」可視化ページ
+│           ├── quiz/                   # 早押しクイズ（ゲームセンター）
+│           ├── race/                   # カオスレース
+│           └── warehouse/              # 倉庫（インベントリ閲覧）
 │
 ├── components/                         # 共有コンポーネント
-│   ├── KizunaEventDialog.tsx           # 恩送りイベントUI
-│   ├── StaminaBar.tsx                  # スタミナ表示
-│   ├── AnimalStatusCard.tsx            # 動物ステータス（空腹度・機嫌）
-│   └── EcoFlowIndicator.tsx            # エコサイクル状況表示
+│   ├── BGMPlayer.tsx                   # 画面連動 BGM
+│   ├── GuideChatModal.tsx              # AI ガイドとの対話モーダル
+│   ├── KizunaManager.tsx               # おたがいさまイベントの全画面制御
+│   └── KizunaEventDialog.tsx           # おたがいさまイベント UI
 │
-├── lib/                                # ユーティリティ・ロジック（副作用なし）
-│   ├── age.ts                          # 年齢計算
-│   ├── ai-guide.ts                     # AIキャラクター対話（Ollama）プロンプト管理
-│   ├── items.ts                        # アイテムマスタ定数
-│   ├── recipes.ts                      # クラフトレシピ定義
-│   ├── stamina.ts                      # スタミナ回復計算ロジック
-│   ├── animal-status.ts                # 空腹度・機嫌の時間経過計算ロジック
-│   ├── eco-cycle.ts                    # エコサイクルロジック
-│   ├── ollama.ts                       # Ollama API クライアント
-│   ├── prisma.ts                       # Prisma クライアント
+├── features/                           # 機能ドメイン別 Server Actions
+│   ├── craft/actions.ts                # クラフト
+│   ├── crane/actions.ts                # クレーンゲーム
+│   ├── gacha/actions.ts                # ガチャ
+│   ├── quest/actions.ts                # クエスト申請・承認
+│   ├── race/actions.ts                 # レース
+│   ├── safari/actions.ts               # 狩り（罠設置・タイミング判定・捕獲）
+│   └── notifications/actions.ts        # ボーナス/ペナルティ通知
+│
+├── actions/
+│   └── guide.ts                        # AI ガイド対話の Server Action
+│
+├── lib/                                # ユーティリティ・ロジック
+│   ├── prisma.ts                       # Prisma クライアント（シングルトン）
+│   ├── gemini.ts                       # Gemini クライアント（geminiGenerateObject）
+│   ├── ai-guide.ts                     # AI ガイド（3R/3C アーキテクチャ・Gemini）
+│   ├── kizunaScenarios.ts              # おたがいさまイベントのシナリオ定義
 │   ├── quest-categories.ts             # クエスト分類メタデータ
-│   └── streak.ts                       # ストリーク連続達成ロジック
+│   ├── recipes.ts                      # クラフトレシピ定義
+│   ├── streak.ts                       # ストリーク連続達成ロジック
+│   └── age.ts                          # 誕生日 → 年齢の動的計算
 │
-├── actions/                            # Server Actions（DB Single Source of Truth）
-│   ├── coin.ts                         # コイン増減（トランザクション保証）
-│   ├── quest.ts                        # クエスト承認・却下
-│   ├── tame.ts                         # テイムセッション管理
-│   ├── companion.ts                    # 動物配置・世話・殿堂入り
-│   ├── farm.ts                         # 農場作業（種まき・収穫・肥料）
-│   ├── inventory.ts                    # インベントリ増減
-│   ├── stamina.ts                      # スタミナ消費
-│   └── kizuna.ts                       # 恩送りイベント・NPC 関係管理
+├── store/
+│   └── useSafariStore.ts               # Zustand（コイン/在庫/スタミナ/動物/絆/BGM）
 │
-├── store/                              # Zustand ストア（UI 状態のみ）
-│   ├── useUIStore.ts                   # アニメーション・モーダル・トースト
-│   └── useSafariStore.ts               # フィールドのアニメーション・ゲーム演出
+├── types/
+│   └── safari.ts                       # ゲーム内型（GameAnimal / InventoryMap / Medal 等）
 │
 ├── prisma/
-│   ├── schema.prisma                   # 現行スキーマ（旧 Hunt ベース）
-│   ├── schema.proposed.prisma          # 新エコシステム版スキーマ（移行提案）
-│   ├── migrations/
-│   ├── seed.ts
-│   └── seed-ssr.ts
+│   ├── schema.prisma                   # ★現行スキーマ（Hunt/Tool ベース）
+│   ├── migrations/                     # マイグレーション履歴
+│   ├── seed.ts / seed-ssr.ts           # マスターデータ投入
+│   └── migration_lock.toml
 │
-├── docs/
-│   └── REDESIGN_PLAN.md               # 移行ロードマップ（詳細）
+├── backend/                            # VOICEVOX TTS ブリッジ（Python / FastAPI）
+│   ├── main.py                         # /synthesize（audio_query → synthesis → WAV）
+│   ├── Dockerfile
+│   └── requirements.txt
 │
-├── tests/
-│   └── e2e/                            # Playwright E2E テスト
+├── scripts/                            # 運用スクリプト
+│   ├── generate-icons.mjs              # PWA アイコン生成
+│   ├── reset-coins.ts / reset-coins-hard.ts
+│   ├── reset-dictionary.ts
+│   ├── migrate-is-test.sql
+│   └── test-gemini.mjs
 │
-├── scripts/
-├── public/
+├── tests/                              # Playwright E2E
+├── public/                             # 静的アセット（アイコン・BGM 13曲・効果音）
+├── docker-compose.yml                  # web / web-prod / db / voicevox_engine / backend / cloudflared
+├── Dockerfile.dev / Dockerfile.prod
+├── next.config.ts                      # typescript.ignoreBuildErrors / serverActions.allowedOrigins
 ├── package.json
-├── docker-compose.yml
-├── .env
-└── README.md
+├── README.md / AGENTS.md / CLAUDE.md
+└── PROJECT_STRUCTURE.md
 ```
 
 ---
 
-## 主要ディレクトリ解説
+## 主要画面（ワールドマップの施設）
 
-### 🏕️ `app/kids/[kidId]/basecamp/` — BaseCamp（旧: house/）
+ワールドマップ（[WorldMapPortal](app/kids/WorldMapPortal.tsx)）のピンから各施設へ遷移します。
 
-仲間になった動物が最初に来る場所。デフォルトの安全地帯。
+| 施設（ピン） | ルート | 役割 |
+|---|---|---|
+| クエストギルド | `quests` | お手伝い・クエストの申請 |
+| クラフト工房 | `craft` | 素材を組み合わせて道具を作る |
+| 罠スタイル | `safari?style=passive` | 罠＋エサを仕掛けて待つパッシブ狩り |
+| アクティブ狩り | `safari?style=active` | 弓・槍でゲージ式タイミング狩り（回数制限あり） |
+| 自分の家 | `house` | 捕獲動物のハブ・親密度・AI 会話 |
+| 牧場 | `ranch` | 動物を育てる・うんちを回収 |
+| 農場 | `farm` | 作物を収穫（牧場エサ・動物園ケアに利用） |
+| 動物園 | `zoo` | 動物を展示・学ぶ |
+| 物流センター | `logistics` | エサを運ぶ・配送 |
+| 博物図鑑 | `dictionary` | 図鑑閲覧＋クイズ |
+| カオスレース | `race` | 5レーンのベット式レース。実況はクライアント側の乱数生成（LLM 不使用） |
+| ながれ | `flow` | ゲーム全体の流れの可視化 |
+| ゲームセンター（モーダル） | — | クレーンゲーム / 早押しクイズ / サファリスロット（準備中） |
 
-- 動物一覧（currentLocation=BASECAMP）の表示
-- 個別動物詳細ページで「エサやり」「おもちゃ」「AI 会話」を実行
-- 牧場・動物園への「配置」（アサイン）ボタン
-- 空腹度・機嫌のリアルタイム表示（Server Action で算出した値を表示）
-
-### 🌾 `app/kids/[kidId]/farm/` — 牧場（新設）
-
-FARM 配置された動物が暮らす場所。エコサイクルの起点。
-
-- 配置済み動物の世話（エサやり）
-- 糞の回収ボタン（PoopLog.isCollected=false の行をカード表示）
-- 糞が溜まりすぎると動物の機嫌が下がる演出
-
-### 🥕 `app/kids/[kidId]/garden/` — 農場・菜園（新設）
-
-野菜を育ててエサを自給するエコサイクルの中核。
-
-- 区画（FarmPlot）ごとに種まき・肥料投入・収穫
-- 肥料（FERTILIZER）を使うと readyAt が短縮
-- 収穫した野菜（CROP）→ 倉庫に追加 → エサとして使用
-
-### 🦁 `app/kids/[kidId]/zoo/` — 動物園（新設）
-
-ZOO 配置された動物を展示する場所。
-
-- 展示中の動物一覧と解説
-- 来場 NPC が喜んで kizunaPoints が微増する演出
-
-### 🏞️ `app/kids/[kidId]/field/` — フィールド（旧: safari/）
-
-動物と出会い、テイムする場所。武器は完全廃止。
-
-- ステージ（savanna / forest / ice_age 等）選択
-- テイム方法（楽器・おもちゃ・誘いエサ）を選択してスタミナ消費
-- タイミングゲームで BEFRIENDED / FLED が決まる
-
-### 🎮 `app/kids/[kidId]/arcade/` — ゲームセンター（旧: crane/ + race/ を統合）
-
-コイン消費の娯楽施設。
-
-- **クレーンゲーム**: コイン消費で素材（MATERIAL）をドロップ
-- **カオスレース**: Ollama が実況する 30 秒レース
-
-### 🔨 `app/kids/[kidId]/workshop/` — 工房（旧: craft/）
-
-素材を組み合わせてアイテムをクラフト。旧・武器クラフトを全面置き換え。
-
-- 誘いエサ（LURE）、おもちゃ（TOY）、楽器（MUSIC_ITEM）
-- 肥料（FERTILIZER）、スタミナ軽減ツール（CRAFT_TOOL）
+> **補足**: `guild/` は「コインを稼ぐ／使う」系の入口を集約するハブページとして別途存在し、
+> ワールドマップの「クエストギルド」ピンは `quests`（申請画面）へ直接遷移します。両者は役割が一部重複しています。
 
 ---
 
 ## データモデル一覧
 
-| モデル | 旧モデル名 | 主な変更点 |
-|---|---|---|
-| `AnimalCompanion` | `CaughtAnimal` | `currentLocation` / `hungerLevel` / `moodLevel` / `lastFedAt` / `lastPlayedAt` 追加 |
-| `TameSession` | `Hunt` | `HuntType/Status` → `TameMethod/Status` に全面置き換え |
-| `TameItemMaster` | `Tool` | `ToolType(BOW/SPEAR/WEAPON)` → `TameMethod(MUSIC/TOY/LURE/SONG)` |
-| `UserInventoryItem` | `UserMaterial` + `UserTool` | 統合。`ItemCategory` で分類管理 |
-| `DonationNotification` | `PenaltyNotification` | 名前変更・UI 表現を「寄付」に |
-| `AnimalCareLog` | *(新設)* | 世話アクションの履歴と delta 値を記録 |
-| `PoopLog` | *(新設)* | 糞の生成・回収ライフサイクル管理 |
-| `FarmPlot` | *(新設)* | 農場区画の種まき・収穫状態管理 |
-| `NpcRelation` | *(新設)* | 恩送り NPC との関係・助けた回数管理 |
-| `FamilySharedItem` | `SharedInventoryItem` | 家族共有アイテムのみに限定 |
-| `CoinTxKind.DONATION` | `CoinTxKind.PENALTY` | 表現変更（減算の実装は同じ） |
+現行スキーマ（[prisma/schema.prisma](prisma/schema.prisma)）は **「狩り（Hunt）」世界観**のままです。
 
-詳細は `prisma/schema.proposed.prisma` を参照。
+### Enum
 
----
+| Enum | 値 |
+|---|---|
+| `UserRole` | `CHILD` / `PARENT` |
+| `CoinTxKind` | `CHORE` / `PENALTY` / `BONUS` / `GACHA` / `ADJUSTMENT` |
+| `ItemType` | `FOOD`（廃止・履歴用）/ `TRAP_PART`（廃止・履歴用）/ `MATERIAL` |
+| `Rarity` | `COMMON` / `RARE` / `EPIC` / `LEGENDARY` |
+| `QuestStatus` | `PENDING` / `APPROVED` / `REJECTED` |
+| `HuntType` | `TRAP` / `BOW` / `SPEAR` / `WEAPON` |
+| `ToolType` | `TRAP` / `BOW` / `SPEAR` / `WEAPON` |
+| `HuntStatus` | `PLACED` / `APPEARED` / `CAUGHT` / `ESCAPED` |
 
-## 状態管理の設計方針
+### モデル
 
-### DB = Single Source of Truth
+| モデル | 役割・主なフィールド |
+|---|---|
+| `User` | 子供/親。`coinBalance`、狩り回数制限（`dailyHuntCount`/`lastHuntDate`）、ストリーク（`currentStreak` 等）、絆（`kizunaPoints`/`helpedGrandma`）、相棒（`activeGuideAnimalId`）、`isTestAccount` |
+| `CoinTransaction` | コイン増減の取引履歴（`kind`/`amount`/`reason`） |
+| `Quest` / `QuestSubmission` | クエストマスタ（`category`: CHORE/STUDY/LIFE・`targetUsers`）と申請（`status`） |
+| `Penalty` / `PenaltyNotification` | ペナルティマスタと通知 |
+| `SpecialBonusNotification` | 特大ボーナス通知 |
+| `Animal` | 図鑑マスタ。`genericName`/`specificName`、`rarity`、`habitat`/`location`/`era`、`lifespanYears`、`stageId` |
+| `Stage` | 生息地カテゴリ（savanna / forest / ice_age / deep_sea / cretaceous） |
+| `CaughtAnimal` | 捕獲履歴（家族共有図鑑）。`expiresAt`/`isAlive`（寿命）、`intimacyScore`（親密度）、`personalityId` |
+| `Personality` | AI ガイドの性格マスタ（`firstPerson`/`toneRule`） |
+| `Hunt` | 進行中の狩り（`huntType`、`status`、`appearsAt`、`targetAnimalId`、`posX/posY`） |
+| `Tool` | 道具マスタ（罠/弓/槍/武器、`successRateBonus`、`historicalContext`、`consumable`） |
+| `Material` / `UserMaterial` | 素材マスタとユーザー所持数 |
+| `UserTool` | ユーザーの道具所持数 |
+| `SharedInventoryItem` | 家族共有インベントリ（倉庫） |
+| `GachaTransaction` | ガチャ履歴 |
+| `UserActivity` | 機能利用履歴（AI ガイドの未利用機能誘導に使用） |
 
-コイン・スタミナ・インベントリ・動物ステータスは必ず DB を正として扱う。
-すべての増減・変化は `actions/` 配下の Server Actions 内のトランザクションで行う。
-
-```
-[子供の操作] → Server Action → prisma.$transaction([
-  コインの増減,
-  CoinTransaction の INSERT,
-  関連状態の更新
-]) → return 新しい状態
-```
-
-### Zustand の用途を UI 状態のみに限定
-
-```typescript
-// ✅ Zustand で管理してよいもの
-useUIStore: モーダルの開閉、トーストの表示、アニメーション中フラグ
-useSafariStore: タイミングゲームの演出状態、フィールドのアニメーション
-
-// ❌ Zustand で管理してはいけないもの
-coinBalance, staminaCurrent, hungerLevel, moodLevel, inventory
-→ これらは Server Action の戻り値 or React Server Components で取得する
-```
-
-### 時間経過ステータスの計算パターン
-
-空腹度・機嫌・スタミナは「最終更新日時」を DB に保持し、表示時または Server Action 実行時に経過時間から現在値を算出して書き込む。
-
-```typescript
-// lib/animal-status.ts の例
-export function calcHungerLevel(lastFedAt: Date, baseLevel: number): number {
-  const hoursPassed = (Date.now() - lastFedAt.getTime()) / 3_600_000;
-  return Math.max(0, baseLevel - Math.floor(hoursPassed * 5)); // 1時間で-5
-}
-```
+> ⚠️ 旧構想にあった `TameSession` / `TameItemMaster` / `AnimalCompanion` / `PoopLog` / `FarmPlot` /
+> `NpcRelation` / `UserInventoryItem` / `DonationNotification` などは **存在しません**。
 
 ---
 
-## 技術スタック
+## 状態管理の実態
 
-- **Frontend**: Next.js (App Router), React, Tailwind CSS, Framer Motion, Zustand
-- **Backend**: Next.js Server Actions, Prisma 6+, PostgreSQL
-- **AI・LLM**: Ollama（クイズ・レース実況・AIキャラクター対話）
-- **Testing**: Playwright（E2E テスト）
-- **Infrastructure**: Docker（docker-compose で PostgreSQL をローカル起動）
+> ⚠️ **重要**: 旧ドキュメントは「DB = Single Source of Truth、Zustand は UI 状態のみ」と規定していましたが、
+> **現状はその方針どおりになっていません**。ゲーム内経済の多くが Zustand + localStorage に保持されています。
 
----
+### Zustand（[store/useSafariStore.ts](store/useSafariStore.ts)・`persist` で localStorage 永続化）
 
-## 開発ワークフロー
-
-```bash
-# パッケージインストール
-npm install
-
-# データベース起動とシード
-npm run db:up
-npm run db:migrate
-npm run db:seed
-
-# E2E テストの実行
-npx playwright test
-
-# 開発サーバー起動
-npm run dev
+```
+coins              … ゲーム内コイン残高（DB の coinBalance とは別管理。initCoins/syncCoins で同期）
+inventory          … 素材・作物などの所持マップ
+animalsInYard      … 裏庭に一時保護中の動物
+logisticsQueue     … 物流センターで配送待ちの動物
+stamina            … 体力（0–100）
+medals             … 勲章
+kizunaPoints / kindnessCount / pendingReturns / kizunaBadgeCount  … おたがいさまイベント
+kizunaPlanDate / kizunaPlanKind / kizunaFiredDate                 … 1日1回の発火制御
+bgmMuted           … BGM ミュート
 ```
 
+### DB（Prisma）が正として扱う領域
+
+```
+coinBalance（親の承認・ペナルティで増減）/ CoinTransaction
+CaughtAnimal（図鑑）/ Hunt / Tool / Material / UserMaterial / UserTool
+Quest / QuestSubmission / Penalty / 通知系 / GachaTransaction
+```
+
+### コインの二重管理に注意
+
+- `coinBalance`（DB）… 親の承認フロー（Bank）・クレーン/ガチャの API がトランザクションで増減。
+- `coins`（Zustand）… ページロード時に DB 値で初期化（`initCoins`）し、サーバー応答で上書き（`syncCoins`）するが、
+  ゲーム内の `addCoins`/`spendCoins` はクライアントローカルでも増減する。
+- → **DB と localStorage が乖離しうる**。詳細は [既知の課題](#既知の課題技術的負債) を参照。
+
 ---
 
-**作成者**: Claude
-**最終更新**: 2026-05-25
-**参照**: `docs/REDESIGN_PLAN.md`（移行ロードマップ詳細）
+## AI・音声連携
+
+### Google Gemini（[lib/gemini.ts](lib/gemini.ts)）
+- Vercel AI SDK（`@ai-sdk/google`）の `generateText` ＋ 手動 JSON パース＋ Zod 検証（`geminiGenerateObject`）。
+- 用途: 早押しクイズ（`/api/quiz/hayaoshi`）、図鑑クイズ（`/api/quiz/generate`）、AI ガイド対話（[lib/ai-guide.ts](lib/ai-guide.ts)）。
+- **レースは LLM 不使用**: 現行のカオスレース（[RacePlayer](app/kids/[kidId]/race/RacePlayer.tsx)）はクライアント側の乱数で実況・進行を生成し、ベット結果のみ Server Action（`betOnRace`/`claimRaceReward`）で確定する。かつて存在したレース実況 API（`/api/race` の Gemini 版・`/api/race/generate` の Ollama 版）は未使用のため削除済み。これにより **コードベースから Ollama 依存は消滅**した。
+- AI ガイドは **3R/3C アーキテクチャ**: Receptor（Prisma で状況収集）→ Constraint（優先度・プロンプト構築）→ Reactor（Gemini 呼出）。
+
+### VOICEVOX TTS（[backend/main.py](backend/main.py)）
+- FastAPI ブリッジが Next.js の `/api/synthesize` から呼ばれ、同一 Docker ネットワークの `voicevox_engine` へ
+  `audio_query → synthesis` を順に投げて WAV を返す。話者は環境変数 `VOICEVOX_SPEAKER_ID`（既定: ずんだもん=3）。
+
+---
+
+## 既知の課題・技術的負債
+
+ドキュメント整理にあたり確認できた改善候補です。
+
+1. **コインの二重管理（最重要・未対応）**
+   DB の `coinBalance` と Zustand/localStorage の `coins` が並存し、`addCoins`/`spendCoins` はローカルのみで増減する経路がある。
+   リロード・複数端末・タブ間で残高が乖離しうる。**コイン増減を Server Action 経由に一本化**し、Zustand はキャッシュに徹するのが望ましい。
+
+2. **`guild/` と `quests/` の役割重複（未対応）**
+   ワールドマップは `quests` に直行する一方、`guild/` ハブも存在。導線を整理するか、片方をリダイレクトに。
+
+3. **`typescript.ignoreBuildErrors: true`（要判断）**
+   Next.js 16 の日本語ソースでの code-frame パニック回避が理由（[next.config.ts](next.config.ts) のコメント参照）だが、
+   本番ビルドが型エラーを素通しする状態。CI 等で別途 `tsc --noEmit` を回す運用が望ましい。
+
+4. **狩り（武器）世界観の温度感（要判断）**
+   README のコアサイクルは「狩り・武器」を前提にしている。旧構想の「友好的なテイム」への揺り戻しを今後やるかは要判断
+   （本ドキュメントは現状を正として記述）。
+
+### 対応済み（2026-05-30）
+
+- ✅ `docker-compose.yml` の死んだ `OLLAMA_HOST` を削除（web / web-prod）。
+- ✅ [lib/ai-guide.ts](lib/ai-guide.ts) の旧 Ollama コメントを Gemini に修正。
+- ✅ [lib/gemini.ts](lib/gemini.ts) の既定モデルを廃止済み `gemini-1.5-flash` → `gemini-2.5-flash` に統一（compose と一致）。
+- ✅ 孤立していたレース実況 API（`app/api/race`・`app/api/race/generate`）と疎通スクリプト `scripts/test-race-api.mjs` を削除。陳腐化していたレースの E2E テストも除去。**Ollama 依存はコードベースから消滅**。
+
+---
+
+**参照**: [README.md](README.md)（起動方法・技術スタック・環境変数）

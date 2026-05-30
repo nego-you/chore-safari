@@ -42,3 +42,12 @@ next-env.d.ts
 
 # Docker Data
 /pg-data
+
+# Playwright / test artifacts
+/playwright-report
+/test-results
+
+# 作業中の一時出力物（コミットしない）
+/git_diff.txt
+*_sync_check.txt
+*.diff.txt

@@ -16,7 +16,7 @@ import { prisma } from "@/lib/prisma";
 import { geminiGenerateObject } from "@/lib/gemini";
 
 // ─────────────────────────────────────────────────────────────
-// Ollama レスポンス スキーマ
+// Gemini レスポンス スキーマ
 // ─────────────────────────────────────────────────────────────
 const AiResponseSchema = z.object({
   reply_text: z.string(),
@@ -516,7 +516,7 @@ export class AIGuideService {
    * ガイドキャラの自発的な声かけを生成する。
    * - Receptor  : ユーザー状況を収集
    * - Constraint: クールダウン判定 → スキップ or 優先メッセージ選定
-   * - Reactor   : Ollama でセリフ生成
+   * - Reactor   : Gemini でセリフ生成
    * @returns 表示すべきテキスト（無ければ null）
    */
   async suggestProactively(

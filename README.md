@@ -1,66 +1,147 @@
-# Chore Safari (チョア・サファリ)
+# Chore Safari（チョア・サファリ）
 
-**「現実のお手伝いと大きな成長が、デジタルの冒険に繋がる。」**
+**「現実のお手伝いと成長が、デジタルの冒険に繋がる。」**
 
-家族の子供たちが協力して遊ぶ、お手伝い連動型の知育＆どうぶつ捕獲Webプラットフォーム。
-お手伝いや生活習慣の達成を通してコインを獲得し、そのコインを使ってアイテムを集め、様々な時代の動物や恐竜を捕まえて家族共通の図鑑を完成させるのが目的です。
+家族の子供たちが遊ぶ、お手伝い連動型の知育＆どうぶつ捕獲 Web プラットフォーム。
+現実のお手伝い・学習・生活習慣の達成でコインを獲得し、そのコインでアイテムを集め、
+さまざまな時代・生息地の動物や恐竜を捕まえて、家族共通の図鑑を完成させていきます。
 
-## 概要とコアシステム
-本プロジェクトは、現実世界での子供たちのアクション（おてつだい、学習、生活習慣）とゲーム内の冒険を直結させたフルスタックアプリケーションです。以下のコアサイクルで進行します。
+> **対象ユーザー**: 家庭内（兄妹）での利用。3人の子供（美琴 / 幸仁 / 叶泰）と親アカウントを前提にしています。
+> 公開は Cloudflare Tunnel 経由（`chore-safari.negoyou.com`）。
 
-1. **おてつだいと銀行 (Quest & Bank)**
-   * 親があらかじめ設定した「クエスト（おてつだい・おべんきょう・せいかつ）」を子供が実行し申請。
-   * 親が承認するとゲーム内コインが付与されます（特大ボーナスやペナルティ没収の機能もあります）。
-   * 連続してお手伝いを達成するとボーナスが貰える**ストリーク（連続達成）システム**も搭載。
-2. **素材集めと工作 (Crane & Craft)**
-   * 子供たちは自分のコインを消費して「クレーンゲーム」をプレイし、「素材（木の枝、石、鉄の欠片など）」を獲得します。
-   * 獲得した素材を「クラフト」機能で組み合わせ、様々な「道具（罠、弓、槍、銃などの武器）」を作ります。
-   * 道具は使い捨てのパッシブ罠から、繰り返し使えるアクティブ武器まで多岐にわたります。
-3. **サファリでの狩りと自分の家 (Hunt & Safari & House)**
-   * 作った道具を使って、生息地（サバンナ、森林、恐竜時代など）で動物の捕獲に挑戦します。
-   * **自分の家:** 捕まえた動物は自分の家（ベースキャンプ）に配置され、観察したり、親密度を上げたりすることができます。
-   * **寿命と殿堂入り:** 動物には寿命があり、天寿を全うすると殿堂入りとして記録に残ります。
-4. **LLMを活用した体験の拡張 (AI Integration)**
-   * **動物クイズ:** 図鑑の動物の詳細説明文から、ローカルLLM（Ollama）がその場で3択クイズを自動生成。
-   * **カオスレース:** 捕まえた動物たちを走らせる30秒間のレース。LLMが毎度ハチャメチャな実況シナリオを動的に生成します。
-   * **AIガイドキャラクター:** 捕まえた動物が独自の性格（パーソナリティ）を持ち、親密度に応じてOllama経由でフルボイス（テキスト）の対話が発生します。
-5. **恩送り・絆システム (Kizuna Events)**
-   * 表面上は見えない「善行ポイント」が蓄積し、一定値に達すると「恩送り（Pay-it-forward）」の特別イベントが発生し、ストーリーが進行します。
+---
+
+## コアサイクル
+
+子供は **ワールドマップ**（[WorldMapPortal](app/kids/WorldMapPortal.tsx)）を拠点に、各施設を歩いて回ります。
+
+1. **お手伝いと銀行（Quest & Bank）**
+   - 親が設定したクエスト（おてつだい / おべんきょう / せいかつ）を子供が申請。
+   - 親が **Bank 画面**で承認するとコインが付与される（特大ボーナス・ペナルティ没収あり）。
+   - 連続達成で報酬が増える **ストリーク**機能を搭載。
+
+2. **素材集めと工作（Crane & Craft）**
+   - **クレーンゲーム**でコインを消費して素材（木の枝・石・鉄の欠片など）を獲得。
+   - **クラフト工房**で素材を組み合わせ、罠・弓・槍などの道具を作る。
+   - 道具は使い捨ての罠から繰り返し使えるアクティブ武器まで。
+
+3. **狩りと図鑑（Safari & Dictionary）**
+   - **罠スタイル（パッシブ）**: 罠とエサを仕掛けて待ち、出現した動物をタイミングゲームで捕獲。
+   - **アクティブ狩り**: 弓・槍を持ち、ゲージ式タイミングで動物を捕獲（1日の回数制限あり）。
+   - 捕まえた動物は家族共通の **博物図鑑**に記録される。
+
+4. **動物とのくらし（House / Ranch / Zoo / Farm / Logistics）**
+   - **自分の家**: 捕まえた動物が待つハブ。観察・親密度上げ・AI 会話を行う。
+   - **牧場 / 動物園 / 農場 / 物流センター**: 動物を育てる・展示する・作物を収穫する・エサを配送する施設群。
+   - **寿命と殿堂入り**: 動物には寿命があり、天寿を全うすると記録に残る。
+
+5. **AI による体験拡張（Gemini）**
+   - **早押しクイズ**: Gemini が幼児〜小学生向けの3形式（文章・漢字パズル・法則）× 3難易度の問題を動的生成。
+   - **図鑑クイズ**: 図鑑の動物解説から Gemini が3択クイズを生成。
+   - **AI ガイドキャラクター**: 相棒の動物が性格（パーソナリティ）を持ち、親密度に応じて Gemini 経由で対話。
+     応答は **VOICEVOX**（ずんだもん）でフルボイス再生される。
+
+6. **ミニゲーム（カオスレース）**
+   - 捕まえた動物 5匹でベット式のレース。オッズ予想を当てるとコイン獲得。
+     実況・進行はクライアント側の乱数で生成（LLM 不使用。詳細は [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) 参照）。
+
+7. **おたがいさま（Kizuna Events）**
+   - 見えない「善行ポイント」が蓄積し、だれかを善意で助けると、後日 別のだれかが助けに来てくれる
+     「おたがいさま型」のイベントが発生する。
+
+8. **演出（BGM / 天気）**
+   - 画面ごとに自動で切り替わる BGM、ワールドマップの天気エフェクトを搭載。
+
+---
 
 ## 技術スタック
-* **Frontend / Backend:** Next.js (App Router), TypeScript, Tailwind CSS, Framer Motion
-* **State Management:** Zustand
-* **Database:** PostgreSQL (Prisma ORM)
-* **AI Integration:** ローカルLLM環境 (Ollama / Llama 3 等) による動的コンテンツ生成とキャラクター対話
-* **Testing:** Playwright (E2Eテスト)
-* **Infrastructure:** ローカルPC上のDocker (docker-compose)
 
-## 開発状況 (ロードマップの達成)
-初期の構想であったフェーズはすべて実装完了し、更なるやり込み要素・愛着要素のフェーズが稼働しています。
+| 区分 | 採用技術 |
+|---|---|
+| Frontend / Backend | **Next.js 16**（App Router, Server Actions）, React 19, TypeScript |
+| スタイル / 演出 | Tailwind CSS v4, Framer Motion, canvas-confetti |
+| 状態管理 | Zustand（`persist`／localStorage）, React Server Components |
+| データベース | PostgreSQL 16 + Prisma 6 |
+| LLM | **Google Gemini**（Vercel AI SDK `@ai-sdk/google`） |
+| 音声合成（TTS） | **VOICEVOX**（FastAPI ブリッジ経由） |
+| テスト | Playwright（E2E） |
+| インフラ | Docker Compose（web / db / VOICEVOX / FastAPI / Cloudflare Tunnel） |
 
-- [x] **Phase 1: 経済基盤の構築** (PostgreSQL環境構築、親用/Bank画面、個別コイン・クエスト管理)
-- [x] **Phase 2: 共有インベントリとクレーンゲーム** (素材のドロップ、個人ごとの素材所持・道具所持の管理)
-- [x] **Phase 3: クラフトと捕獲** (BOMベースのアイテム合成ロジック、パッシブ/アクティブ狩り)
-- [x] **Phase 4: LLM連携とミニゲーム** (ローカルOllamaを利用した熱血レース実況、読解力クイズ)
-- [x] **Phase 5: 愛着とやり込み要素 (最新アップデート)**
-  - 「自分の家」での動物管理とふれあい
-  - ストリーク（連続お手伝い達成）機能
-  - 動物のパーソナリティ付与とAI対話（Ollama）
-  - 動物の寿命・殿堂入りシステム
-  - Kizuna（恩送り）隠しイベントの実装
+> ⚠️ AI は以前 Ollama を使用していましたが、現在は **Gemini に全面移行済み**で、Ollama 依存はコードから完全に削除されています。
+
+---
 
 ## 起動方法
+
+### 前提
+- Node.js 20+ / Docker Desktop
+- `.env` に最低限 `DATABASE_URL` と `GEMINI_API_KEY` を設定（[環境変数](#環境変数)参照）
+
+### A. ローカル開発（DB と VOICEVOX のみ Docker、Next.js は手元で起動）
+
 ```bash
-# 依存パッケージのインストール
 npm install
 
-# データベースの立ち上げ (Docker)
-npm run db:up
-npm run db:migrate
-npm run db:seed  # マスターデータの投入
+# PostgreSQL・VOICEVOX・FastAPI ブリッジを起動
+npm run db:up        # docker compose up -d
 
-# 開発サーバーの起動
-npm run dev
+# スキーマ適用とマスターデータ投入
+npm run db:migrate   # prisma migrate dev
+npm run db:seed      # マスターデータ（動物・道具・クエスト等）
+
+# 開発サーバー
+npm run dev          # http://localhost:3000
 ```
 
-> **Note**: クイズ、レースの自動生成、およびAIガイド（動物との会話）機能を利用する場合は、ローカル環境で [Ollama](https://ollama.com/) を起動し、環境変数 `OLLAMA_MODEL` に指定したモデルをpullしておく必要があります。（Ollamaが停止している場合は、フォールバックの固定データや標準応答が使用されます）
+### B. フル Docker（本番相当）
+
+`docker-compose.yml` で以下のサービスが起動します。
+
+| サービス | 役割 | ポート |
+|---|---|---|
+| `web` | Next.js 開発サーバー（HMR） | 3000 |
+| `web-prod` | `next build` 済みの本番ビルド | 3001 |
+| `db` | PostgreSQL 16 | 5433→5432 |
+| `voicevox_engine` | VOICEVOX 音声合成エンジン（CPU 版） | 内部 50021 |
+| `backend` | FastAPI TTS ブリッジ（`/api/synthesize` の実体） | 内部 8000 |
+| `cloudflared` | Cloudflare Tunnel（外部公開 → `web-prod`） | — |
+
+> **Note**: クイズ・レース実況・AI ガイド対話には `GEMINI_API_KEY` が必須です。
+> AI 会話の音声再生には VOICEVOX（`voicevox_engine` + `backend`）が必要です。
+> いずれも未設定／停止時は該当機能がエラーまたは無音になります。
+
+---
+
+## 環境変数
+
+`.env`（gitignore 済み）に設定します。`docker-compose.yml` の `environment` で上書きされる項目もあります。
+
+| 変数 | 用途 | 例 / 既定 |
+|---|---|---|
+| `DATABASE_URL` | PostgreSQL 接続文字列 | `postgresql://chore:chore@localhost:5433/chore_safari?schema=public` |
+| `GEMINI_API_KEY` | Google AI Studio の API キー（**必須**） | — |
+| `GEMINI_MODEL` | 使用モデル | `gemini-2.5-flash`（compose・コードとも既定） |
+| `BACKEND_URL` | FastAPI TTS ブリッジの URL | `http://backend:8000` |
+| `CLOUDFLARE_TUNNEL_TOKEN` | Cloudflare Tunnel 用トークン | — |
+
+---
+
+## npm スクリプト
+
+| コマンド | 内容 |
+|---|---|
+| `npm run dev` | 開発サーバー起動 |
+| `npm run build` / `start` | 本番ビルド / 起動 |
+| `npm run db:up` / `db:down` | Docker Compose 起動 / 停止 |
+| `npm run db:migrate` / `db:reset` | マイグレーション適用 / リセット |
+| `npm run db:seed` / `db:seed:ssr` | シード投入 |
+| `npm run db:studio` | Prisma Studio |
+| `npm run test:e2e`（`:ui` / `:headed` / `:debug`） | Playwright E2E |
+| `npm run icons` | PWA アイコン生成 |
+
+---
+
+## ドキュメント
+
+- [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) — ディレクトリ構造・データモデル・状態管理の設計
+- [AGENTS.md](AGENTS.md) — AI エージェント向けの開発ルール（Next.js 16 の破壊的変更に注意）

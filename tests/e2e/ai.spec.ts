@@ -9,8 +9,8 @@ test.describe('AI Integration: LLMを活用したミニゲーム', () => {
     kidPath = await firstKidLink.getAttribute('href') || '/kids/test-kid';
   });
 
-  test('動物図鑑からOllamaを介してクイズが自動生成されることを検証する', async ({ page }) => {
-    // APIモック（Ollamaが起動していない環境でもテストが通るようにする）
+  test('動物図鑑から Gemini を介してクイズが自動生成されることを検証する', async ({ page }) => {
+    // APIモック（GEMINI_API_KEY 未設定の環境でもテストが通るようにする）
     await page.route('/api/quiz/generate', async route => {
       const json = {
         question: "モッククイズ: この動物の特徴はどれ？",
@@ -35,32 +35,8 @@ test.describe('AI Integration: LLMを活用したミニゲーム', () => {
     }
   });
 
-  test('動物レース画面にてOllamaを通じた実況シナリオが生成されることを確認する', async ({ page }) => {
-    // APIモック
-    await page.route('/api/race/generate', async route => {
-      const json = {
-        winner: "みこと",
-        events: [
-          { time: 0, character: "all", action: "speed_up", message: "🔥 レーススタート！" },
-          { time: 10, character: "みこと", action: "chaotic", message: "🛸 モック実況: 突然UFOに攫われた！" },
-          { time: 30, character: "みこと", action: "finish", message: "🏆 みことがゴール！" }
-        ]
-      };
-      await route.fulfill({ json });
-    });
-
-    // 1. レース画面へ
-    await page.goto(`${kidPath}/race`);
-    await expect(page.locator('text=レース').first()).toBeVisible();
-
-    // 2. レース開始ボタンを押す
-    const startRaceButton = page.getByRole('button', { name: /レース開始|スタート/ }).first();
-    if (await startRaceButton.isVisible()) {
-      await startRaceButton.click();
-      
-      // モックされた実況イベント（UFO）が表示されるか確認
-      // ※テキストが1文字ずつ表示されるタイプリピーターの場合は完全一致ではなく部分一致で待つ
-      await expect(page.locator('text=UFO')).toBeVisible({ timeout: 15000 });
-    }
-  });
+  // 旧: 「動物レース画面で Ollama 実況が生成される」テストは廃止。
+  // 現行のカオスレース（RacePlayer）はクライアント側の乱数で実況を生成し、
+  // LLM／API（旧 /api/race・/api/race/generate）を一切使わないため、ここでは検証しない。
+  // ベット式レースの E2E が必要なら、ベット選択 → スタート → 勝敗確定の流れで別途追加する。
 });
