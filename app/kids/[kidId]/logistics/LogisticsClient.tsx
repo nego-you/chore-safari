@@ -174,7 +174,6 @@ function PickingScreen({order,onBack,onNext}){
   // ★ BEFORE: const {inv} = useContext(InventoryContext);
   // ★ AFTER : useSafariStore から直接取得
   const inv             = useSafariStore((s) => s.inventory);
-  const logisticsQueue  = useSafariStore((s) => s.logisticsQueue);
   const [queue, setQueue] = useState([]);  // [{item,uid}]
   const [catFilter, setCatFilter] = useState("all");
 
@@ -214,29 +213,6 @@ function PickingScreen({order,onBack,onNext}){
         </div>
       </div>
 
-      {/* ★ 物流待機キュー（BaseCamp から sendToLogistics で送られた動物） */}
-      {logisticsQueue.length > 0 && (
-        <div style={{background:"linear-gradient(135deg,#fff7ed,#fef3c7)",borderRadius:18,
-          padding:"10px 12px",marginBottom:10,border:"2px solid #fde68a"}}>
-          <div style={{fontWeight:800,fontSize:13,color:"#b45309",marginBottom:6}}>
-            🚚 物流センター待機中 ({logisticsQueue.reduce((s,a)=>s+a.count,0)}ひき)
-          </div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {logisticsQueue.map(a=>(
-              <div key={a.id} style={{display:"flex",flexDirection:"column",alignItems:"center",
-                padding:"6px 8px",borderRadius:12,border:"2px solid #fcd34d",
-                background:"#fffbeb",minWidth:50,textAlign:"center"}}>
-                <span style={{fontSize:22}}>{a.emoji}</span>
-                <span style={{fontSize:9,fontWeight:700,color:"#374151",marginTop:1}}>{a.name}</span>
-                <span style={{fontSize:8,color:"#d97706"}}>×{a.count}</span>
-              </div>
-            ))}
-          </div>
-          <div style={{fontSize:10,color:"#92400e",marginTop:6}}>
-            ↑ 自分の家から送られた動物だよ。下のアイテムと一緒にトラックに積もう！
-          </div>
-        </div>
-      )}
 
       {/* Queue display */}
       <div style={{background:"linear-gradient(135deg,#f5f3ff,#ede9fe)",borderRadius:18,padding:"10px 12px",

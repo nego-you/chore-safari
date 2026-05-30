@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useSafariStore } from "@/store/useSafariStore";
 import { useWeather } from "@/app/kids/[kidId]/WeatherContext";
-import type { AnimalRarity } from "@/types/safari";
+import { recordActiveHuntCatch } from "@/features/safari/actions";
 
 // ════════════════════════════════════════════════════════════════
 //  型定義
@@ -74,13 +74,13 @@ const ANIMALS: Animal[] = [
   { id:"lion",      name:"ライオン",        emoji:"🦁", trait:"LARGE",  traitName:"おおきい",   rarity:"EPIC",      activeTime:"ANY",   waterAnimal:false,
     description:"むれの リーダーは じつは メスたち！えものを つかまえるのも メスの しごと。オスは ライオンの なかで いちばん あぶない てきと たたかって むれを まもるよ！",
     quiz:{ q:"ライオンの むれの リーダーは？",                  choices:["いちばん おおきい オス","メスたち","いちばん つよい コ"], ans:1 } },
-  { id:"crocodile", name:"ワニ",            emoji:"🐊", trait:"LARGE",  traitName:"おおきい",   rarity:"RARE",      activeTime:"ANY",   waterAnimal:true,
+  { id:"crocodile_nile", name:"ワニ",            emoji:"🐊", trait:"LARGE",  traitName:"おおきい",   rarity:"RARE",      activeTime:"ANY",   waterAnimal:true,
     description:"きょうりゅうと おなじ じだいから すがたが ほとんど かわっていない「いきた かせき」！くちを あけて じっとしているのは、たいおんを あげるため なんだよ。",
     quiz:{ q:"ワニが じっと うごかない りゆうは？",             choices:["ねむっている","たいおんを あげるため","こわいから"], ans:1 } },
-  { id:"hippo",     name:"カバ",            emoji:"🦛", trait:"LARGE",  traitName:"おおきい",   rarity:"RARE",      activeTime:"NIGHT", waterAnimal:true,
+  { id:"hippopotamus", name:"カバ",            emoji:"🦛", trait:"LARGE",  traitName:"おおきい",   rarity:"RARE",      activeTime:"NIGHT", waterAnimal:true,
     description:"あかい「あせ」は じつは あせじゃない！ひふを まもる にゅうえきで、こうきんこうかも あるよ。みずの なかで えいおよぎが とくい！ひるは みずで ひなたぼっこ、よるに くさを たべに いくよ。",
     quiz:{ q:"カバが あかい あせを かく りゆうは？",            choices:["あつくて あせが でる","ひふを まもるため","おこっているサイン"], ans:1 } },
-  { id:"owl",       name:"ワシミミズク",    emoji:"🦉", trait:"FLYING", traitName:"そらをとぶ", rarity:"RARE",      activeTime:"NIGHT", waterAnimal:false,
+  { id:"owl_horned", name:"ワシミミズク",    emoji:"🦉", trait:"FLYING", traitName:"そらをとぶ", rarity:"RARE",      activeTime:"NIGHT", waterAnimal:false,
     description:"めが おおきすぎて うごかせない！だから くびを 270どまで まわして まわりを みるよ。はねに とくしゅな こうぞうで、とぶ ときの おとが ほぼ ゼロ。しずかな よるの かりうどだ！",
     quiz:{ q:"フクロウは くびを どのくらい まわせる？",         choices:["90ど","180ど","270ど"], ans:2 } },
   { id:"eagle",     name:"ワシ",            emoji:"🦅", trait:"FLYING", traitName:"そらをとぶ", rarity:"RARE",      activeTime:"DAY",   waterAnimal:false,
@@ -188,9 +188,6 @@ function pickAnimal(ew: EventWeight, isNight: boolean, isWater: boolean): Animal
   for (const p of pool) { r -= p.w; if (r <= 0) return p.a; }
   return pool[pool.length - 1].a;
 }
-
-const toStoreRarity = (r: Animal["rarity"]): AnimalRarity =>
-  r === "LEGENDARY" ? "でんせつ" : r === "COMMON" ? "ふつう" : "レア";
 
 // ════════════════════════════════════════════════════════════════
 //  CSS
@@ -651,12 +648,11 @@ function StaminaBar({ stamina }: { stamina: number }) {
 
 type Phase = "EXPLORE" | "ENCOUNTER" | "APPROACHING" | "QUIZ" | "RESULT" | "GAMEOVER";
 
-export default function HuntClient() {
+export default function HuntClient({ kidId }: { kidId: string }) {
   const stamina        = useSafariStore((s) => s.stamina);
   const consumeStamina = useSafariStore((s) => s.consumeStamina);
   const restoreStamina = useSafariStore((s) => s.restoreStamina);
   const recoverStamina = useSafariStore((s) => s.recoverStamina);
-  const catchAnimal    = useSafariStore((s) => s.catchAnimal);
   const weather        = useWeather();
 
   const [phase,         setPhase]        = useState<Phase>("EXPLORE");
@@ -798,7 +794,10 @@ export default function HuntClient() {
     setIsEncounter(false);
     if (correct) {
       setFriends(prev => [...prev, animal.emoji]);
-      catchAnimal({ name: animal.name, emoji: animal.emoji, rarity: toStoreRarity(animal.rarity) });
+      // 図鑑(DB CaughtAnimal)へ永続化。失敗してもゲーム進行は止めない（ログのみ）。
+      void recordActiveHuntCatch(kidId, animal.id).then((r) => {
+        if (!r.success) console.warn("[hunt] catch not recorded:", r.error);
+      });
       addLog(`💖 せいかい！ ${animal.name}と ともだちになれた！`, "#ec4899");
       spawnHearts();
     } else {
@@ -806,7 +805,7 @@ export default function HuntClient() {
     }
     setQuizCorrect(correct);
     setPhase("RESULT");
-  }, [animal, addLog, catchAnimal, spawnHearts]);
+  }, [animal, addLog, kidId, spawnHearts]);
 
   // ── たんけんをつづける ─────────────────────────────────────
   const doContinue = useCallback(() => {

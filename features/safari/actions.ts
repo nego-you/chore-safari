@@ -559,3 +559,54 @@ export async function resolveActiveHunt(
   const isHit = precision >= 0.65;
   return resolveTrap(huntId, isHit);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// アクティブ狩り(HuntClient)のクイズ捕獲を DB(CaughtAnimal) に記録する。
+//   HuntClient はクイズ正解で動物を「ともだち」にする。これを図鑑へ永続化し、
+//   図鑑・レース・倉庫など「DB を唯一のソース」とする他機能と整合させる。
+//   animalSlug は Animal.animalId（HuntClient の ANIMALS[].id と一致させてある）。
+// ─────────────────────────────────────────────────────────────────────────────
+export type RecordHuntCatchResult =
+  | { success: true; animalName: string }
+  | { success: false; error: string };
+
+export async function recordActiveHuntCatch(
+  kidId: string,
+  animalSlug: string,
+): Promise<RecordHuntCatchResult> {
+  try {
+    const [kid, animal] = await Promise.all([
+      prisma.user.findFirst({
+        where: { id: kidId, role: "CHILD" },
+        select: { id: true },
+      }),
+      prisma.animal.findUnique({
+        where: { animalId: animalSlug },
+        select: { id: true, name: true, genericName: true, lifespanYears: true },
+      }),
+    ]);
+    if (!kid) return { success: false, error: "ユーザーが見つかりません" };
+    if (!animal) return { success: false, error: `どうぶつ(${animalSlug})が見つかりません` };
+
+    const lifespanDays = animal.lifespanYears ?? 10;
+    const expiresAt = new Date(Date.now() + lifespanDays * 24 * 60 * 60 * 1000);
+
+    await prisma.caughtAnimal.create({
+      data: {
+        animalId: animal.id,
+        caughtByUserId: kid.id,
+        expiresAt,
+        isAlive: true,
+      },
+    });
+
+    revalidatePath(`/kids/${kidId}/dictionary`);
+    revalidatePath(`/kids/${kidId}/warehouse`);
+    revalidatePath(`/kids/${kidId}/race`);
+
+    return { success: true, animalName: animal.genericName || animal.name };
+  } catch (err) {
+    console.error("recordActiveHuntCatch failed:", err);
+    return { success: false, error: "捕獲の記録に失敗しました" };
+  }
+}

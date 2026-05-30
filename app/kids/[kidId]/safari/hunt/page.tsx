@@ -14,5 +14,5 @@ export default async function HuntPage({ params }: { params: Params }) {
     select: { id: true, name: true },
   });
   if (!kid) notFound();
-  return <HuntClient />;
+  return <HuntClient kidId={kid.id} />;
 }

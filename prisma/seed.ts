@@ -457,6 +457,14 @@ const QUESTS: QuestSeed[] = [
 //   ※ 同じ genericName 内に複数の specificName を含むよう構成。
 // ─────────────────────────────────────────────────────────────────────────────
 const ANIMALS: AnimalSeed[] = [
+  // ── アクティブ狩り(HuntClient)の図鑑連動用。id は HuntClient の ANIMALS と一致させる ──
+  { animalId: "eagle", genericName: "わし", specificName: "イヌワシ", name: "イヌワシ",
+    emoji: "🦅", rarity: "RARE", stageId: "forest", habitat: "やまや いわばの ある たかい そら",
+    description: "しりょくは にんげんの ８ばい！たかい そらから じめんを はしる ウサギが みえるよ。はばたかずに かぜに のって くるくる まわる「サーマル」で らくに たかく とべる！", lifespanYears: 25 },
+  { animalId: "frog", genericName: "かえる", specificName: "アマガエル", name: "アマガエル",
+    emoji: "🐸", rarity: "COMMON", stageId: "forest", habitat: "みずべや くさむら",
+    description: "ひふで こきゅうも できるし みずも のめるよ！あしの ゆびに すいばんが あって、かがみも のぼれる。あめの まえに よく なくので「てんきよほう カエル」ともよばれるよ！", lifespanYears: 5 },
+
   // ══════════════════════════════════════════
   // 🌳 森林ステージ（〜25種）
   // ══════════════════════════════════════════

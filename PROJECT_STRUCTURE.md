@@ -146,7 +146,7 @@ chore-safari/
 │   └── useSafariStore.ts               # Zustand（コイン/在庫/スタミナ/動物/絆/BGM）
 │
 ├── types/
-│   └── safari.ts                       # ゲーム内型（GameAnimal / InventoryMap / Medal 等）
+│   └── safari.ts                       # ゲーム内型（InventoryMap）
 │
 ├── prisma/
 │   ├── schema.prisma                   # ★現行スキーマ（Hunt/Tool ベース）
@@ -257,14 +257,16 @@ chore-safari/
 ```
 coins              … コイン残高ミラー。ロード時に DB 値でハイドレート、増減後は必ず syncCoins
 inventory          … 在庫ミラー。DB(GameInventoryItem) を正とし、変更は debounce で DB へスナップショット保存
-animalsInYard      … 裏庭に一時保護中の動物（未DB化・今回対象外）
-logisticsQueue     … 物流センターで配送待ちの動物（未DB化・今回対象外）
 stamina            … 体力（0–100）（未DB化）
-medals             … 勲章（未DB化）
 kizunaPoints / kindnessCount / pendingReturns / kizunaBadgeCount  … おたがいさまイベント（未DB化）
 kizunaPlanDate / kizunaPlanKind / kizunaFiredDate                 … 1日1回の発火制御
 bgmMuted / _hydrated（非永続）… BGM ミュート / ハイドレート済みフラグ
+
+※ 動物データ（捕獲）は DB(CaughtAnimal) が唯一のソース。旧 animalsInYard/logisticsQueue/medals/_stats は撤去済み。
 ```
+
+> パッシブ罠（SafariClient）に加え、**アクティブ狩り（HuntClient）の捕獲も DB CaughtAnimal に永続化**するようになった
+> （`recordActiveHuntCatch`）。図鑑・レース・倉庫・他端末すべてに反映される。
 
 ### DB（Prisma）が正として扱う領域
 
@@ -318,7 +320,14 @@ Quest / QuestSubmission / Penalty / 通知系 / GachaTransaction
    クレーンは `UserMaterial`(DB) と `GameInventoryItem`(DB) の両方に素材を書く。将来 `Material`/`UserMaterial`/`UserTool` と統廃合を検討。
 
 5. **未DB化のゲーム状態（残課題）**
-   `animalsInYard` / `logisticsQueue` / `stamina` / `medals` / Kizuna は今も Zustand のみ。必要なら同様に DB 化する。
+   `stamina` / Kizuna（おたがいさま）は今も Zustand のみ。必要なら同様に DB 化する。
+
+6. **アクティブ狩りのゲームバランス（要判断）**
+   クイズ正解＝即 図鑑入りで回数制限なし（DBの `dailyHuntCount` 限度は HuntClient では未適用）。コイン付与の有無も含め、パッシブ罠との役割分担を要検討。
+
+### 対応済み（2026-05-31）
+
+- ✅ **動物データの SSoT 統一**：デッドだった Zustand 動物状態（`animalsInYard`/`logisticsQueue`/`catchAnimal`/`sendToLogistics`/`shipTruck`/`medals`/`_stats`）を撤去し、**DB `CaughtAnimal` を唯一の動物ソース**に。アクティブ狩り（HuntClient）の捕獲も `recordActiveHuntCatch` で図鑑へ永続化（id不一致を解消、`eagle`/`frog` を図鑑に追加し計141種）。
 
 ### 対応済み（2026-05-30）
 
