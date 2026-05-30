@@ -12,7 +12,7 @@ import { generateText } from "ai";
 import { z } from "zod";
 
 export const GEMINI_MODEL_NAME =
-  process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+  process.env.GEMINI_MODEL ?? "gemini-3.5-flash";
 
 /** GEMINI_API_KEY を注入した Google プロバイダーを生成する */
 function createProvider() {

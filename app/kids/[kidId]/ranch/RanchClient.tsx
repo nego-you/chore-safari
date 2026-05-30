@@ -9,6 +9,7 @@
 //     feed(coins)  → spendCoins(FEED_COST)
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useSafariStore } from "@/store/useSafariStore";
+import { adjustCoins } from "@/features/coins/actions";
 
 // ============================================================
 // Type Definitions
@@ -265,6 +266,8 @@ export default function RanchClient() {
   const addToInventory  = useSafariStore((s) => s.addToInventory);
   const consumeInventory = useSafariStore((s) => s.consumeInventory);
   const spendCoins     = useSafariStore((s) => s.spendCoins);
+  const syncCoins      = useSafariStore((s) => s.syncCoins);
+  const addCoins       = useSafariStore((s) => s.addCoins);
 
   // 便利ゲッター（インベントリ内の草・にんじん・フン）
   const grassCount  = storeInventory["grass"]  ?? 0;
@@ -443,7 +446,19 @@ export default function RanchClient() {
     } else if (foodType === "carrot") {
       consumeInventory("carrot", 1);
     } else {
+      // コインは DB が権威。楽観的に減らしつつサーバで確定し、結果で同期する。
       spendCoins(FEED_COST);
+      const kidId = useSafariStore.getState().activeKidId;
+      if (kidId) {
+        void adjustCoins(kidId, -FEED_COST, "ADJUSTMENT", "牧場のエサ代").then((r) => {
+          if (r.success) {
+            syncCoins(r.newCoinBalance);
+          } else {
+            addCoins(FEED_COST); // サーバ拒否時はローカルを戻す
+            addToast("🪙 コインが たりないよ！", "refuse");
+          }
+        });
+      }
     }
 
     setAnimals(prev => prev.map(x => {
@@ -460,7 +475,7 @@ export default function RanchClient() {
       : `😊 ${a.name} が もぐもぐ！しばらくすると💩するよ`;
     addToast(msg, "success");
     setTimeout(() => setAnimals(prev => prev.map(x => x.id === animalId ? { ...x, state: "idle" } : x)), 950);
-  }, [spawnParticles, addToast, consumeInventory, spendCoins]);
+  }, [spawnParticles, addToast, consumeInventory, spendCoins, syncCoins, addCoins]);
 
   // -- drag handlers --
   const onDragStart = useCallback((e: React.MouseEvent | React.TouchEvent, type: FoodType) => {

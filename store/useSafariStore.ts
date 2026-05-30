@@ -134,6 +134,24 @@ export interface SafariState {
   /** サーバーレスポンスの newCoinBalance でコインを直接上書きする（クレーン等） */
   syncCoins: (amount: number) => void;
 
+  /**
+   * @internal ロード時にサーバ(DB)値でハイドレート済みか。
+   * 永続化しないため毎ロード false で始動する（→必ず一度 DB から読み直す）。
+   */
+  _hydrated: boolean;
+  /**
+   * ページロード時に DB の値でストアを初期化する（DB = Single Source of Truth）。
+   *   - coins は毎回 DB 値で上書き（親の Bank 承認・他端末の変化を反映）。
+   *   - inventory はセッション初回 or kid 変更時のみ DB 値を採用し、
+   *     以降はストア（debounce で DB に保存）を作業コピーとする。
+   *   - kid が変わった時だけ非DBゲーム状態（スタミナ・勲章・絆等）をリセット。
+   */
+  hydrateFromServer: (
+    kidId: string,
+    coinBalance: number,
+    inventory: InventoryMap,
+  ) => void;
+
   /** コインを増やす */
   addCoins: (amount: number) => void;
   /** コインを使う。残高不足なら false を返して消費しない */
@@ -228,6 +246,7 @@ export const useSafariStore = create<SafariState>()(
       activeKidId: null,
       coins: 0,
       bgmMuted: false,
+      _hydrated: false,
       ...INITIAL_GAME_STATE,
 
       // ── ユーザー切り替え ──────────────────────────────────
@@ -247,6 +266,21 @@ export const useSafariStore = create<SafariState>()(
         })),
 
       syncCoins: (amount) => set({ coins: amount }),
+
+      hydrateFromServer: (kidId, coinBalance, inventory) =>
+        set((s) => {
+          const kidChanged = s.activeKidId !== kidId;
+          const needInventory = kidChanged || !s._hydrated;
+          return {
+            // kid が変わった時だけ非DBゲーム状態をリセット
+            ...(kidChanged ? INITIAL_GAME_STATE : {}),
+            // inventory はセッション初回 or kid 変更時のみ DB 値を採用（在庫上書き）
+            ...(needInventory ? { inventory } : {}),
+            activeKidId: kidId,
+            coins: coinBalance, // DB 常に勝ち
+            _hydrated: true,
+          };
+        }),
 
       addCoins: (amount) =>
         set((s) => ({ coins: s.coins + amount })),

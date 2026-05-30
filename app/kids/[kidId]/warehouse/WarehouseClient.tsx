@@ -11,6 +11,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { claimGraduationReward } from "../actions";
 import type { GraduationRewardResult } from "../actions";
+import { useSafariStore } from "@/store/useSafariStore";
 
 type StageProgress = {
   stageId: string;
@@ -230,6 +231,7 @@ export function WarehouseClient({
   const [selectedTool, setSelectedTool] = useState<ToolEntry | null>(null);
   const [graduationTarget, setGraduationTarget] = useState<MyAnimalEntry | null>(null);
   const [claimedResult, setClaimedResult] = useState<(GraduationRewardResult & { success: true }) | null>(null);
+  const syncCoins = useSafariStore((s) => s.syncCoins);
 
   const trapParts = inventory.filter((i) => i.itemType === "TRAP_PART");
 
@@ -242,6 +244,7 @@ export function WarehouseClient({
   function handleClaimed(result: GraduationRewardResult) {
     setGraduationTarget(null);
     if (result.success) {
+      syncCoins(result.newCoinBalance); // DB 確定値をストアに反映（ヘッダー即更新）
       setClaimedResult(result);
       setTimeout(() => setClaimedResult(null), 3000);
     }

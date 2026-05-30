@@ -119,11 +119,13 @@ chore-safari/
 │   └── KizunaEventDialog.tsx           # おたがいさまイベント UI
 │
 ├── features/                           # 機能ドメイン別 Server Actions
+│   ├── coins/actions.ts                # コイン増減（adjustCoins・トランザクション）★2026-05-30
+│   ├── inventory/actions.ts            # 在庫の取得/スナップショット保存 ★2026-05-30
 │   ├── craft/actions.ts                # クラフト
 │   ├── crane/actions.ts                # クレーンゲーム
 │   ├── gacha/actions.ts                # ガチャ
 │   ├── quest/actions.ts                # クエスト申請・承認
-│   ├── race/actions.ts                 # レース
+│   ├── race/actions.ts                 # レース（ベット確定）
 │   ├── safari/actions.ts               # 狩り（罠設置・タイミング判定・捕獲）
 │   └── notifications/actions.ts        # ボーナス/ペナルティ通知
 │
@@ -238,6 +240,7 @@ chore-safari/
 | `SharedInventoryItem` | 家族共有インベントリ（倉庫） |
 | `GachaTransaction` | ガチャ履歴 |
 | `UserActivity` | 機能利用履歴（AI ガイドの未利用機能誘導に使用） |
+| `GameInventoryItem` | ゲーム内の流動在庫（`itemKey`×`quantity`／単一書き手・スナップショット同期）★2026-05-30 追加 |
 
 > ⚠️ 旧構想にあった `TameSession` / `TameItemMaster` / `AnimalCompanion` / `PoopLog` / `FarmPlot` /
 > `NpcRelation` / `UserInventoryItem` / `DonationNotification` などは **存在しません**。
@@ -246,37 +249,39 @@ chore-safari/
 
 ## 状態管理の実態
 
-> ⚠️ **重要**: 旧ドキュメントは「DB = Single Source of Truth、Zustand は UI 状態のみ」と規定していましたが、
-> **現状はその方針どおりになっていません**。ゲーム内経済の多くが Zustand + localStorage に保持されています。
+> 2026-05-30 に **コイン・在庫を DB 権威化**するリファクタを実施（案B）。設計は [docs/COIN_INVENTORY_REFACTOR.md](docs/COIN_INVENTORY_REFACTOR.md)。
+> Zustand は「常に DB 値で上書きされるミラー」として運用する方針に変更。
 
 ### Zustand（[store/useSafariStore.ts](store/useSafariStore.ts)・`persist` で localStorage 永続化）
 
 ```
-coins              … ゲーム内コイン残高（DB の coinBalance とは別管理。initCoins/syncCoins で同期）
-inventory          … 素材・作物などの所持マップ
-animalsInYard      … 裏庭に一時保護中の動物
-logisticsQueue     … 物流センターで配送待ちの動物
-stamina            … 体力（0–100）
-medals             … 勲章
-kizunaPoints / kindnessCount / pendingReturns / kizunaBadgeCount  … おたがいさまイベント
+coins              … コイン残高ミラー。ロード時に DB 値でハイドレート、増減後は必ず syncCoins
+inventory          … 在庫ミラー。DB(GameInventoryItem) を正とし、変更は debounce で DB へスナップショット保存
+animalsInYard      … 裏庭に一時保護中の動物（未DB化・今回対象外）
+logisticsQueue     … 物流センターで配送待ちの動物（未DB化・今回対象外）
+stamina            … 体力（0–100）（未DB化）
+medals             … 勲章（未DB化）
+kizunaPoints / kindnessCount / pendingReturns / kizunaBadgeCount  … おたがいさまイベント（未DB化）
 kizunaPlanDate / kizunaPlanKind / kizunaFiredDate                 … 1日1回の発火制御
-bgmMuted           … BGM ミュート
+bgmMuted / _hydrated（非永続）… BGM ミュート / ハイドレート済みフラグ
 ```
 
 ### DB（Prisma）が正として扱う領域
 
 ```
-coinBalance（親の承認・ペナルティで増減）/ CoinTransaction
+coinBalance（親の承認・ゲーム両方／全増減トランザクション）/ CoinTransaction
+GameInventoryItem（草・石・うんち・作物・素材などの流動在庫）★今回追加
 CaughtAnimal（図鑑）/ Hunt / Tool / Material / UserMaterial / UserTool
 Quest / QuestSubmission / Penalty / 通知系 / GachaTransaction
 ```
 
-### コインの二重管理に注意
+### コインと在庫の同期ルール（DB = Single Source of Truth）
 
-- `coinBalance`（DB）… 親の承認フロー（Bank）・クレーン/ガチャの API がトランザクションで増減。
-- `coins`（Zustand）… ページロード時に DB 値で初期化（`initCoins`）し、サーバー応答で上書き（`syncCoins`）するが、
-  ゲーム内の `addCoins`/`spendCoins` はクライアントローカルでも増減する。
-- → **DB と localStorage が乖離しうる**。詳細は [既知の課題](#既知の課題技術的負債) を参照。
+- **コイン**は書き手が2人（子供のゲーム＋親の Bank）。必ずトランザクション型サーバアクションで
+  increment/decrement（[features/coins/actions.ts](features/coins/actions.ts) の `adjustCoins`、クレーン/レース/クイズ/卒業も同様）→ 戻り値で `syncCoins`。
+- **在庫**は書き手が1人（子供本人）。[features/inventory/actions.ts](features/inventory/actions.ts) の `getInventory`/`saveInventory` で
+  ロード時ハイドレート＋ debounce スナップショット保存（last-write-wins）。同期は [SafariLayoutShell](app/kids/[kidId]/SafariLayoutShell.tsx) が常駐制御。
+- ロード時は [layout.tsx](app/kids/[kidId]/layout.tsx) が DB から coins+inventory を読み、`hydrateFromServer` で**必ず DB 値を採用**。
 
 ---
 
@@ -296,28 +301,32 @@ Quest / QuestSubmission / Penalty / 通知系 / GachaTransaction
 
 ## 既知の課題・技術的負債
 
-ドキュメント整理にあたり確認できた改善候補です。
+確認できた改善候補です。
 
-1. **コインの二重管理（最重要・未対応）**
-   DB の `coinBalance` と Zustand/localStorage の `coins` が並存し、`addCoins`/`spendCoins` はローカルのみで増減する経路がある。
-   リロード・複数端末・タブ間で残高が乖離しうる。**コイン増減を Server Action 経由に一本化**し、Zustand はキャッシュに徹するのが望ましい。
-
-2. **`guild/` と `quests/` の役割重複（未対応）**
+1. **`guild/` と `quests/` の役割重複（未対応）**
    ワールドマップは `quests` に直行する一方、`guild/` ハブも存在。導線を整理するか、片方をリダイレクトに。
 
-3. **`typescript.ignoreBuildErrors: true`（要判断）**
+2. **`typescript.ignoreBuildErrors: true`（要判断）**
    Next.js 16 の日本語ソースでの code-frame パニック回避が理由（[next.config.ts](next.config.ts) のコメント参照）だが、
    本番ビルドが型エラーを素通しする状態。CI 等で別途 `tsc --noEmit` を回す運用が望ましい。
 
-4. **狩り（武器）世界観の温度感（要判断）**
+3. **狩り（武器）世界観の温度感（要判断）**
    README のコアサイクルは「狩り・武器」を前提にしている。旧構想の「友好的なテイム」への揺り戻しを今後やるかは要判断
    （本ドキュメントは現状を正として記述）。
 
+4. **在庫 vs 旧素材モデルの二重持ち（残課題）**
+   クレーンは `UserMaterial`(DB) と `GameInventoryItem`(DB) の両方に素材を書く。将来 `Material`/`UserMaterial`/`UserTool` と統廃合を検討。
+
+5. **未DB化のゲーム状態（残課題）**
+   `animalsInYard` / `logisticsQueue` / `stamina` / `medals` / Kizuna は今も Zustand のみ。必要なら同様に DB 化する。
+
 ### 対応済み（2026-05-30）
 
+- ✅ **コインの二重管理を解消**：全コイン増減をトランザクション型サーバアクションに集約（牧場エサやりを `adjustCoins` 化、卒業報酬の `syncCoins` 漏れ修正）。ロード時は DB 値で必ずハイドレート。設計＝[docs/COIN_INVENTORY_REFACTOR.md](docs/COIN_INVENTORY_REFACTOR.md)。
+- ✅ **在庫を DB 化**：`GameInventoryItem` 追加＋ `getInventory`/`saveInventory`＋ debounce スナップショット同期。
 - ✅ `docker-compose.yml` の死んだ `OLLAMA_HOST` を削除（web / web-prod）。
 - ✅ [lib/ai-guide.ts](lib/ai-guide.ts) の旧 Ollama コメントを Gemini に修正。
-- ✅ [lib/gemini.ts](lib/gemini.ts) の既定モデルを廃止済み `gemini-1.5-flash` → `gemini-2.5-flash` に統一（compose と一致）。
+- ✅ [lib/gemini.ts](lib/gemini.ts) の既定モデルを廃止済み `gemini-1.5-flash` から最新へ統一（compose と一致）。
 - ✅ 孤立していたレース実況 API（`app/api/race`・`app/api/race/generate`）と疎通スクリプト `scripts/test-race-api.mjs` を削除。陳腐化していたレースの E2E テストも除去。**Ollama 依存はコードベースから消滅**。
 
 ---

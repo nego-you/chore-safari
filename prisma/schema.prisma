@@ -140,6 +140,7 @@ model User {
   userMaterials      UserMaterial[]
   userTools          UserTool[]
   activities         UserActivity[]
+  gameInventory      GameInventoryItem[]
   // 専用クエストの対象となる場合
   targetedQuests     Quest[]
   // 専用ペナルティの対象となる場合
@@ -529,4 +530,24 @@ model Penalty {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@map("penalties")
+}
+
+// ─────────────────────────────────────────────────────────────
+// ゲーム内インベントリ（草・石・うんち・作物・素材など自由形式キー）。
+//   1ユーザー × 1 itemKey で1行。書き手は子供本人のみ（単一書き手）なので
+//   スナップショット同期（last-write-wins）で運用する。
+//   コインは別管理（User.coinBalance + CoinTransaction）。混在させないこと。
+// ─────────────────────────────────────────────────────────────
+model GameInventoryItem {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemKey   String   @map("item_key")   // "grass" / "stone" / "poop" / "carrot" / "wood_branch" ...
+  quantity  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, itemKey])
+  @@index([userId])
+  @@map("game_inventory_items")
 }

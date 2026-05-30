@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { SafariLayoutShell } from "./SafariLayoutShell";
 import type { GuideInfo } from "./GuideContext";
+import { getInventory } from "@/features/inventory/actions";
 
 type Params = Promise<{ kidId: string }>;
 
@@ -53,6 +54,9 @@ export default async function KidLayout({
 
   if (!kid) notFound();
 
+  // ゲーム内インベントリを DB から取得（ストアのハイドレート用）
+  const initialInventory = await getInventory(kid.id);
+
   const initialGuide: GuideInfo = kid.activeGuideAnimal
     ? {
         id: kid.activeGuideAnimal.id,
@@ -67,6 +71,7 @@ export default async function KidLayout({
       kidId={kid.id}
       kidName={kid.name}
       coinBalance={kid.coinBalance}
+      initialInventory={initialInventory}
       currentStreak={kid.currentStreak ?? 0}
       longestStreak={kid.longestStreak ?? 0}
       streakStatus={kid.streakStatus ?? "ACTIVE"}
