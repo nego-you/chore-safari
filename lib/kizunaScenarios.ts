@@ -2,14 +2,20 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // 「おたがいさま」イベントのシナリオ・プール
 //
-// 設計方針（Notion「助ける」より）:
-//   - 助ける選択肢は たくさん。アイテムが無くても 善意で 助けられる。
-//   - 見返りを ほのめかさない（「何かあるかも」は出さない）。
-//   - お返しは「恩着せがましくない」＝ おたがいさま の対等なトーンで。
-//
-// ASK   … だれかが こまっている。プレイヤーは善意で手助けする。
-// RETURN … 以前 助けた おかげで、だれかが さりげなく 手を貸してくれる。
+// ASK   … だれかが こまっている。プレイヤーは 3つの選択肢（やさしい／ふつう／いじわる）で答える。
+//         → 相手の顔（嬉しい・ふつう・かなしい）と反応が変わり、やさしい選択のときだけ
+//           「恩返し（お返し）」がたまる。
+// RETURN … 以前 やさしくした おかげで、だれかが さりげなく 手を貸してくれる。
 // ─────────────────────────────────────────────────────────────────────────────
+
+export type KizunaChoiceKind = "kind" | "normal" | "mean";
+
+export interface KizunaChoice {
+  /** ボタンのラベル */
+  label: string;
+  /** 選んだ後の相手のセリフ */
+  reaction: string;
+}
 
 export interface KizunaAsk {
   id: string;
@@ -21,10 +27,10 @@ export interface KizunaAsk {
   color: string;
   /** こまっている人のセリフ（\n で改行） */
   plea: string;
-  /** 手助けボタンのラベル */
-  action: string;
-  /** 手助けしたあとの お礼（純粋な善意・見返りを匂わせない） */
-  thanks: string;
+  /** 3つの選択肢 */
+  kind: KizunaChoice;
+  normal: KizunaChoice;
+  mean: KizunaChoice;
 }
 
 export interface KizunaReturn {
@@ -38,7 +44,27 @@ export interface KizunaReturn {
   deed: string;
 }
 
-// ─── お願い（ASK）：すべて アイテム不要。タップひとつで 善意で 助けられる ──────
+// ─── 選択の結果メタ：顔・トーン・恩返しの有無・善行ポイント ──────────────────
+export const KIZUNA_CHOICE_META: Record<
+  KizunaChoiceKind,
+  {
+    /** 選んだ後に立ち絵に重ねる「顔」 */
+    face: string;
+    tone: "happy" | "normal" | "sad";
+    /** この選択で「お返し」がたまるか（やさしい時だけ true） */
+    grantReturn: boolean;
+    /** 善行ポイントの増分 */
+    points: number;
+    /** 結果バナーの一言 */
+    note: string;
+  }
+> = {
+  kind:   { face: "😊", tone: "happy",  grantReturn: true,  points: 10, note: "やさしくすると こころが あったかく なるね 💚" },
+  normal: { face: "🙂", tone: "normal", grantReturn: false, points: 3,  note: "ちょっとの しんせつも うれしいね 🙂" },
+  mean:   { face: "😢", tone: "sad",    grantReturn: false, points: 0,  note: "つぎは やさしく できると いいね…" },
+};
+
+// ─── お願い（ASK）：3択（やさしい／ふつう／いじわる）───────────────────────────
 export const KIZUNA_ASKS: KizunaAsk[] = [
   {
     id: "grandma-bag",
@@ -46,8 +72,9 @@ export const KIZUNA_ASKS: KizunaAsk[] = [
     name: "おばあちゃん",
     color: "#e8c87a",
     plea: "にもつが おもくてね…\nそこまで はこぶのを\nてつだって くれないかい？",
-    action: "🤲 にもつを はこぶ",
-    thanks: "ありがとう！\nたすかったよ、いい子だねぇ。",
+    kind:   { label: "🤲 ぜんぶ はこんで あげる", reaction: "ありがとう！\nたすかったよ、いい子だねぇ。" },
+    normal: { label: "🙂 ちょっとだけ もつ",       reaction: "ありがとうね。\nすこし らくに なったよ。" },
+    mean:   { label: "🙅 むしして とおる",         reaction: "そう…。\nしょんぼり して しまった…" },
   },
   {
     id: "lost-child",
@@ -55,8 +82,9 @@ export const KIZUNA_ASKS: KizunaAsk[] = [
     name: "まいごの子",
     color: "#8ad0e8",
     plea: "ママと はぐれちゃった…\nいっしょに さがすの\nてつだって くれる？",
-    action: "🙋 いっしょに さがす",
-    thanks: "ママ みつかった！\nきみの おかげだよ、ありがとう！",
+    kind:   { label: "🙋 いっしょに さがす",   reaction: "ママ みつかった！\nきみの おかげだよ、ありがとう！" },
+    normal: { label: "🙂 ばしょを おしえる",   reaction: "うん、いってみる。\nありがとう。" },
+    mean:   { label: "🙅 しらんぷり する",     reaction: "…ひとりで さがすね。\nなきそうな かおを している…" },
   },
   {
     id: "kitten-tree",
@@ -64,8 +92,9 @@ export const KIZUNA_ASKS: KizunaAsk[] = [
     name: "こねこ",
     color: "#f0b6c8",
     plea: "（き の うえで\nおりられず ないている…）\nたすけて あげる？",
-    action: "🐾 そっと おろす",
-    thanks: "ニャー♪\nこねこは うれしそうに\nすりよってきた。",
+    kind:   { label: "🐾 そっと おろす",     reaction: "ニャー♪\nこねこは うれしそうに\nすりよってきた。" },
+    normal: { label: "🙂 したで みまもる",   reaction: "ニャ…\nなんとか じぶんで おりてきた。" },
+    mean:   { label: "🙅 そのまま いく",     reaction: "ニャーン…\nこねこは さみしそう…" },
   },
   {
     id: "grandpa-bench",
@@ -73,8 +102,9 @@ export const KIZUNA_ASKS: KizunaAsk[] = [
     name: "おじいさん",
     color: "#c8b89a",
     plea: "ベンチまで あるくのに\nちょっと てを かして\nもらえるかのう？",
-    action: "🤝 てを かす",
-    thanks: "おお、ありがとう。\nやさしい子じゃのう。",
+    kind:   { label: "🤝 てを かす",         reaction: "おお、ありがとう。\nやさしい子じゃのう。" },
+    normal: { label: "🙂 ペースを あわせる", reaction: "うむ、たすかるよ。\nありがとうな。" },
+    mean:   { label: "🙅 さきに いく",       reaction: "…そうか。\nさみしそうに ためいき。" },
   },
   {
     id: "bird-nest",
@@ -82,8 +112,9 @@ export const KIZUNA_ASKS: KizunaAsk[] = [
     name: "ことり",
     color: "#9ad0a0",
     plea: "（ひな が す から\nおちてしまった…）\nもどして あげる？",
-    action: "🪶 すに もどす",
-    thanks: "チチチッ♪\nおやどり が とんできて\nおれいに さえずった。",
+    kind:   { label: "🪶 すに もどす",       reaction: "チチチッ♪\nおやどり が とんできて\nおれいに さえずった。" },
+    normal: { label: "🙂 おやどりを よぶ",   reaction: "チチ…\nおやどりが きて くれた。" },
+    mean:   { label: "🙅 みなかった ことに", reaction: "ピヨ…\nひなが ふるえて いる…" },
   },
   {
     id: "farmer-water",
@@ -91,8 +122,9 @@ export const KIZUNA_ASKS: KizunaAsk[] = [
     name: "となりの のうかさん",
     color: "#b6d98a",
     plea: "みずやりが おわらなくて\nこまってるんだ。\nちょっと てつだって くれる？",
-    action: "💧 みずやりを てつだう",
-    thanks: "はやく おわった！\nありがとう、おかげで\nひとやすみ できるよ。",
+    kind:   { label: "💧 みずやりを てつだう", reaction: "はやく おわった！\nありがとう、おかげで\nひとやすみ できるよ。" },
+    normal: { label: "🙂 はんぶん てつだう",   reaction: "たすかるよ、ありがとう。" },
+    mean:   { label: "🙅 ことわる",            reaction: "そうか…。\nがっかり した みたい…" },
   },
   {
     id: "kid-toy",
@@ -100,13 +132,13 @@ export const KIZUNA_ASKS: KizunaAsk[] = [
     name: "ちいさい子",
     color: "#e8b8e0",
     plea: "おもちゃが みぞに\nおっこちちゃった…\nとって くれる？",
-    action: "✋ ひろって あげる",
-    thanks: "わーい！\nありがとう、おにいちゃん／おねえちゃん！",
+    kind:   { label: "✋ ひろって あげる",     reaction: "わーい！\nありがとう、おにいちゃん／おねえちゃん！" },
+    normal: { label: "🙂 とりかたを おしえる", reaction: "じぶんで とれた！\nありがとう。" },
+    mean:   { label: "🙅 むしする",            reaction: "…ぐすん。\nかなしそう だ…" },
   },
 ];
 
-// ─── お返し（RETURN）：以前 助けた おかげで、さりげなく 手を貸してくれる ────────
-// すべて「おたがいさま」の対等なトーン。恩着せがましくしない。
+// ─── お返し（RETURN）：以前 やさしくした おかげで、さりげなく 手を貸してくれる ───
 export const KIZUNA_RETURNS: KizunaReturn[] = [
   {
     id: "carpenter",

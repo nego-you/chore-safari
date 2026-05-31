@@ -111,8 +111,14 @@ export interface SafariState {
 
   // ── おたがいさまイベントアクション ────────────────────────
   /**
-   * だれかを善意で手助けしたときに呼ぶ。
-   * kindnessCount++、pendingReturns++（あとで1回ぶん返ってくる）、kizunaPoints+=10。
+   * 3択（やさしい／ふつう／いじわる）の結果を反映する。
+   *   grantReturn=true（やさしい）のときだけ kindnessCount++・pendingReturns++（あとでお返しが返ってくる）。
+   *   points は善行ポイントの増分。
+   */
+  recordKizunaResult: (grantReturn: boolean, points: number) => void;
+  /**
+   * だれかを善意で手助けしたときに呼ぶ（旧API・recordKizunaResult(true,10) と同等）。
+   * kindnessCount++、pendingReturns++、kizunaPoints+=10。
    */
   recordKindness: () => void;
   /**
@@ -212,6 +218,13 @@ export const useSafariStore = create<SafariState>()(
         set((s) => ({ stamina: Math.min(100, s.stamina + amount) })),
 
       // ── おたがいさまイベント ──────────────────────────────
+      recordKizunaResult: (grantReturn, points) =>
+        set((s) => ({
+          kindnessCount: s.kindnessCount + (grantReturn ? 1 : 0),
+          pendingReturns: s.pendingReturns + (grantReturn ? 1 : 0),
+          kizunaPoints: s.kizunaPoints + (points || 0),
+        })),
+
       recordKindness: () =>
         set((s) => ({
           kindnessCount: s.kindnessCount + 1,
