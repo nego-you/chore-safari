@@ -538,6 +538,7 @@ export function QuizClient({ initialKidId, kids }: Props) {
         prefetchRef.current = null;
       }
       if (!q) q = await fetchQuestion(genre.label, used, difficulty.id);
+      if (!q) { setError("問題の取得に しっぱいしたよ。もういちど ためしてね"); setLoading(false); return; }
       if (!q.phrases || !(q.phrases as string[]).length) q.phrases = [(q.question as string) || "問題"];
       const phrases = q.phrases as string[];
       const newUsed = [...used, phrases.join("")];

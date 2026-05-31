@@ -63,7 +63,8 @@ services:
       NODE_ENV: development
       DATABASE_URL: postgresql://chore:chore@db:5432/chore_safari?schema=public
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
+      # 既定モデルは lib/gemini.ts（gemini-flash-latest）に集約。固定したい時だけ .env で GEMINI_MODEL を指定。
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
       # FastAPI TTS ブリッジ（/api/synthesize プロキシ先）
       BACKEND_URL: http://backend:8000
       WATCHPACK_POLLING: "true"
@@ -88,7 +89,8 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgresql://chore:chore@db:5432/chore_safari?schema=public
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
+      # 既定モデルは lib/gemini.ts（gemini-flash-latest）に集約。固定したい時だけ .env で GEMINI_MODEL を指定。
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
       # FastAPI TTS ブリッジ（/api/synthesize プロキシ先）
       BACKEND_URL: http://backend:8000
     ports:

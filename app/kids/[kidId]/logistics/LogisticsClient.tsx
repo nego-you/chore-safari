@@ -1,3 +1,8 @@
+// @ts-nocheck
+// TODO(型付け): このファイルは JS 由来で未型付け（props/useState/DOM ref が any）。
+//   型安全ゲート(ignoreBuildErrors:false)を全体で有効化するため、暫定的にこの1ファイルのみ
+//   型チェックを除外している。安定稼働中の物流ミニゲーム。将来 Item/Order/QueueEntry 等を
+//   型付けして @ts-nocheck を外すこと。
 "use client";
 // ★ Zustand 統合:
 //   BEFORE: InventoryContext（ローカル useState）でインベントリを管理していた

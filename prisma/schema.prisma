@@ -110,11 +110,22 @@ model User {
   lastHuntDate      DateTime?          @map("last_hunt_date")
   // テスト用フラグ：true の場合、コイン・回数制限をすべてバイパスする
   isTestAccount     Boolean            @default(false) @map("is_test")
-  // ── 恩送り（ペイ・フォワード）イベント管理 ─────────────────────
-  //   kizunaPoints   : 善行の累積ポイント（非公開）
-  //   helpedGrandma  : おばあちゃんを助けたフラグ（Phase2/3 の引き金）
+  // ── 恩送り（ペイ・フォワード / おたがいさま）イベント管理 ─────────
+  //   kizunaPoints     : 善行の累積ポイント（非公開）
+  //   helpedGrandma    : おばあちゃんを助けたフラグ（Phase2/3 の引き金）
+  //   kindnessCount    : これまでに善意で手助けした回数（累計）
+  //   pendingReturns   : まだ返ってきていない「お返し手助け」の残数
+  //   kizunaBadgeCount : 受け取ったお返しの累計（絆の証）
+  //   kizunaPlanDate / kizunaPlanKind / kizunaFiredDate : 1日1回の発火制御
+  //   ※ 書き手は子供本人のみ。スナップショット同期（last-write-wins）で運用。
   kizunaPoints      Int                @default(0) @map("kizuna_points")
   helpedGrandma     Boolean            @default(false) @map("helped_grandma")
+  kindnessCount     Int                @default(0) @map("kindness_count")
+  pendingReturns    Int                @default(0) @map("pending_returns")
+  kizunaBadgeCount  Int                @default(0) @map("kizuna_badge_count")
+  kizunaPlanDate    String?            @map("kizuna_plan_date")
+  kizunaPlanKind    String?            @map("kizuna_plan_kind")
+  kizunaFiredDate   String?            @map("kizuna_fired_date")
   // ── ストリーク（連続達成ボーナス）管理 ─────────────────────────
   //   currentStreak        : 現在の連続達成日数
   //   longestStreak        : 過去最高の連続達成日数
@@ -137,7 +148,6 @@ model User {
   penaltyNotifications PenaltyNotification[]
   questSubmissions     QuestSubmission[]
   hunts              Hunt[]
-  userMaterials      UserMaterial[]
   userTools          UserTool[]
   activities         UserActivity[]
   gameInventory      GameInventoryItem[]
@@ -464,39 +474,6 @@ model Hunt {
   @@index([targetAnimalId])
   @@index([huntType])
   @@map("hunts")
-}
-
-// ─────────────────────────────────────────────────────────────
-// 素材マスタ：クレーンゲームでドロップする生素材。クラフトで消費する。
-//   1人1行。quantity が 0 でも行は残す（クラフト画面で素材欄を常に表示するため）。
-// ─────────────────────────────────────────────────────────────
-model Material {
-  id            String         @id @default(cuid())
-  materialId    String         @unique @map("material_id")   // "wood_branch" / "stone" / …
-  name          String
-  emoji         String         @default("📦")
-  description   String         @default("")
-  createdAt     DateTime       @default(now()) @map("created_at")
-  updatedAt     DateTime       @updatedAt @map("updated_at")
-  userMaterials UserMaterial[]
-
-  @@map("materials")
-}
-
-// ユーザーごとの素材所持数。
-model UserMaterial {
-  id         String   @id @default(cuid())
-  userId     String   @map("user_id")
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  materialId String   @map("material_id")
-  material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
-  quantity   Int      @default(0)
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
-
-  @@unique([userId, materialId])
-  @@index([userId])
-  @@map("user_materials")
 }
 
 // ユーザーごとの道具所持数（クラフトで増える。TRAPは使い捨て、それ以外は永続）。

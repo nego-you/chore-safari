@@ -14,6 +14,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { InventoryMap } from "@/types/safari";
+import type { KizunaState } from "@/features/kizuna/actions";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // State 型
@@ -73,14 +74,16 @@ export interface SafariState {
   /**
    * ページロード時に DB の値でストアを初期化する（DB = Single Source of Truth）。
    *   - coins は毎回 DB 値で上書き（親の Bank 承認・他端末の変化を反映）。
-   *   - inventory はセッション初回 or kid 変更時のみ DB 値を採用し、
+   *   - inventory / kizuna はセッション初回 or kid 変更時のみ DB 値を採用し、
    *     以降はストア（debounce で DB に保存）を作業コピーとする。
-   *   - kid が変わった時だけ非DBゲーム状態（スタミナ・絆等）をリセット。
+   *   - kid が変わった時だけ非DBゲーム状態（スタミナ等）をリセット。
+   *   - stamina は設計上エフェメラル（ゲーム再開で全回復）のため DB 化しない。
    */
   hydrateFromServer: (
     kidId: string,
     coinBalance: number,
     inventory: InventoryMap,
+    kizuna: KizunaState,
   ) => void;
 
   /** コインを増やす（楽観更新用。直後に必ず syncCoins(server) すること） */
@@ -154,15 +157,15 @@ export const useSafariStore = create<SafariState>()(
       // ── コイン ────────────────────────────────────────────
       syncCoins: (amount) => set({ coins: amount }),
 
-      hydrateFromServer: (kidId, coinBalance, inventory) =>
+      hydrateFromServer: (kidId, coinBalance, inventory, kizuna) =>
         set((s) => {
           const kidChanged = s.activeKidId !== kidId;
-          const needInventory = kidChanged || !s._hydrated;
+          const needSnapshot = kidChanged || !s._hydrated;
           return {
-            // kid が変わった時だけ非DBゲーム状態をリセット
+            // kid が変わった時だけ非DBゲーム状態（スタミナ等）をリセット
             ...(kidChanged ? INITIAL_GAME_STATE : {}),
-            // inventory はセッション初回 or kid 変更時のみ DB 値を採用（在庫上書き）
-            ...(needInventory ? { inventory } : {}),
+            // inventory / kizuna はセッション初回 or kid 変更時のみ DB 値を採用
+            ...(needSnapshot ? { inventory, ...kizuna } : {}),
             activeKidId: kidId,
             coins: coinBalance, // DB 常に勝ち
             _hydrated: true,

@@ -1,13 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // 本番ビルド時の型チェック / lint を Next.js のビルダーで走らせない。
-  // dev サーバ側で常時チェックされているし、Next.js 16 のコードフレーム整形が
-  // 日本語混じりのソースで Rust panic（next-code-frame の UTF-8 境界バグ）を
-  // 起こす既知症状を避けるためにも、ここではビルドだけを通す。
-  // 型エラー自体は VS Code / dev サーバで別途検出する運用にする。
+  // 型安全ゲート：本番ビルドでも型エラーを検出する（2026-05 に ignoreBuildErrors を撤廃）。
+  // 速い検査は `npm run typecheck`（tsc --noEmit）を使う。
+  // 注意: Next.js 16 の code-frame は日本語混じりソースの型エラー整形で Rust panic する
+  //   既知バグがある。型エラーが出た場合は `npm run typecheck` の方が読みやすい
+  //   （tsc は自前で整形するため panic しない）。コードベースは型グリーンを維持すること。
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
 
   experimental: {

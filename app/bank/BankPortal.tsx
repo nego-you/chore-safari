@@ -36,6 +36,8 @@ type SubmissionDTO = {
   userId: string;
   userName: string;
   submittedAt: string;
+  todayNth: number;   // 今日この子がこのクエストを何回申請したか
+  todayTotal: number; // 今日の同クエスト申請総数
 };
 
 type Props = {

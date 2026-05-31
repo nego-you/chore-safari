@@ -39,49 +39,6 @@ const INVENTORY: InventorySeed[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Material マスタ（クレーンゲームドロップ品・クラフト素材）
-// ─────────────────────────────────────────────────────────────────────────────
-type MaterialSeed = {
-  materialId: string;
-  name: string;
-  emoji: string;
-  description: string;
-};
-
-const MATERIALS: MaterialSeed[] = [
-  {
-    materialId: "wood_branch",
-    name: "きのえだ",
-    emoji: "🪵",
-    description: "もりで ひろった じょうぶな えだ。わなや ゆみを つくるのに つかうよ！",
-  },
-  {
-    materialId: "stone",
-    name: "いし",
-    emoji: "🪨",
-    description: "かわらで みつけた するどい いし。ナイフや おもりわなに つかえるよ！",
-  },
-  {
-    materialId: "iron_shard",
-    name: "てつの かけら",
-    emoji: "⚙️",
-    description: "ざっかやで みつけた てつの かけら。じゅうや ナイフを つくるのに ひつようだよ！",
-  },
-  {
-    materialId: "sturdy_rope",
-    name: "じょうぶな イト",
-    emoji: "🪢",
-    description: "ちぎれにくい つよい イト。わなや ゆみの げんに つかうよ！",
-  },
-  {
-    materialId: "gunpowder",
-    name: "かやく",
-    emoji: "💥",
-    description: "じゅうの タマを とばす パワーのもと。あつかいに ちゅうい！",
-  },
-];
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Stage マスタ（生息地カテゴリ）
 // ─────────────────────────────────────────────────────────────────────────────
 type StageSeed = {
@@ -1000,31 +957,12 @@ async function main() {
     console.log(`Seeded tool:  ${upserted.emoji} ${upserted.name} [${upserted.type}]`);
   }
 
-  // Material マスタ
-  for (const m of MATERIALS) {
-    const upserted = await prisma.material.upsert({
-      where: { materialId: m.materialId },
-      update: { name: m.name, emoji: m.emoji, description: m.description },
-      create: { materialId: m.materialId, name: m.name, emoji: m.emoji, description: m.description },
-    });
-    console.log(`Seeded material: ${upserted.emoji} ${upserted.name}`);
-  }
-
-  // テストユーザーに初期素材を付与（各10個）
+  // テストユーザーに全道具を付与
   const testUsers = await prisma.user.findMany({
     where: { isTestAccount: true, role: "CHILD" },
     select: { id: true, name: true },
   });
   for (const user of testUsers) {
-    const materials = await prisma.material.findMany();
-    for (const mat of materials) {
-      await prisma.userMaterial.upsert({
-        where: { userId_materialId: { userId: user.id, materialId: mat.id } },
-        update: {},  // 既存は変えない（量が減っていたら戻さない）
-        create: { userId: user.id, materialId: mat.id, quantity: 10 },
-      });
-    }
-    // テストユーザーに全道具を1個ずつ付与
     const tools = await prisma.tool.findMany();
     for (const tool of tools) {
       await prisma.userTool.upsert({
@@ -1033,7 +971,7 @@ async function main() {
         create: { userId: user.id, toolId: tool.id, quantity: 3 },
       });
     }
-    console.log(`Seeded UserMaterial + UserTool for test user: ${user.name}`);
+    console.log(`Seeded UserTool for test user: ${user.name}`);
   }
 
   // stageId → デフォルト era / location マッピング
@@ -1183,10 +1121,6 @@ async function main() {
     },
   });
 
-  const seedMaterials = await prisma.material.findMany({
-    orderBy: { materialId: "asc" },
-    take: 5,
-  });
   const seedTools = await prisma.tool.findMany({
     orderBy: { toolId: "asc" },
     take: 5,
@@ -1201,18 +1135,6 @@ async function main() {
       where: { id: user.id },
       data: { coinBalance: 1000 },
     });
-
-    for (const material of seedMaterials) {
-      await prisma.userMaterial.upsert({
-        where: { userId_materialId: { userId: user.id, materialId: material.id } },
-        update: {},
-        create: {
-          userId: user.id,
-          materialId: material.id,
-          quantity: 5,
-        },
-      });
-    }
 
     for (const tool of seedTools) {
       await prisma.userTool.upsert({

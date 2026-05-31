@@ -648,7 +648,17 @@ function StaminaBar({ stamina }: { stamina: number }) {
 
 type Phase = "EXPLORE" | "ENCOUNTER" | "APPROACHING" | "QUIZ" | "RESULT" | "GAMEOVER";
 
-export default function HuntClient({ kidId }: { kidId: string }) {
+export default function HuntClient({
+  kidId,
+  huntRemaining,
+  huntLimit,
+}: {
+  kidId: string;
+  huntRemaining: number;
+  huntLimit: number;
+}) {
+  // 1日の捕獲回数（アクティブ狩り）の残り。捕獲成功でサーバ確定値に更新。
+  const [catchRemaining, setCatchRemaining] = useState(huntRemaining);
   const stamina        = useSafariStore((s) => s.stamina);
   const consumeStamina = useSafariStore((s) => s.consumeStamina);
   const restoreStamina = useSafariStore((s) => s.restoreStamina);
@@ -793,19 +803,27 @@ export default function HuntClient({ kidId }: { kidId: string }) {
     if (!animal) return;
     setIsEncounter(false);
     if (correct) {
-      setFriends(prev => [...prev, animal.emoji]);
-      // 図鑑(DB CaughtAnimal)へ永続化。失敗してもゲーム進行は止めない（ログのみ）。
+      // 図鑑(DB CaughtAnimal)へ永続化。1日の回数制限はサーバ側で判定する。
       void recordActiveHuntCatch(kidId, animal.id).then((r) => {
-        if (!r.success) console.warn("[hunt] catch not recorded:", r.error);
+        if (r.success) {
+          setFriends(prev => [...prev, animal.emoji]);
+          setCatchRemaining(r.remaining);
+          addLog(
+            `💖 せいかい！ ${animal.name}と ともだちになれた！（きょうの のこり ${r.remaining}/${huntLimit}）`,
+            "#ec4899",
+          );
+          spawnHearts();
+        } else {
+          // 回数制限などで図鑑に入らなかった場合は ともだちに しない
+          addLog(`🙅 せいかいしたけど…${r.error}`, "#f59e0b");
+        }
       });
-      addLog(`💖 せいかい！ ${animal.name}と ともだちになれた！`, "#ec4899");
-      spawnHearts();
     } else {
       addLog(`😢 ざんねん… ${animal.name}は にげちゃった。`, "#ef4444");
     }
     setQuizCorrect(correct);
     setPhase("RESULT");
-  }, [animal, addLog, kidId, spawnHearts]);
+  }, [animal, addLog, kidId, huntLimit, spawnHearts]);
 
   // ── たんけんをつづける ─────────────────────────────────────
   const doContinue = useCallback(() => {
@@ -928,7 +946,7 @@ export default function HuntClient({ kidId }: { kidId: string }) {
           gap:8, overflowY:"auto",
         }}>
 
-          {/* スタミナ + ともだちカウンター */}
+          {/* スタミナ + ともだちカウンター + きょうの捕獲のこり */}
           <div style={{ display:"flex", gap:10, alignItems:"center" }}>
             <div style={{ flex:1 }}><StaminaBar stamina={stamina} /></div>
             <div style={{
@@ -939,6 +957,18 @@ export default function HuntClient({ kidId }: { kidId: string }) {
               flexShrink:0, whiteSpace:"nowrap",
             }}>
               🐾 {friends.length}ともだち
+            </div>
+            <div
+              title="きょう おうちに つれて かえれる のこり かいすう"
+              style={{
+                fontFamily:"var(--font)", fontSize:12, fontWeight:"bold",
+                color: catchRemaining > 0 ? "#b45309" : "#9ca3af",
+                background: catchRemaining > 0 ? "#fffbeb" : "#f3f4f6",
+                padding:"4px 10px", borderRadius:12,
+                border:"1px solid " + (catchRemaining > 0 ? "#fde68a" : "#e5e7eb"),
+                flexShrink:0, whiteSpace:"nowrap",
+              }}>
+              🎯 のこり {catchRemaining}/{huntLimit}
             </div>
           </div>
 

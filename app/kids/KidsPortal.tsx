@@ -28,7 +28,7 @@ type InventoryItem = {
   itemId: string;
   itemName: string;
   quantity: number;
-  itemType: "FOOD" | "TRAP_PART";
+  itemType: "FOOD" | "TRAP_PART" | "MATERIAL"; // DB enum ItemType に一致
 };
 
 type BonusNotification = {

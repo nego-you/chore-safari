@@ -120,7 +120,7 @@ npm run dev          # http://localhost:3000
 |---|---|---|
 | `DATABASE_URL` | PostgreSQL 接続文字列 | `postgresql://chore:chore@localhost:5433/chore_safari?schema=public` |
 | `GEMINI_API_KEY` | Google AI Studio の API キー（**必須**） | — |
-| `GEMINI_MODEL` | 使用モデル | `gemini-2.5-flash`（compose・コードとも既定） |
+| `GEMINI_MODEL` | 使用モデルを**固定したい時だけ**指定（任意） | 未指定なら `gemini-flash-latest`（常に最新の安定 flash）。既定は [lib/gemini.ts](lib/gemini.ts) に集約 |
 | `BACKEND_URL` | FastAPI TTS ブリッジの URL | `http://backend:8000` |
 | `CLOUDFLARE_TUNNEL_TOKEN` | Cloudflare Tunnel 用トークン | — |
 
@@ -136,6 +136,7 @@ npm run dev          # http://localhost:3000
 | `npm run db:migrate` / `db:reset` | マイグレーション適用 / リセット |
 | `npm run db:seed` / `db:seed:ssr` | シード投入 |
 | `npm run db:studio` | Prisma Studio |
+| `npm run typecheck` | 型チェック（`tsc --noEmit`）。型安全ゲート |
 | `npm run test:e2e`（`:ui` / `:headed` / `:debug`） | Playwright E2E |
 | `npm run icons` | PWA アイコン生成 |
 

@@ -17,7 +17,8 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateText, streamText } from "ai";
 
 const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+// 既定はアプリと同じ rolling エイリアス（lib/gemini.ts の DEFAULT_GEMINI_MODEL と一致）。
+const model = process.env.GEMINI_MODEL || "gemini-flash-latest";
 
 if (!apiKey) {
   console.error("❌ GEMINI_API_KEY is not set in the container env");

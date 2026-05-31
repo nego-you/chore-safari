@@ -567,8 +567,8 @@ export async function resolveActiveHunt(
 //   animalSlug は Animal.animalId（HuntClient の ANIMALS[].id と一致させてある）。
 // ─────────────────────────────────────────────────────────────────────────────
 export type RecordHuntCatchResult =
-  | { success: true; animalName: string }
-  | { success: false; error: string };
+  | { success: true; animalName: string; remaining: number }
+  | { success: false; error: string; limitReached?: boolean };
 
 export async function recordActiveHuntCatch(
   kidId: string,
@@ -578,7 +578,7 @@ export async function recordActiveHuntCatch(
     const [kid, animal] = await Promise.all([
       prisma.user.findFirst({
         where: { id: kidId, role: "CHILD" },
-        select: { id: true },
+        select: { id: true, isTestAccount: true },
       }),
       prisma.animal.findUnique({
         where: { animalId: animalSlug },
@@ -588,24 +588,44 @@ export async function recordActiveHuntCatch(
     if (!kid) return { success: false, error: "ユーザーが見つかりません" };
     if (!animal) return { success: false, error: `どうぶつ(${animalSlug})が見つかりません` };
 
+    // 1日の捕獲回数制限（アクティブ狩り）。新しい日なら _readStaminaWithReset がリセット書き込みする。
+    const sta = await _readStaminaWithReset(kidId);
+    if (!kid.isTestAccount && sta.remaining <= 0) {
+      return { success: false, error: "きょうは もう つかまえられないよ。また あした！", limitReached: true };
+    }
+
     const lifespanDays = animal.lifespanYears ?? 10;
     const expiresAt = new Date(Date.now() + lifespanDays * 24 * 60 * 60 * 1000);
+    const now = new Date();
 
-    await prisma.caughtAnimal.create({
-      data: {
-        animalId: animal.id,
-        caughtByUserId: kid.id,
-        expiresAt,
-        isAlive: true,
-      },
+    const remaining = await prisma.$transaction(async (tx) => {
+      if (!kid.isTestAccount) {
+        // 残り回数がある時だけ条件付きで消費（同時実行の取りこぼし防止）
+        const upd = await tx.user.updateMany({
+          where: { id: kidId, dailyHuntCount: { lt: HUNT_DAILY_LIMIT } },
+          data: { dailyHuntCount: { increment: 1 }, lastHuntDate: now },
+        });
+        if (upd.count !== 1) throw new Error("OUT_OF_LIMIT");
+      }
+      await tx.caughtAnimal.create({
+        data: { animalId: animal.id, caughtByUserId: kid.id, expiresAt, isAlive: true },
+      });
+      const fresh = await tx.user.findUniqueOrThrow({
+        where: { id: kidId },
+        select: { dailyHuntCount: true },
+      });
+      return Math.max(0, HUNT_DAILY_LIMIT - Math.min(fresh.dailyHuntCount, HUNT_DAILY_LIMIT));
     });
 
     revalidatePath(`/kids/${kidId}/dictionary`);
     revalidatePath(`/kids/${kidId}/warehouse`);
     revalidatePath(`/kids/${kidId}/race`);
 
-    return { success: true, animalName: animal.genericName || animal.name };
+    return { success: true, animalName: animal.genericName || animal.name, remaining };
   } catch (err) {
+    if (err instanceof Error && err.message === "OUT_OF_LIMIT") {
+      return { success: false, error: "きょうは もう つかまえられないよ。また あした！", limitReached: true };
+    }
     console.error("recordActiveHuntCatch failed:", err);
     return { success: false, error: "捕獲の記録に失敗しました" };
   }

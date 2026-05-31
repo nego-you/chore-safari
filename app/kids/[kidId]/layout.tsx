@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { SafariLayoutShell } from "./SafariLayoutShell";
 import type { GuideInfo } from "./GuideContext";
 import { getInventory } from "@/features/inventory/actions";
+import { getKizuna } from "@/features/kizuna/actions";
 
 type Params = Promise<{ kidId: string }>;
 
@@ -54,8 +55,11 @@ export default async function KidLayout({
 
   if (!kid) notFound();
 
-  // ゲーム内インベントリを DB から取得（ストアのハイドレート用）
-  const initialInventory = await getInventory(kid.id);
+  // ゲーム内インベントリ・おたがいさま進捗を DB から取得（ストアのハイドレート用）
+  const [initialInventory, initialKizuna] = await Promise.all([
+    getInventory(kid.id),
+    getKizuna(kid.id),
+  ]);
 
   const initialGuide: GuideInfo = kid.activeGuideAnimal
     ? {
@@ -72,6 +76,7 @@ export default async function KidLayout({
       kidName={kid.name}
       coinBalance={kid.coinBalance}
       initialInventory={initialInventory}
+      initialKizuna={initialKizuna}
       currentStreak={kid.currentStreak ?? 0}
       longestStreak={kid.longestStreak ?? 0}
       streakStatus={kid.streakStatus ?? "ACTIVE"}
