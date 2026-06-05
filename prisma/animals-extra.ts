@@ -213,4 +213,132 @@ export const EXTRA_ANIMALS: ExtraAnimal[] = [
     stageId: "forest",
     lifespanYears: 50,
   },
+  // ── あたらしい なかま：ふくろう ──
+  {
+    animalId: "owl_scops",
+    genericName: "ふくろう",
+    specificName: "コノハズク",
+    emoji: "🦉",
+    rarity: "COMMON",
+    description:
+      "てのひらに のるくらい ちいさな ふくろう。「ぶっぽうそう」と なくので むかしの ひとは べつの とりが ないていると おもっていたんだって。",
+    habitat: "アジアの もり",
+    stageId: "forest",
+    lifespanYears: 10,
+  },
+  // ── あたらしい なかま：わし ──
+  {
+    animalId: "eagle_white_tailed",
+    genericName: "わし",
+    specificName: "オジロワシ",
+    emoji: "🦅",
+    rarity: "RARE",
+    description:
+      "しっぽの はねが まっしろな おおきな わし。さかなが だいすきで、みずうみの うえを とびながら つめで さっと つかまえるよ。",
+    habitat: "うみべや みずうみの ちかく",
+    stageId: "forest",
+    lifespanYears: 25,
+  },
+  // ── あたらしい なかま：たか ──
+  {
+    animalId: "hawk_goshawk",
+    genericName: "たか",
+    specificName: "オオタカ",
+    emoji: "🦅",
+    rarity: "RARE",
+    description:
+      "もりの なかを すばやく とびまわる たか。むかしから「たかがり」で ひとと いっしょに かりを する なかよしの とりだったんだよ。",
+    habitat: "もりや のはら",
+    stageId: "forest",
+    lifespanYears: 19,
+  },
+  // ── あたらしい なかま：はやぶさ ──
+  {
+    animalId: "falcon_peregrine",
+    genericName: "はやぶさ",
+    specificName: "ハヤブサ",
+    emoji: "🦅",
+    rarity: "RARE",
+    description:
+      "えものに むかって とぶときの はやさは じそく 300キロ いじょう！どうぶつの なかで いちばん はやく とべる ハンターなんだ。",
+    habitat: "がけや ビルの たかいところ",
+    stageId: "forest",
+    lifespanYears: 15,
+  },
+  // ── あたらしい なかま：へび ──
+  {
+    animalId: "snake_python",
+    genericName: "へび",
+    specificName: "アミメニシキヘビ",
+    emoji: "🐍",
+    rarity: "RARE",
+    description:
+      "ながさが 6メートルを こえることもある せかいで いちばん ながい へび。どくは なくて、からだで ぎゅっと まいて えものを つかまえるよ。",
+    habitat: "とうなんアジアの もり",
+    stageId: "forest",
+    lifespanYears: 20,
+  },
+  {
+    animalId: "snake_king_cobra",
+    genericName: "へび",
+    specificName: "キングコブラ",
+    emoji: "🐍",
+    rarity: "EPIC",
+    description:
+      "どくへびの なかで いちばん ながい へび。おこると からだの まえを たかく もちあげて、くびを ひろげて あいてを おどかすんだ。",
+    habitat: "インドや とうなんアジアの もり",
+    stageId: "forest",
+    lifespanYears: 20,
+  },
+  // ── あたらしい なかま：とかげ ──
+  {
+    animalId: "lizard_komodo",
+    genericName: "とかげ",
+    specificName: "コモドオオトカゲ",
+    emoji: "🦎",
+    rarity: "EPIC",
+    description:
+      "せかいで いちばん おおきな とかげで、ながさは 3メートルにもなる。したを ぺろぺろ だして においを かぎ、とおくの えものを みつけるよ。",
+    habitat: "インドネシアの しま",
+    stageId: "forest",
+    lifespanYears: 30,
+  },
+  // ── あたらしい なかま：あざらし ──
+  {
+    animalId: "seal_spotted",
+    genericName: "あざらし",
+    specificName: "ゴマフアザラシ",
+    emoji: "🦭",
+    rarity: "COMMON",
+    description:
+      "からだに ごまみたいな くろい もようが ある アザラシ。あかちゃんは まっしろな ふわふわの けに つつまれて うまれてくるよ。",
+    habitat: "きたの つめたい うみ",
+    stageId: "ice_age",
+    lifespanYears: 30,
+  },
+  {
+    animalId: "seal_leopard",
+    genericName: "あざらし",
+    specificName: "ヒョウアザラシ",
+    emoji: "🦭",
+    rarity: "RARE",
+    description:
+      "ヒョウみたいな もようの なんきょくの アザラシ。およぐのが とても はやくて、ペンギンを おいかけて つかまえる つよい ハンターなんだ。",
+    habitat: "なんきょくの うみ",
+    stageId: "ice_age",
+    lifespanYears: 26,
+  },
+  // ── あたらしい なかま：おうむ ──
+  {
+    animalId: "parrot_african_grey",
+    genericName: "おうむ",
+    specificName: "ヨウム",
+    emoji: "🦜",
+    rarity: "RARE",
+    description:
+      "はいいろの からだの かしこい おうむ。ひとの ことばを たくさん おぼえて、いみを わかって つかうことも できる とても あたまの いい とり。",
+    habitat: "アフリカの もり",
+    stageId: "forest",
+    lifespanYears: 50,
+  },
 ];
