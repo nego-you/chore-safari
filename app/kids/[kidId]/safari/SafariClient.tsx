@@ -23,7 +23,6 @@ const SSR_ANIMAL_IDS = new Set([
   "hercules_beetle",
   "lion_king",
   "megalodon",
-  "dragon_king",
 ]);
 function isSSRAnimal(animal: { animalId: string; rarity: Rarity }): boolean {
   return animal.rarity === "LEGENDARY" && SSR_ANIMAL_IDS.has(animal.animalId);

@@ -14,6 +14,7 @@
     "db:reset": "prisma migrate reset",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:ssr": "tsx prisma/seed-ssr.ts",
+    "db:animals": "tsx prisma/upsert-animals.ts",
     "db:studio": "prisma studio",
     "icons": "node scripts/generate-icons.mjs",
     "postinstall": "prisma generate",

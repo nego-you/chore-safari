@@ -33,18 +33,23 @@ type AnimalLite = {
 
 // ── 内部ユーティリティ ────────────────────────────────────────────────
 
+// レア度ごとの出現ウェイト。
+// 以前は 62/22/12/4 と差が大きく、ふつう種ばかり捕れて「偏り」が出ていた。
+// まんべんなく色々な種に出会えるよう、レア度の傾斜はゆるく保ちつつ平準化する
+// （各レア度の比は 10:7:5:3。種ごとの出現確率差が最大でも約3.3倍に収まる）。
 const RARITY_WEIGHT: Record<"COMMON" | "RARE" | "EPIC" | "LEGENDARY", number> = {
-  COMMON: 62,
-  RARE: 22,
-  EPIC: 12,
-  LEGENDARY: 4,
+  COMMON: 10,
+  RARE: 7,
+  EPIC: 5,
+  LEGENDARY: 3,
 };
 
+// レアエサ使用時はレア寄りに（ただし極端にはしない）。
 const RARITY_WEIGHT_RARE_BAIT: Record<"COMMON" | "RARE" | "EPIC" | "LEGENDARY", number> = {
-  COMMON: 30,
-  RARE: 30,
-  EPIC: 22,
-  LEGENDARY: 18,
+  COMMON: 6,
+  RARE: 8,
+  EPIC: 9,
+  LEGENDARY: 10,
 };
 
 const SSR_ANIMAL_IDS = new Set([
@@ -52,7 +57,6 @@ const SSR_ANIMAL_IDS = new Set([
   "hercules_beetle",
   "lion_king",
   "megalodon",
-  "dragon_king",
 ]);
 
 function pickAnimalByRarity<T extends { rarity: string; animalId: string }>(

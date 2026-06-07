@@ -516,7 +516,7 @@ function AnimalCard({
   // 捕獲済み: カラー表示
   const isSSR =
     animal.rarity === "LEGENDARY" &&
-    ["tyrannosaurus", "hercules_beetle", "lion_king", "megalodon", "dragon_king"].includes(animal.animalId);
+    ["tyrannosaurus", "hercules_beetle", "lion_king", "megalodon"].includes(animal.animalId);
 
   return (
     <button
@@ -604,44 +604,129 @@ function AnimalCard({
   );
 }
 
+// ── 大分類（なかま）カード ───────────────────────────────────────
+// genericName 単位で動物をまとめた「大きな分類」を表すカード。
+// タップすると詳細（specificName の種一覧）にドリルダウンする。
+type CategoryGroup = {
+  key: string;
+  genericName: string;
+  species: AnimalEntry[];
+  total: number;
+  caughtCount: number;
+  repEmoji: string;
+  anyCaught: boolean;
+  topRarity: Rarity;
+  complete: boolean;
+};
+
+function CategoryCard({
+  group,
+  onClick,
+}: {
+  group: CategoryGroup;
+  onClick: () => void;
+}) {
+  const { genericName, total, caughtCount, repEmoji, anyCaught, topRarity, complete } = group;
+  const pct = total > 0 ? (caughtCount / total) * 100 : 0;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`group relative flex flex-col items-center gap-1.5 rounded-2xl bg-gradient-to-br p-3 text-center ring-1 transition hover:scale-105 active:scale-95 ${RARITY_BG[topRarity]}`}
+      aria-label={`${genericName}（${caughtCount} / ${total} しゅるい）`}
+    >
+      <span
+        aria-hidden
+        className="text-4xl drop-shadow"
+        style={anyCaught ? undefined : { filter: "brightness(0)", opacity: 0.55 }}
+      >
+        {repEmoji}
+      </span>
+      <p className="w-full text-[12px] font-black leading-tight text-white line-clamp-1">
+        {genericName}
+      </p>
+      <div className="w-full">
+        <div className="h-1.5 overflow-hidden rounded-full bg-black/30">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-400"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <p className="mt-1 text-[10px] font-bold tabular-nums text-slate-200/90">
+          {caughtCount}/{total} しゅるい
+        </p>
+      </div>
+      {complete && (
+        <span className="absolute -top-1 -right-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-[10px] font-black text-amber-900 shadow ring-2 ring-slate-900">
+          ✓
+        </span>
+      )}
+    </button>
+  );
+}
+
 // ── メイン コンポーネント ──────────────────────────────────────────
 export function DictionaryClient({ kidId, kidName, animals, nowIso: _nowIso }: Props) {
   const [selected, setSelected] = useState<AnimalEntry | null>(null);
-  const [filterRarity, setFilterRarity] = useState<Rarity | "ALL">("ALL");
+  const [openCategory, setOpenCategory] = useState<string | null>(null);
 
   const kidReading = NAME_READING[kidName] ?? kidName;
 
-  const { caughtCount, totalCount, groups } = useMemo(() => {
-    const sorted = [...animals].sort(
-      (a, b) =>
-        RARITY_ORDER[a.rarity] - RARITY_ORDER[b.rarity] ||
-        (a.genericName || a.name).localeCompare(b.genericName || b.name, "ja") ||
-        (a.specificName || a.name).localeCompare(b.specificName || b.name, "ja"),
-    );
-
-    const filtered =
-      filterRarity === "ALL" ? sorted : sorted.filter((a) => a.rarity === filterRarity);
-
-    // rarity でグループ化
-    const map = new Map<Rarity, AnimalEntry[]>();
-    for (const a of filtered) {
-      const list = map.get(a.rarity) ?? [];
+  const { caughtCount, totalCount, categories } = useMemo(() => {
+    // genericName（大きな分類）でグループ化
+    const map = new Map<string, AnimalEntry[]>();
+    for (const a of animals) {
+      const key = a.genericName || a.name;
+      const list = map.get(key) ?? [];
       list.push(a);
-      map.set(a.rarity, list);
+      map.set(key, list);
     }
 
-    const rarityOrder: Rarity[] = ["LEGENDARY", "EPIC", "RARE", "COMMON"];
+    const cats: CategoryGroup[] = [];
+    for (const [key, listRaw] of map) {
+      // 種はレア度→五十音で並べる
+      const species = [...listRaw].sort(
+        (a, b) =>
+          RARITY_ORDER[a.rarity] - RARITY_ORDER[b.rarity] ||
+          (a.specificName || a.name).localeCompare(b.specificName || b.name, "ja"),
+      );
+      const caught = species.filter((s) => s.caught);
+      // 代表絵文字：捕獲済みがあればその中で最もレアな種、なければ先頭種（暗く表示）
+      const rep = (caught.length > 0 ? caught : species).reduce((best, s) =>
+        RARITY_ORDER[s.rarity] < RARITY_ORDER[best.rarity] ? s : best,
+      );
+      const topRarity = species.reduce<Rarity>(
+        (best, s) => (RARITY_ORDER[s.rarity] < RARITY_ORDER[best] ? s.rarity : best),
+        "COMMON",
+      );
+      cats.push({
+        key,
+        genericName: key,
+        species,
+        total: species.length,
+        caughtCount: caught.length,
+        repEmoji: rep.emoji,
+        anyCaught: caught.length > 0,
+        topRarity,
+        complete: caught.length === species.length,
+      });
+    }
+
+    // 五十音順で探しやすく
+    cats.sort((a, b) => a.genericName.localeCompare(b.genericName, "ja"));
+
     return {
       caughtCount: animals.filter((a) => a.caught).length,
       totalCount: animals.length,
-      groups: rarityOrder.flatMap((r) => {
-        const list = map.get(r);
-        return list ? [{ rarity: r, list }] : [];
-      }),
+      categories: cats,
     };
-  }, [animals, filterRarity]);
+  }, [animals]);
 
   const progressPct = totalCount > 0 ? Math.round((caughtCount / totalCount) * 100) : 0;
+  const activeCategory = openCategory
+    ? categories.find((c) => c.key === openCategory) ?? null
+    : null;
 
   return (
     <div className="min-h-[calc(100vh-52px)] bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
@@ -664,67 +749,74 @@ export function DictionaryClient({ kidId, kidName, animals, nowIso: _nowIso }: P
         </div>
       </div>
 
-      {/* フィルタータブ */}
-      <div className="mx-auto max-w-2xl px-4 pt-4 pb-2">
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {(["ALL", "LEGENDARY", "EPIC", "RARE", "COMMON"] as const).map((r) => (
+      {/* メイン：大分類 → 詳細 のドリルダウン */}
+      <main className="mx-auto max-w-2xl px-4 pb-24 pt-4">
+        {activeCategory ? (
+          /* ── 詳細ビュー（えらんだ なかまの 種いちらん）── */
+          <section>
             <button
-              key={r}
               type="button"
-              onClick={() => setFilterRarity(r)}
-              className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-bold transition ${
-                filterRarity === r
-                  ? "bg-white text-slate-900 shadow"
-                  : "bg-white/10 text-slate-300 hover:bg-white/20"
-              }`}
+              onClick={() => setOpenCategory(null)}
+              className="mb-3 inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1 text-[12px] font-bold text-slate-200 transition hover:bg-white/20"
             >
-              {r === "ALL" ? "すべて" : RARITY_LABEL[r]}
+              ← なかま いちらんに もどる
             </button>
-          ))}
-        </div>
-      </div>
+            <div className="mb-3 flex items-center gap-2">
+              <span className="text-2xl" aria-hidden>
+                {activeCategory.repEmoji}
+              </span>
+              <h2 className="text-base font-black text-white">
+                {activeCategory.genericName}の なかま
+              </h2>
+              <span className="text-[11px] text-slate-400">
+                {activeCategory.caughtCount} / {activeCategory.total} しゅるい
+              </span>
+            </div>
 
-      {/* 図鑑グリッド */}
-      <main className="mx-auto max-w-2xl px-4 pb-24">
-        {groups.length === 0 ? (
-          <p className="mt-16 text-center text-sm text-slate-500">
-            どうぶつが いないよ…
-          </p>
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+              {activeCategory.species.map((animal) => (
+                <AnimalCard
+                  key={animal.animalId}
+                  animal={animal}
+                  onClick={() => setSelected(animal)}
+                />
+              ))}
+            </div>
+          </section>
         ) : (
-          groups.map(({ rarity, list }) => (
-            <section key={rarity} className="mb-8">
-              {/* セクションヘッダー */}
-              <div className="mb-3 flex items-center gap-2">
-                <span className={`rounded-full px-3 py-0.5 text-xs font-extrabold ${RARITY_BADGE[rarity]}`}>
-                  {RARITY_LABEL[rarity]}
-                </span>
-                <span className="text-[11px] text-slate-400">
-                  {list.filter((a) => a.caught).length} / {list.length} ひき
-                </span>
-              </div>
+          /* ── 大分類ビュー（なかまカード）── */
+          <>
+            {categories.length === 0 ? (
+              <p className="mt-16 text-center text-sm text-slate-500">
+                どうぶつが いないよ…
+              </p>
+            ) : (
+              <>
+                <p className="mb-3 text-center text-[11px] font-bold text-slate-400">
+                  きに なる なかまを タップ して、いろんな しゅるいを みてみよう！
+                </p>
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                  {categories.map((c) => (
+                    <CategoryCard
+                      key={c.key}
+                      group={c}
+                      onClick={() => setOpenCategory(c.key)}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
 
-              {/* グリッド */}
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                {list.map((animal) => (
-                  <AnimalCard
-                    key={animal.animalId}
-                    animal={animal}
-                    onClick={() => setSelected(animal)}
-                  />
-                ))}
+            {/* コンプリート達成メッセージ */}
+            {caughtCount === totalCount && totalCount > 0 && (
+              <div className="mt-4 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-400 p-4 text-center shadow-lg">
+                <p className="text-2xl font-black text-amber-900">🎉 コンプリート！ 🎉</p>
+                <p className="mt-1 text-sm font-bold text-amber-800">
+                  ぜんぶの どうぶつを つかまえたよ！すごい！！
+                </p>
               </div>
-            </section>
-          ))
-        )}
-
-        {/* コンプリート達成メッセージ */}
-        {caughtCount === totalCount && totalCount > 0 && (
-          <div className="mt-4 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-400 p-4 text-center shadow-lg">
-            <p className="text-2xl font-black text-amber-900">🎉 コンプリート！ 🎉</p>
-            <p className="mt-1 text-sm font-bold text-amber-800">
-              ぜんぶの どうぶつを つかまえたよ！すごい！！
-            </p>
-          </div>
+            )}
+          </>
         )}
       </main>
 

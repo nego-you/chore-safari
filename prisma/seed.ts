@@ -90,14 +90,6 @@ const STAGES: StageSeed[] = [
       "やく 6600まんねん より まえの ちきゅう。ティラノサウルスや トリケラトプスなど、しじょう さいきょうの きょうりゅうたちが りくと そらと うみを しはいしていた！",
     sortOrder: 50,
   },
-  {
-    stageId: "mythos",
-    name: "伝説",
-    emoji: "🐉",
-    description:
-      "むかしの ひとが かたりついだ、まぼろしの いきものたちの ステージ。ドラゴン・ユニコーン・フェニックス・クラーケンなど、そうぞうりょくが うんだ きゅうきょくの そんざい！",
-    sortOrder: 60,
-  },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -822,41 +814,15 @@ const ANIMALS: AnimalSeed[] = [
     description: "すべての きょうりゅうの なかでも さいきょうと よばれる でんせつの おうじゃ！アゴの ちからは 6トンを こえ、ほねごと かみくだく！はねが あった かのうせいも！", isExtinct: true , lifespanYears: 28},
 
   // ══════════════════════════════════════════
-  // 🐉 伝説ステージ（〜11種）
+  // 👑 ボス（SSR）：レアエサ限定で出会える「実在の王者」たち
+  //   （旧 mythos ステージの幻獣は実在動物のみ方針により削除。実在の2種はそれぞれの生息地へ移設）
   // ══════════════════════════════════════════
   { animalId: "hercules_beetle", genericName: "かぶとむし", specificName: "【昆虫王】ヘラクレスオオカブト", name: "【昆虫王】ヘラクレスオオカブト",
-    emoji: "🪲", rarity: "LEGENDARY", stageId: "mythos", habitat: "ちゅうなんべいの ねったいうりん（でんせつ）",
+    emoji: "🪲", rarity: "LEGENDARY", stageId: "forest", habitat: "ちゅうなんべいの ねったいうりん",
     description: "せかい さいちょうの カブトムシで ツノを いれて 18cm こえ！ちゅうなんべいの ねったいうりんに すみ、じぶんの たいじゅうの 850ばいの ちからを もつ！" , lifespanYears: 1},
   { animalId: "lion_king", genericName: "ライオン", specificName: "【百獣の王】ライオン", name: "【百獣の王】ライオン",
-    emoji: "🦁", rarity: "LEGENDARY", stageId: "mythos", habitat: "サバンナの でんせつの こたい",
+    emoji: "🦁", rarity: "LEGENDARY", stageId: "savanna", habitat: "アフリカの サバンナ",
     description: "サバンナに くんりんする でんせつの おう！むれを ひきいる オスの たてがみは としで くろくなるほど つよさの あかし。ほえごえは 8キロ さきまで！" , lifespanYears: 15},
-  { animalId: "dragon", genericName: "りゅう", specificName: "ヨーロッパドラゴン", name: "ヨーロッパドラゴン",
-    emoji: "🐉", rarity: "LEGENDARY", stageId: "mythos", habitat: "ちゅうせいヨーロッパの でんせつ",
-    description: "ヨーロッパの でんせつの きょだいな よくりゅう。ほのおを はき、たからものを まもると いわれる。ちゅうせい ヨーロッパの きしの でんせつに かかせない そんざい！" , lifespanYears: 999},
-  { animalId: "unicorn", genericName: "ユニコーン", specificName: "ユニコーン", name: "ユニコーン",
-    emoji: "🦄", rarity: "LEGENDARY", stageId: "mythos", habitat: "せいよう・ケルトの でんしょう",
-    description: "ヨーロッパの でんせつの 1ぽんツノの しろい うま。ツノには どくを けす ちからが あり、じゅんすいな こころの ひとに ちかよると いわれる！スコットランドの こくしょう！" , lifespanYears: 999},
-  { animalId: "phoenix", genericName: "ほうおう", specificName: "フェニックス（不死鳥）", name: "フェニックス",
-    emoji: "🔥", rarity: "LEGENDARY", stageId: "mythos", habitat: "こだいエジプト～ギリシャの でんしょう",
-    description: "500ねん に 1かい みずから ほのおに とびこみ、はいの なかから さいせい する ふしの とり！こだい エジプトの たいよう神 ラーの けしん『ベンヌ』が きげん！" , lifespanYears: 999},
-  { animalId: "kraken", genericName: "イカ", specificName: "クラーケン", name: "クラーケン",
-    emoji: "🦑", rarity: "LEGENDARY", stageId: "mythos", habitat: "ほくおうの でんしょうの うみ",
-    description: "ノルウェー おきに ひそむ でんせつの きょだい うみ いきもの！ふねを まるごと のみこむ サイズで、あしは やまと みまちがえる ほどだという！" , lifespanYears: 999},
-  { animalId: "pegasus", genericName: "ペガサス", specificName: "ペガサス", name: "ペガサス",
-    emoji: "🐎", rarity: "LEGENDARY", stageId: "mythos", habitat: "ギリシャしんわの でんしょう",
-    description: "ギリシャしんわの つばさが はえた しろい うま！えいゆう ペルセウスが のった！じめんを たたくと いずみが わきだす ふしぎな ちからを もつ そらの しんじゅう！" , lifespanYears: 999},
-  { animalId: "cerberus", genericName: "ケルベロス", specificName: "ケルベロス", name: "ケルベロス",
-    emoji: "🐕", rarity: "LEGENDARY", stageId: "mythos", habitat: "ギリシャしんわの じごく",
-    description: "ギリシャしんわの じごくの もんばん いぬ！あたまが 3つで、しっぽは ヘビ、せなかには ドラゴンの くびが ある！どうぞが あつまる にぎやかな ばんけん！" , lifespanYears: 999},
-  { animalId: "yeti", genericName: "ゆきおとこ", specificName: "イエティ", name: "イエティ",
-    emoji: "🦍", rarity: "LEGENDARY", stageId: "mythos", habitat: "ヒマラヤの こうざん",
-    description: "ヒマラヤの ゆきやまに すむと いわれる ゆきおとこ！しろい けに おおわれた おおきな かげが もくげき される けれど、いまも なぞの ままの でんせつの けもの！" , lifespanYears: 999},
-  { animalId: "ryujin", genericName: "りゅう", specificName: "りゅうじん（龍神）", name: "りゅうじん",
-    emoji: "🐲", rarity: "LEGENDARY", stageId: "mythos", habitat: "にほんの しんわ",
-    description: "にほんしんわの うみと あめを つかさどる かみさま！りゅうぐうじょうに すみ、しおの たまを じざいに あやつる！うみの あらしも おだやかな てんきも おもいのまま！" , lifespanYears: 999},
-  { animalId: "dragon_king", genericName: "りゅう", specificName: "【幻獣王】ドラゴン", name: "【幻獣王】ドラゴン",
-    emoji: "🐉", rarity: "LEGENDARY", stageId: "mythos", habitat: "ぜんせかいの でんしょう",
-    description: "とうようと せいよう すべての でんせつを こえた げんじゅうかいの ぜったい おうじゃ！だいちを ゆるがす ほえごえ、てっこうを とかす ほのお、そらを かける きょだいな つばさ！" , lifespanYears: 999},
 ];
 
 async function main() {
@@ -981,7 +947,6 @@ async function main() {
     ice_age:    "こおりのじだい（やく260まんねんまえ〜1まんねんまえ）",
     deep_sea:   "げんだい（いま）",
     cretaceous: "きょうりゅうじだい（やく6600まんねんまえ）",
-    mythos:     "でんせつのじだい",
   };
   const LOCATION_BY_STAGE: Record<string, string> = {
     savanna:    "アフリカ",
@@ -989,7 +954,6 @@ async function main() {
     ice_age:    "ユーラシア・アメリカ",
     deep_sea:   "かいよう",
     cretaceous: "せかいかくち",
-    mythos:     "せかい",
   };
 
   // Animal マスタ
