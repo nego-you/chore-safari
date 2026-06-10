@@ -341,4 +341,134 @@ export const EXTRA_ANIMALS: ExtraAnimal[] = [
     stageId: "forest",
     lifespanYears: 50,
   },
+  // ── ペンギンの なかまを もっと あつめる ──
+  {
+    animalId: "penguin_rockhopper",
+    genericName: "ペンギン",
+    specificName: "イワトビペンギン",
+    emoji: "🐧",
+    rarity: "RARE",
+    description:
+      "きいろい まゆげみたいな かざりばねが かっこいい ペンギン。なまえの とおり、いわばを ぴょんぴょん とびはねて すすむのが とくいなんだよ。",
+    habitat: "みなみの つめたい うみの しま",
+    stageId: "ice_age",
+    lifespanYears: 10,
+  },
+  // ── わしの なかまを もっと あつめる ──
+  {
+    animalId: "eagle_harpy",
+    genericName: "わし",
+    specificName: "オウギワシ",
+    emoji: "🦅",
+    rarity: "EPIC",
+    description:
+      "せかいで いちばん つよい わしの ひとつ。あしの つめは ヒグマと おなじくらい おおきくて、サルや ナマケモノを つかまえて とぶんだ。",
+    habitat: "ちゅうなんべいの ねったいうりん",
+    stageId: "forest",
+    lifespanYears: 30,
+  },
+  // ── ふくろうの なかまを もっと あつめる ──
+  {
+    animalId: "owl_burrowing",
+    genericName: "ふくろう",
+    specificName: "アナホリフクロウ",
+    emoji: "🦉",
+    rarity: "COMMON",
+    description:
+      "じめんに あなを ほって すむ めずらしい ふくろう。ひるまも おきていて、ながい あしで くさはらを てくてく あるくよ。",
+    habitat: "アメリカの くさはら",
+    stageId: "savanna",
+    lifespanYears: 9,
+  },
+  // ── へびの なかまを もっと あつめる ──
+  {
+    animalId: "snake_anaconda",
+    genericName: "へび",
+    specificName: "オオアナコンダ",
+    emoji: "🐍",
+    rarity: "EPIC",
+    description:
+      "せかいで いちばん おもい へび。おもさは 200キロを こえることも。みずの なかが だいすきで、めと はなだけ だして そっと えものを まつよ。",
+    habitat: "みなみアメリカの かわや しっち",
+    stageId: "forest",
+    lifespanYears: 10,
+  },
+  // ── あざらしの なかまを もっと あつめる ──
+  {
+    animalId: "seal_harp",
+    genericName: "あざらし",
+    specificName: "タテゴトアザラシ",
+    emoji: "🦭",
+    rarity: "COMMON",
+    description:
+      "せなかの くろい もようが がっきの ハープに にている アザラシ。あかちゃんは まっしろな けで、こおりの うえで そだつんだよ。",
+    habitat: "きたの こおりの うみ",
+    stageId: "ice_age",
+    lifespanYears: 30,
+  },
+  // ── イルカの なかまを もっと あつめる ──
+  {
+    animalId: "dolphin_pacific_white_sided",
+    genericName: "イルカ",
+    specificName: "カマイルカ",
+    emoji: "🐬",
+    rarity: "COMMON",
+    description:
+      "せなかが くろ、おなかが しろの すばしっこい イルカ。ふねが つくる なみに のって、たかく ジャンプするのが だいすきなんだ。",
+    habitat: "きたの たいへいよう",
+    stageId: "deep_sea",
+    lifespanYears: 40,
+  },
+  // ── インコの なかまを もっと あつめる ──
+  {
+    animalId: "macaw_scarlet",
+    genericName: "インコ",
+    specificName: "アカコンゴウインコ",
+    emoji: "🦜",
+    rarity: "RARE",
+    description:
+      "まっかな からだに あおと きいろの つばさを もつ きれいな インコ。かたい きのみも、じょうぶな くちばしで かんたんに わってしまうよ。",
+    habitat: "ちゅうなんべいの ねったいうりん",
+    stageId: "forest",
+    lifespanYears: 50,
+  },
+  // ── あたらしい なかま：カメレオン ──
+  {
+    animalId: "chameleon_panther",
+    genericName: "カメレオン",
+    specificName: "パンサーカメレオン",
+    emoji: "🦎",
+    rarity: "RARE",
+    description:
+      "からだの いろを かえられる とかげの なかま。みぎと ひだりの めを べつべつに うごかせて、したを からだより ながく のばして むしを とるよ。",
+    habitat: "マダガスカルの もり",
+    stageId: "forest",
+    lifespanYears: 7,
+  },
+  // ── カメの なかまを もっと あつめる ──
+  {
+    animalId: "turtle_loggerhead",
+    genericName: "カメ",
+    specificName: "アカウミガメ",
+    emoji: "🐢",
+    rarity: "RARE",
+    description:
+      "たまごを うむために にほんの すなはまにも やってくる ウミガメ。あごの ちからが とても つよくて、かたい かいや カニも バリバリ たべるんだ。",
+    habitat: "たいへいようや にほんの うみ",
+    stageId: "deep_sea",
+    lifespanYears: 60,
+  },
+  // ── はやぶさの なかまを もっと あつめる ──
+  {
+    animalId: "falcon_kestrel",
+    genericName: "はやぶさ",
+    specificName: "チョウゲンボウ",
+    emoji: "🦅",
+    rarity: "COMMON",
+    description:
+      "そらの おなじ ばしょで はねを ふるわせ、ぴたっと とまって とべる はやぶさの なかま。うえから のねずみを みつけて、さっと つかまえるよ。",
+    habitat: "かわらや のはら",
+    stageId: "forest",
+    lifespanYears: 15,
+  },
 ];
