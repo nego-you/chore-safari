@@ -47,6 +47,11 @@ type PenaltyNotification = {
   createdAt: string; // ISO
 };
 
+type DailyLimit = {
+  trap: { used: number; remaining: number; limit: number };
+  hunt: { used: number; remaining: number; limit: number };
+};
+
 type Props = {
   children: ChildLite[];
   // 後方互換のため受け取るが、ワールドマップ画面では使わない。
@@ -55,6 +60,9 @@ type Props = {
   initialSelectedId?: string | null;
   initialNotifications?: BonusNotification[];
   initialPenalties?: PenaltyNotification[];
+  // 選択中の子の「1日の上限」状態（プログレッシブ・マップ用）。
+  // /kids/[kidId] からのみ渡る（ピッカー /kids では未指定）。
+  dailyLimit?: DailyLimit;
 };
 
 const NAME_READING: Record<string, string> = {
@@ -113,6 +121,7 @@ export function KidsPortal({
   initialSelectedId = null,
   initialNotifications = [],
   initialPenalties = [],
+  dailyLimit,
 }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [childList, setChildList] = useState<ChildLite[]>(children);
@@ -274,6 +283,7 @@ export function KidsPortal({
         children={childList}
         selectedId={selected.id}
         onBack={() => setSelectedId(null)}
+        dailyLimit={dailyLimit}
       />
       {activeBonus && (
         <BonusCelebrationModal bonus={activeBonus} onAck={handleAckBonus} />

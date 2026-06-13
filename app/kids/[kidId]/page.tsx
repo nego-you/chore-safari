@@ -5,6 +5,7 @@
 import { notFound } from "next/navigation";
 import type { Metadata, Viewport } from "next";
 import { prisma } from "@/lib/prisma";
+import { getTrapStamina, getHuntStamina } from "@/features/safari/actions";
 import { KidsPortal } from "../KidsPortal";
 
 export const dynamic = "force-dynamic";
@@ -90,7 +91,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
 export default async function KidsHomePage({ params }: { params: Params }) {
   const { kidId } = await params;
 
-  const [children, inventory, notifications, penaltyNotifications] = await Promise.all([
+  const [children, inventory, notifications, penaltyNotifications, trapStamina, huntStamina] = await Promise.all([
     prisma.user.findMany({
       // isTestAccount: true のユーザーは子供ピッカーから隠す（/kids/page.tsx と同じ条件）。
       // テストユーザーで /kids/[kidId] を開いても、ピッカーに戻った際に
@@ -117,6 +118,9 @@ export default async function KidsHomePage({ params }: { params: Params }) {
       where: { userId: kidId, isRead: false },
       orderBy: { createdAt: "asc" },
     }),
+    // プログレッシブ・マップ用：罠設置・アクティブ狩りの「1日の上限」状態（JSTリセット込み）。
+    getTrapStamina(kidId),
+    getHuntStamina(kidId),
   ]);
 
   // 存在しない kidId のときは 404。
@@ -143,6 +147,18 @@ export default async function KidsHomePage({ params }: { params: Params }) {
         coinAmount: n.coinAmount,
         createdAt: n.createdAt.toISOString(),
       }))}
+      dailyLimit={{
+        trap: {
+          used: trapStamina.used,
+          remaining: trapStamina.remaining,
+          limit: trapStamina.limit,
+        },
+        hunt: {
+          used: huntStamina.used,
+          remaining: huntStamina.remaining,
+          limit: huntStamina.limit,
+        },
+      }}
     />
   );
 }

@@ -3,7 +3,30 @@
     "allow": [
       "Bash(ps -W)",
       "Bash(rm -f /c/github/chore-safari/.git/HEAD.lock)",
-      "Bash(git -C /c/github/chore-safari status --short)"
+      "Bash(git -C /c/github/chore-safari status --short)",
+      "Bash(git -C c:/github/chore-safari --no-pager diff --stat)",
+      "Bash(npx eslint *)",
+      "Bash(docker exec *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/kids)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/kids/cmpbpjwtn0000j8zowehbixmr)",
+      "Bash(curl -s http://localhost:3000/kids/cmpbpjwtn0000j8zowehbixmr)",
+      "Bash(node -e \"console.log\\('ver', require\\('@playwright/test/package.json'\\).version\\)\")",
+      "Read(//c/Program Files \\(x86\\)/Microsoft/Edge/Application/**)",
+      "Read(//c/Program Files/Google/Chrome/Application/**)",
+      "Read(//c/Users/ynego/AppData/Local/ms-playwright/**)",
+      "Bash(SHOT_URL=\"http://localhost:3000/kids/cmpbpjwtn0000j8zowehbixmr\" SHOT_OUT=\"$\\(pwd\\)/.tmp-shots/night-mikoto.png\" node .tmp-shots/shot.mjs)",
+      "Bash(SHOT_URL=\"http://localhost:3000/kids/cmpbpjwtw0001j8zo6utuufcq\" SHOT_OUT=\"$\\(pwd\\)/.tmp-shots/night-yukito.png\" node .tmp-shots/shot.mjs)",
+      "Bash(curl -s -o /dev/null -w \"warm: %{http_code}\\\\n\" http://localhost:3000/kids/cmpbpjwtw0001j8zo6utuufcq)",
+      "Bash(SHOT_URL=\"http://localhost:3000/kids/cmpbpjwtw0001j8zo6utuufcq\" SHOT_OUT=\"$\\(pwd\\)/.tmp-shots/night-yukito.png\" SHOT_WAIT=4000 node .tmp-shots/shot.mjs)",
+      "Bash(SHOT_URL=\"http://localhost:3000/kids/cmpbpjwtw0001j8zo6utuufcq\" SHOT_OUT=\"$\\(pwd\\)/.tmp-shots/night-yukito.png\" SHOT_WAIT=4500 node .tmp-shots/shot.mjs)",
+      "Bash(SHOT_URL=\"http://localhost:3000/kids/cmpbpjwtw0001j8zo6utuufcq\" SHOT_OUT=\"$\\(pwd\\)/.tmp-shots/day-yukito-broke.png\" SHOT_WAIT=9000 node .tmp-shots/shot.mjs)",
+      "Bash(SHOT_URL=\"http://localhost:3000/kids/cmpbpjwtw0001j8zo6utuufcq\" SHOT_OUT=\"$\\(pwd\\)/.tmp-shots/day-yukito-clip.png\" SHOT_WAIT=9000 SHOT_CLIP=\"20,60,600,360\" node .tmp-shots/shot.mjs)",
+      "Bash(SHOT_URL=\"http://localhost:3000/kids/cmpbpjwtw0001j8zo6utuufcq\" SHOT_OUT=\"$\\(pwd\\)/.tmp-shots/day-yukito-center.png\" SHOT_WAIT=9000 SHOT_CLIP=\"330,150,560,330\" node .tmp-shots/shot.mjs)",
+      "Bash(SHOT_URL=\"http://localhost:3000/kids/cmpbpjwu00002j8zo9z6yxf0k\" node .tmp-shots/truck.mjs)",
+      "Read(//c/Users/ynego/.claude/projects/c--github-chore-safari/memory/**)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\ynego\\.claude\\projects\\c--github-chore-safari\\memory"
     ]
   }
 }

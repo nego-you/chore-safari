@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 import React, { useEffect, useRef, useState } from "react";
 import { useWeather, type WeatherInfo } from "./[kidId]/WeatherContext";
 import { KizunaManager } from "@/components/KizunaManager";
-import { HIDDEN_PIN_IDS } from "./config";
+import { HIDDEN_PIN_IDS, TRAP_COST } from "./config";
 
 // ── CSS アニメーション（一度だけ <head> に注入） ──────────────
 const MAP_CSS = `
@@ -21,6 +21,11 @@ const MAP_CSS = `
 @keyframes bobble{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 @keyframes walkTo{0%{transform:translate(var(--ex-start),var(--ey-start))}100%{transform:translate(var(--ex-end),var(--ey-end))}}
 @keyframes slideUp{0%{transform:translateY(110%);opacity:0}100%{transform:translateY(0);opacity:1}}
+@keyframes emphasizePulse{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-8px) scale(1.09)}}
+@keyframes twinkle{0%,100%{opacity:.2}50%{opacity:.95}}
+@keyframes nightGlow{0%,100%{box-shadow:0 0 14px rgba(253,224,71,.5),0 6px 18px rgba(0,0,0,.25)}50%{box-shadow:0 0 26px rgba(253,224,71,.85),0 6px 18px rgba(0,0,0,.25)}}
+@keyframes driveRL{0%{left:110%;transform:translateY(0)}25%{transform:translateY(-2px)}50%{transform:translateY(0)}75%{transform:translateY(-2px)}100%{left:-12%;transform:translateY(0)}}
+@keyframes flyLR{0%{left:-12%;transform:translateY(0)}50%{transform:translateY(-5px)}100%{left:112%;transform:translateY(0)}}
 
 /* ── iPad レスポンシブ ── */
 .wm-root {
@@ -97,6 +102,122 @@ function injectMapCSS() {
   document.head.appendChild(s);
 }
 
+// ── 時間帯（夜間おやすみモード / docs/DESIGN_PRINCIPLES.md 2） ──────────
+//   現実の生活リズムに寄り添い、夜は「ガチで稼ぐ時間」から
+//   「捕まえた子を眺める・図鑑を読む時間」へ自然にシフトさせる。
+//   - day      06:00〜19:30  通常
+//   - twilight 19:30〜20:00  夕暮れ（ロックなし・静かなBGM＋夕焼け）
+//   - night    20:00〜翌06:00 夜（家/図鑑だけ開放、ほかは暗転ロック）
+type DayPhase = "day" | "twilight" | "night";
+
+const TWILIGHT_START_MIN = 19 * 60 + 30; // 19:30
+const NIGHT_START_MIN = 20 * 60; // 20:00
+const DAY_START_MIN = 6 * 60; // 06:00
+
+// JST（Asia/Tokyo）での「0時からの経過分」を返す。
+// 端末のタイムゾーンに依存せず、図鑑/狩りの日次リセット（JST）と判定軸を揃える。
+function jstMinutesOfDay(d: Date = new Date()): number {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Tokyo",
+    hourCycle: "h23",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(d);
+  const h = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+  const m = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+  return h * 60 + m;
+}
+
+function dayPhaseNow(): DayPhase {
+  const min = jstMinutesOfDay();
+  if (min >= NIGHT_START_MIN || min < DAY_START_MIN) return "night";
+  if (min >= TWILIGHT_START_MIN) return "twilight";
+  return "day";
+}
+
+// 夜でも開いている施設（家・図鑑）。原則4：夜は学び・鑑賞の時間。
+const NIGHT_OPEN_IDS = ["house", "dictionary"];
+
+// 時間帯ごとの BGM（トワイライト/夜は静かな「家」BGMへ）と音量。
+const BGM_DAY_SRC = "/sounds/Beyond_The_Tall_Grass.mp3";
+const BGM_CALM_SRC = "/sounds/bgm/家.mp3";
+function bgmSrcFor(phase: DayPhase): string {
+  return phase === "day" ? BGM_DAY_SRC : BGM_CALM_SRC;
+}
+function bgmVolFor(phase: DayPhase): number {
+  return phase === "day" ? 0.45 : phase === "twilight" ? 0.3 : 0.2;
+}
+
+// ── 夕暮れ・夜のオーバーレイ（ピンより下・terrain を染める） ──────────
+function DayPhaseOverlay({ phase }: { phase: DayPhase }) {
+  if (phase === "day") return null;
+  if (phase === "twilight") {
+    return (
+      <div style={{
+        position: "absolute", inset: 0, borderRadius: "inherit",
+        pointerEvents: "none", zIndex: 11,
+        background:
+          "linear-gradient(180deg,rgba(251,146,60,.30),rgba(244,114,182,.18) 55%,rgba(99,102,241,.24))",
+      }} />
+    );
+  }
+  // night
+  return (
+    <div style={{
+      position: "absolute", inset: 0, borderRadius: "inherit",
+      pointerEvents: "none", zIndex: 11, overflow: "hidden",
+      background:
+        "linear-gradient(180deg,rgba(15,23,42,.74),rgba(30,27,75,.66) 60%,rgba(15,23,42,.80))",
+    }}>
+      {/* 星（またたき） */}
+      {Array.from({ length: 18 }, (_, i) => (
+        <div key={i} style={{
+          position: "absolute",
+          left: ((i * 41) % 97) + "%",
+          top: ((i * 29) % 52) + "%",
+          width: 2 + (i % 3), height: 2 + (i % 3), borderRadius: "50%",
+          background: "rgba(255,255,255,.92)",
+          animation: `twinkle ${1.6 + (i % 5) * 0.5}s ease-in-out ${(i * 0.17) % 1.5}s infinite`,
+        }} />
+      ))}
+      {/* 月 */}
+      <div style={{
+        position: "absolute", top: "8%", right: "9%", fontSize: 34,
+        filter: "drop-shadow(0 0 12px rgba(253,224,71,.65))",
+      }}>🌙</div>
+    </div>
+  );
+}
+
+// ── うんぱんミッション演出（背景の道を走る車両 / docs/DESIGN_PRINCIPLES.md 3） ──
+//   「あ、うんぱんが来てる！」とワクワク気づける環境アニメ。
+//   静的な急かしバッジ（旧 isNew）の代わりに、視線をうんぱん導線へ誘導する。
+//   ピンより後ろ（zIndex 6）を走り、夜（おやすみ中）は走らせない。
+function RoadTraffic({ phase }: { phase: DayPhase }) {
+  if (phase === "night") return null;
+  return (
+    <div style={{
+      position: "absolute", inset: 0, borderRadius: "inherit",
+      pointerEvents: "none", zIndex: 6, overflow: "hidden",
+    }}>
+      {/* お助けトラック（右→左・地上の道） */}
+      <div style={{
+        position: "absolute", top: "54%",
+        fontSize: "calc(var(--wm-deco-sz) * 0.95)",
+        animation: "driveRL 17s linear infinite",
+        filter: "drop-shadow(0 2px 2px rgba(0,0,0,.18))",
+      }}>🚚</div>
+      {/* 配送ヘリ（左→右・上空） */}
+      <div style={{
+        position: "absolute", top: "14%",
+        fontSize: "calc(var(--wm-deco-sz) * 0.8)",
+        animation: "flyLR 24s linear 5s infinite",
+        filter: "drop-shadow(0 3px 3px rgba(0,0,0,.15))",
+      }}>🚁</div>
+    </div>
+  );
+}
+
 // ── 子供ごとのアバター・テーマカラー ──────────────────────────
 const KID_AVATAR: Record<string, { emoji: string; color: string }> = {
   "美琴": { emoji: "🦭", color: "#0ea5e9" }, // アザラシ
@@ -125,7 +246,6 @@ type MapPin = {
   action: "route" | "arcade";
   ready: boolean;
   comingSoon?: boolean;
-  isNew?: boolean;
 };
 
 // ── 全ピン定義 ────────────────────────────────────────────────
@@ -161,9 +281,7 @@ const ALL_MAP_PINS: MapPin[] = [
     color: "#86efac",
     route: "farm",
     action: "route",
-    ready: true,
-    isNew: true,
-  },
+    ready: true,  },
   // ── 中左上：クラフト工房
   {
     id: "craft",
@@ -216,9 +334,7 @@ const ALL_MAP_PINS: MapPin[] = [
     color: "#fde68a",
     route: "ranch",
     action: "route",
-    ready: true,
-    isNew: true,
-  },
+    ready: true,  },
   // ── 右下寄り：動物園
   {
     id: "zoo",
@@ -230,9 +346,7 @@ const ALL_MAP_PINS: MapPin[] = [
     color: "#f472b6",
     route: "zoo",
     action: "route",
-    ready: true,
-    isNew: true,
-  },
+    ready: true,  },
   // ── うんぱんミッション（旧 物流センター）：現実の運搬おてつだい
   {
     id: "logistics",
@@ -244,9 +358,7 @@ const ALL_MAP_PINS: MapPin[] = [
     color: "#60a5fa",
     route: "logistics",
     action: "route",
-    ready: true,
-    isNew: true,
-  },
+    ready: true,  },
   // ── 左下：博物図鑑
   {
     id: "dictionary",
@@ -271,9 +383,7 @@ const ALL_MAP_PINS: MapPin[] = [
     color: "#f97316",
     route: "race",
     action: "route",
-    ready: true,
-    isNew: true,
-  },
+    ready: true,  },
   // ── 右端下：ゲームセンター（NEW）
   {
     id: "arcade",
@@ -285,9 +395,7 @@ const ALL_MAP_PINS: MapPin[] = [
     color: "#34d399",
     route: null,
     action: "arcade",
-    ready: true,
-    isNew: true,
-  },
+    ready: true,  },
   // ── 左下：ぜんぶの ながれ（NEW）
   {
     id: "flow",
@@ -299,9 +407,7 @@ const ALL_MAP_PINS: MapPin[] = [
     color: "#14b8a6",
     route: "flow",
     action: "route",
-    ready: true,
-    isNew: true,
-  },
+    ready: true,  },
   // ── 中央：自分の家（トリアージハブ）
   {
     id: "house",
@@ -434,6 +540,25 @@ function ComingSoonToast({ pin, onClose }: { pin: MapPin; onClose: () => void })
   );
 }
 
+// ── ロック中ピンの案内トースト（プログレッシブ・マップ） ───────
+function LockToast({ msg, onClose }: { msg: string; onClose: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onClose, 2600);
+    return () => clearTimeout(t);
+  }, [msg]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div style={{
+      position: "absolute", bottom: 60, left: "50%", transform: "translateX(-50%)",
+      background: "rgba(20,20,20,.90)", color: "#fff", borderRadius: 18,
+      padding: "10px 22px", fontSize: 13, fontWeight: 700, zIndex: 30,
+      whiteSpace: "nowrap", backdropFilter: "blur(8px)",
+      boxShadow: "0 4px 20px rgba(0,0,0,.3)",
+    }}>
+      {msg}
+    </div>
+  );
+}
+
 // ── ゲームセンターモーダル ─────────────────────────────────────
 function ArcadeModal({ onClose, onNavigate }: {
   onClose: () => void;
@@ -511,24 +636,45 @@ export function WorldMapPortal({
   selectedId,
   onBack,
   houseAnimalCount = 0,
+  dailyLimit,
 }: {
   children: ChildLite[];
   selectedId: string;
   onBack: () => void;
   houseAnimalCount?: number;
+  // 選択中の子の「1日の上限」状態（プログレッシブ・マップ用）。
+  // 未指定（ピッカー経由など）のときは上限演出をスキップする。
+  dailyLimit?: {
+    trap: { used: number; remaining: number; limit: number };
+    hunt: { used: number; remaining: number; limit: number };
+  };
 }) {
   const router = useRouter();
   const mapRef = useRef<HTMLDivElement>(null);
 
+  // ── 時間帯（夜間おやすみモード）──────────────────────────────
+  // ハイドレーション不一致を避けるため初期値は "day" 固定。
+  // マウント後に実時刻で更新し、以後1分ごとに再判定する。
+  const [phase, setPhase] = useState<DayPhase>("day");
+  useEffect(() => {
+    // 外部システム（時計）との同期。初期 "day" を実時刻へ補正し、以後1分ごとに再判定。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPhase(dayPhaseNow());
+    const id = setInterval(() => setPhase(dayPhaseNow()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   // ── BGM ───────────────────────────────────────────────────────
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const activeTrackRef = useRef<string>(BGM_DAY_SRC);
   const [muted, setMuted] = useState(false);
 
   useEffect(() => {
-    const audio = new Audio("/sounds/Beyond_The_Tall_Grass.mp3");
+    const audio = new Audio(BGM_DAY_SRC);
     audio.loop = true;
-    audio.volume = 0.45;
+    audio.volume = bgmVolFor("day");
     audioRef.current = audio;
+    activeTrackRef.current = BGM_DAY_SRC;
 
     // ユーザー操作後でないと autoplay できないブラウザ対応：
     // コンポーネントマウント後すぐに再生を試み、失敗しても無視。
@@ -539,6 +685,21 @@ export function WorldMapPortal({
       audio.src = "";
     };
   }, []);
+
+  // 時間帯に応じて曲・音量を切り替え（夜/夕暮れは静かな家BGMへ）。
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const nextTrack = bgmSrcFor(phase);
+    if (nextTrack !== activeTrackRef.current) {
+      activeTrackRef.current = nextTrack;
+      audio.src = nextTrack;
+      audio.load();
+      // muted 中は audio.muted=true なので play() しても無音。
+      audio.play().catch(() => {});
+    }
+    audio.volume = bgmVolFor(phase);
+  }, [phase]);
 
   // ミュート切り替え
   const toggleMute = () => {
@@ -566,10 +727,54 @@ export function WorldMapPortal({
   const [pendingPin, setPendingPin] = useState<MapPin | null>(null);
   const [arcadeOpen, setArcadeOpen] = useState(false);
   const [comingSoon, setComingSoon] = useState<MapPin | null>(null);
+  const [lockToast, setLockToast] = useState<string | null>(null);
 
   // ── おたがいさまイベントは <KizunaManager />（下部）が全画面共通で制御する ──
 
   const player = players[activePlayer] ?? players[0];
+
+  // ── プログレッシブ・マップ（docs/DESIGN_PRINCIPLES.md 1,3,5） ──────────
+  //   コイン残高・1日の上限に応じてピンの状態を動的に切り替える。
+  //   - emphasize : コイン不足 → 「ためる」導線（ギルド/うんぱん）を強調
+  //   - needCoins : コイン不足 → コイン消費アクション（罠）を🔒
+  //   - dayDone   : 1日の上限到達 → サファリを「おやすみ看板」化
+  //   罠だけが TRAP_COST コイン消費。狩りは武器ゲートでコイン非消費なので
+  //   コイン不足ではロックせず、上限到達時のみ看板化する。
+  type PinMode = "open" | "emphasize" | "needCoins" | "dayDone" | "night";
+  const broke = player.coins < TRAP_COST;
+  const trapDone = dailyLimit ? dailyLimit.trap.remaining <= 0 : false;
+  const huntDone = dailyLimit ? dailyLimit.hunt.remaining <= 0 : false;
+
+  const pinModeOf = (id: string): PinMode => {
+    // 夜は家・図鑑以外を暗転ロック（コイン・上限の状態より優先）。
+    if (phase === "night" && !NIGHT_OPEN_IDS.includes(id)) return "night";
+    switch (id) {
+      case "guild":
+      case "logistics":
+        return broke ? "emphasize" : "open";
+      case "safari-passive": // 罠（コイン消費）
+        if (trapDone) return "dayDone";
+        if (broke) return "needCoins";
+        return "open";
+      case "safari-active": // 狩り（武器ゲート・コイン非消費）
+        return huntDone ? "dayDone" : "open";
+      default:
+        return "open";
+    }
+  };
+
+  // ロック中ピンをタップしたときの案内文（タップ＝移動を中断して理由を伝える）。
+  const lockMsgOf = (pin: MapPin, mode: PinMode): string | null => {
+    if (mode === "night")
+      return "🌙 よるは どうぶつも おやすみちゅう。また あした あそぼうね！";
+    if (mode === "needCoins")
+      return "🪙 まだ コインが たりないよ。おてつだいで ためよう！";
+    if (mode === "dayDone")
+      return pin.id === "safari-active"
+        ? "🌙 きょうの かりは もう おしまい！また あした"
+        : "🌙 きょうの わなは もう おしまい！また あした";
+    return null;
+  };
 
   // 兄弟 NPC の立ち位置（一本道化後の表示ピンから id で引く）
   const SIBLING_SPOT_IDS = ["safari-passive", "house", "dictionary"];
@@ -587,6 +792,9 @@ export function WorldMapPortal({
   const handlePin = (pin: MapPin) => {
     if (walking) return;
     if (pin.comingSoon) { setComingSoon(pin); return; }
+    // ロック中（コイン不足・1日上限）のピンは移動せず、理由をトーストで伝える。
+    const lockMsg = lockMsgOf(pin, pinModeOf(pin.id));
+    if (lockMsg) { setLockToast(lockMsg); return; }
     setWalkFrom({ x: avatarPos.x, y: avatarPos.y });
     setWalkTo({ x: pin.x, y: pin.y });
     setPendingPin(pin);
@@ -664,6 +872,8 @@ export function WorldMapPortal({
           boxShadow: "0 10px 40px rgba(0,0,0,.18)",
         }}>
           <WeatherEffect weather={weather} />
+          <DayPhaseOverlay phase={phase} />
+          <RoadTraffic phase={phase} />
 
           {/* BGM ミュートボタン */}
           <button
@@ -747,47 +957,84 @@ export function WorldMapPortal({
 
           {/* マップピン */}
           {MAP_PINS.map((pin, idx) => {
-            const grey = !!pin.comingSoon;
+            const mode = pinModeOf(pin.id);
+            const comingSoon = !!pin.comingSoon;
+            const dimmed = comingSoon || mode === "needCoins" || mode === "dayDone" || mode === "night";
+            const emphasize = mode === "emphasize";
+            // 夜に開いている家・図鑑は街灯のように温かく光らせて誘導する。
+            const nightOpen = phase === "night" && NIGHT_OPEN_IDS.includes(pin.id);
             return (
               <button key={pin.id} onClick={() => handlePin(pin)} aria-label={pin.label}
                 style={{
                   position: "absolute", left: pin.x + "%", top: pin.y + "%",
-                  transform: "translate(-50%,-50%)", zIndex: 15,
+                  transform: "translate(-50%,-50%)", zIndex: emphasize ? 16 : 15,
                   background: "none", border: "none", cursor: "pointer",
                   display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
-                  opacity: grey ? 0.75 : 1,
+                  opacity: dimmed ? 0.7 : 1,
                 }}>
                 {/* ピンのアイコン */}
                 <div style={{
                   position: "relative",
                   width: "var(--wm-pin-sz)", height: "var(--wm-pin-sz)",
                   borderRadius: "var(--wm-pin-r)",
-                  background: grey
+                  background: dimmed
                     ? "linear-gradient(135deg,#9ca3af,#6b7280)"
                     : `linear-gradient(135deg,${pin.color},${pin.color}bb)`,
                   display: "flex", alignItems: "center", justifyContent: "center",
                   fontSize: "var(--wm-pin-em)", border: "3.5px solid white",
-                  boxShadow: grey ? "0 3px 10px rgba(0,0,0,.18)" : `0 5px 16px ${pin.color}66`,
-                  animation: "bobble 2.5s ease-in-out infinite",
-                  animationDelay: idx * 0.22 + "s",
-                  filter: grey ? "grayscale(.5)" : "none",
+                  boxShadow: nightOpen
+                    ? `0 0 22px rgba(253,224,71,.75), 0 6px 18px ${pin.color}66`
+                    : emphasize
+                      ? `0 8px 26px ${pin.color}, 0 0 0 6px ${pin.color}44`
+                      : dimmed ? "0 3px 10px rgba(0,0,0,.18)" : `0 5px 16px ${pin.color}66`,
+                  // delay は shorthand に畳む（animation と animationDelay の
+                  // shorthand/longhand 混在は rerender 時に警告＋スタイル衝突になるため）。
+                  animation: nightOpen
+                    ? `nightGlow 2.4s ease-in-out ${idx * 0.22}s infinite`
+                    : emphasize
+                      ? `emphasizePulse 1.15s ease-in-out ${idx * 0.22}s infinite`
+                      : `bobble 2.5s ease-in-out ${idx * 0.22}s infinite`,
+                  filter: dimmed ? "grayscale(.5)" : "none",
                 }}>
                   {pin.icon}
-                  {pin.isNew && (
-                    <div style={{
-                      position: "absolute",
-                      top: "var(--wm-badge-top)", right: "var(--wm-badge-right)",
-                      background: "#ef4444", color: "#fff",
-                      fontSize: "var(--wm-new-sz)", fontWeight: 800, borderRadius: 8, padding: "2px 5px",
-                    }}>NEW</div>
-                  )}
-                  {grey && (
+                  {comingSoon && (
                     <div style={{
                       position: "absolute",
                       top: "var(--wm-badge-top)", right: "var(--wm-badge-right)",
                       background: "#9ca3af", color: "#fff",
                       fontSize: "var(--wm-new-sz)", fontWeight: 800, borderRadius: 8, padding: "2px 5px",
                     }}>準備中</div>
+                  )}
+                  {!comingSoon && mode === "needCoins" && (
+                    <div style={{
+                      position: "absolute",
+                      top: "var(--wm-badge-top)", right: "var(--wm-badge-right)",
+                      fontSize: "calc(var(--wm-new-sz) * 1.6)", lineHeight: 1,
+                      filter: "drop-shadow(0 1px 2px rgba(0,0,0,.4))",
+                    }}>🔒</div>
+                  )}
+                  {!comingSoon && mode === "dayDone" && (
+                    <div style={{
+                      position: "absolute",
+                      top: "var(--wm-badge-top)", right: "var(--wm-badge-right)",
+                      fontSize: "calc(var(--wm-new-sz) * 1.6)", lineHeight: 1,
+                      filter: "drop-shadow(0 1px 2px rgba(0,0,0,.4))",
+                    }}>💤</div>
+                  )}
+                  {!comingSoon && mode === "night" && (
+                    <div style={{
+                      position: "absolute",
+                      top: "var(--wm-badge-top)", right: "var(--wm-badge-right)",
+                      fontSize: "calc(var(--wm-new-sz) * 1.6)", lineHeight: 1,
+                      filter: "drop-shadow(0 1px 2px rgba(0,0,0,.4))",
+                    }}>🌙</div>
+                  )}
+                  {emphasize && (
+                    <div style={{
+                      position: "absolute",
+                      top: "var(--wm-badge-top)", right: "var(--wm-badge-right)",
+                      fontSize: "calc(var(--wm-new-sz) * 1.6)", lineHeight: 1,
+                    }}>✨</div>
                   )}
                   {pin.id === "house" && houseAnimalCount > 0 && (
                     <div style={{
@@ -803,7 +1050,7 @@ export function WorldMapPortal({
                 {/* ラベル */}
                 <div style={{
                   fontSize: "var(--wm-pin-lbl)", fontWeight: 800, color: "#fff",
-                  background: grey ? "rgba(80,80,80,.60)" : "rgba(0,0,0,.42)",
+                  background: dimmed ? "rgba(80,80,80,.60)" : "rgba(0,0,0,.42)",
                   borderRadius: 8, padding: "2px 7px",
                   whiteSpace: "nowrap", backdropFilter: "blur(4px)",
                   maxWidth: "var(--wm-pin-lbl-w)", textAlign: "center", lineHeight: 1.3,
@@ -843,11 +1090,20 @@ export function WorldMapPortal({
             backdropFilter: "blur(6px)", zIndex: 25, whiteSpace: "nowrap",
             boxShadow: "0 2px 10px rgba(0,0,0,.2)",
           }}>
-            {walking ? "🐾 いどうちゅう…" : "📍 しせつを タップして いどうしよう！"}
+            {walking
+              ? "🐾 いどうちゅう…"
+              : phase === "night"
+                ? "🌙 よるは どうぶつも おやすみちゅう。おうちと ずかんだけ あいてるよ"
+                : phase === "twilight"
+                  ? "🌆 そろそろ ゆうがた。どうぶつたちも おやすみの じゅんび…"
+                  : broke
+                    ? "🪙 まずは おてつだいで コインを ためよう！"
+                    : "📍 しせつを タップして いどうしよう！"}
           </div>
 
           {/* トースト・モーダル */}
           {comingSoon && <ComingSoonToast pin={comingSoon} onClose={() => setComingSoon(null)} />}
+          {lockToast && <LockToast msg={lockToast} onClose={() => setLockToast(null)} />}
         </div>
 
       </div>
