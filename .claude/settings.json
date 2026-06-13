@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ps -W)",
+      "Bash(rm -f /c/github/chore-safari/.git/HEAD.lock)",
+      "Bash(git -C /c/github/chore-safari status --short)"
+    ]
+  }
+}

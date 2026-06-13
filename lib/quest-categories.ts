@@ -5,11 +5,17 @@
 // import できない（Next.js が Server Action 参照に変換してしまう）。
 // そのため値定義は必ずこのファイルに置く。
 
-//   CHORE : おてつだい（オレンジ／ピンク）
-//   STUDY : おべんきょう（青／緑）
-//   LIFE  : せいかつ（黄／薄黄）
+//   CHORE     : おてつだい（オレンジ／ピンク）
+//   STUDY     : おべんきょう（青／緑）
+//   LIFE      : せいかつ（黄／薄黄）
+//   LOGISTICS : うんぱんミッション（青緑）— 現実の「モノを運ぶ」お手伝い専用枠。
+//               物流センター（うんぱんミッション画面）にのみ表示され、
+//               承認時はコインに加えてレア罠が1個もらえる（bank/actions.ts）。
 
-export const QUEST_CATEGORIES = ["CHORE", "STUDY", "LIFE"] as const;
+export const QUEST_CATEGORIES = ["CHORE", "STUDY", "LIFE", "LOGISTICS"] as const;
+
+// うんぱんミッション承認で付与するレア罠の Tool.toolId（seed 由来）。
+export const LOGISTICS_REWARD_TOOL_ID = "cage_trap";
 export type QuestCategory = (typeof QUEST_CATEGORIES)[number];
 export const QUEST_CATEGORY_DEFAULT: QuestCategory = "CHORE";
 
@@ -76,6 +82,19 @@ const META: Record<QuestCategory, QuestCategoryMeta> = {
     kidsSectionBgClass:
       "bg-gradient-to-br from-yellow-100 via-amber-100 to-yellow-50 ring-2 ring-yellow-200",
     kidsHeadingClass: "text-amber-700",
+  },
+  LOGISTICS: {
+    key: "LOGISTICS",
+    shortLabel: "うんぱん",
+    kidsLabel: "うんぱんミッション",
+    emoji: "📦",
+    badgeClass:
+      "bg-teal-500/15 text-teal-200 ring-1 ring-teal-400/40",
+    formActiveClass:
+      "bg-teal-500/20 text-teal-100 ring-2 ring-teal-400",
+    kidsSectionBgClass:
+      "bg-gradient-to-br from-teal-100 via-cyan-50 to-sky-100 ring-2 ring-teal-200",
+    kidsHeadingClass: "text-teal-700",
   },
 };
 

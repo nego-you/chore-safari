@@ -1,6 +1,6 @@
 # Chore Safari — プロジェクト構造ガイド
 
-**最終更新**: 2026-05-30（現状の実装に合わせて全面改訂）
+**最終更新**: 2026-06-12（一本道化リフォームを反映）
 **言語 / FW**: TypeScript / React 19 + Next.js 16（App Router）+ PostgreSQL 16（Prisma 6）
 
 > このドキュメントは **現状のコードベースの実態** を記述します。
@@ -114,7 +114,7 @@ chore-safari/
 ├── components/                         # 共有コンポーネント
 │   ├── BGMPlayer.tsx                   # 画面連動 BGM
 │   ├── GuideChatModal.tsx              # AI ガイドとの対話モーダル
-│   ├── KizunaManager.tsx               # おたがいさまイベントの全画面制御
+│   ├── KizunaManager.tsx               # おたがいさまイベントの全画面制御（ページ移動毎 5% 抽選＋クールダウン）
 │   └── KizunaEventDialog.tsx           # おたがいさまイベント UI
 │
 ├── features/                           # 機能ドメイン別 Server Actions
@@ -123,7 +123,7 @@ chore-safari/
 │   ├── kizuna/actions.ts               # おたがいさま進捗の取得/保存（DB User）★2026-05-31
 │   ├── crane/actions.ts                # クレーンゲーム（コイン消費のみ。景品はクライアント抽選）
 │   ├── gacha/actions.ts                # ガチャ
-│   ├── quest/actions.ts                # クエスト申請・承認
+│   ├── quest/actions.ts                # クエスト申請（submitQuest。承認 approveQuest は app/bank/actions.ts）
 │   ├── race/actions.ts                 # レース（ベット確定）
 │   ├── safari/actions.ts               # 狩り（罠設置・タイミング判定・捕獲）
 │   └── notifications/actions.ts        # ボーナス/ペナルティ通知
@@ -180,24 +180,34 @@ chore-safari/
 
 ワールドマップ（[WorldMapPortal](app/kids/WorldMapPortal.tsx)）のピンから各施設へ遷移します。
 
+> **一本道化（2026-06-12）**: 機能肥大化による「迷い」を解消するため、マップの表示ピンを
+> コアループの6つに絞った（[docs/DESIGN_PRINCIPLES.md](docs/DESIGN_PRINCIPLES.md) 準拠）。
+> コアループ＝【🏰お手伝い → 📦うんぱん → 🦁罠/🏹狩り（直前にクイズ必須）→ 🏠家 → 📚図鑑】。
+> 非表示ピンは [app/kids/config.ts](app/kids/config.ts) の `HIDDEN_PIN_IDS` で制御
+> （コード・ページは残置。ID を外せば復活）。
+
+### 表示中（コアループの6ピン）
+
 | 施設（ピン） | ルート | 役割 |
 |---|---|---|
-| クエストギルド | `quests` | お手伝い・クエストの申請 |
-| クラフト工房 | `craft` | 素材を組み合わせて道具を作る |
-| 罠スタイル | `safari?style=passive` | 罠＋エサを仕掛けて待つパッシブ狩り |
-| アクティブ狩り | `safari?style=active` | 弓・槍でゲージ式タイミング狩り（回数制限あり） |
+| クエストギルド | `quests` | お手伝い・クエストの申請（LOGISTICS カテゴリは除外表示） |
+| うんぱんミッション | `logistics` | **現実のモノの運搬おてつだい**を申請。承認でコイン＋レア罠（旧エサ配送ミニゲームは廃止） |
+| 罠スタイル | `safari?style=passive` | 罠を仕掛けて待つパッシブ狩り。**設置直前にクイズ必須・1日3回まで** |
+| アクティブ狩り | `safari?style=active` | 探索型の狩り。**出発直前にクイズ必須**・捕獲は1日3回まで |
 | 自分の家 | `house` | 捕獲動物のハブ・親密度・AI 会話 |
-| 牧場 | `ranch` | 動物を育てる・うんちを回収 |
-| 農場 | `farm` | 作物を収穫（牧場エサ・動物園ケアに利用） |
-| 動物園 | `zoo` | 動物を展示・学ぶ |
-| 物流センター | `logistics` | エサを運ぶ・配送 |
 | 博物図鑑 | `dictionary` | 図鑑閲覧＋クイズ |
-| カオスレース | `race` | 5レーンのベット式レース。実況はクライアント側の乱数生成（LLM 不使用） |
-| ながれ | `flow` | ゲーム全体の流れの可視化 |
-| ゲームセンター（モーダル） | — | クレーンゲーム / 早押しクイズ / サファリスロット（準備中） |
 
-> **補足**: ワールドマップの「クエストギルド」ピンは `quests`（申請画面）へ直接遷移します。
-> （旧 `guild/` ハブは WorldMap の各ピンと重複し被リンクも無かったため削除済み。）
+### 非表示（HIDDEN_PIN_IDS。URL 直アクセスは可能）
+
+| 施設 | ルート | 備考 |
+|---|---|---|
+| クラフト工房 | `craft` | Zustand トイ実装（DB の UserTool に未接続）。罠入手は「コイン購入＋うんぱん報酬」に移行 |
+| 農場 / 牧場 / 動物園 | `farm` / `ranch` / `zoo` | 画面内で完結する作業系のため隠蔽 |
+| カオスレース | `race` | 同上 |
+| ゲームセンター | （モーダル） | クレーン / 早押し / スロット。ピンごと非表示 |
+| ながれ | `flow` | 一本道化により役割消滅 |
+
+> **補足**: 旧 `guild/` ハブは削除済み。クエストの入口は `quests` に一本化。
 
 ---
 
@@ -222,7 +232,7 @@ chore-safari/
 
 | モデル | 役割・主なフィールド |
 |---|---|
-| `User` | 子供/親。`coinBalance`、狩り回数制限（`dailyHuntCount`/`lastHuntDate`）、ストリーク（`currentStreak` 等）、絆（`kizunaPoints`/`helpedGrandma`）、相棒（`activeGuideAnimalId`）、`isTestAccount` |
+| `User` | 子供/親。`coinBalance`、狩り回数制限（`dailyHuntCount`/`lastHuntDate`）、罠設置回数制限（`dailyTrapCount`/`lastTrapDate` ★2026-06-12）、ストリーク（`currentStreak` 等）、絆（`kizunaPoints`/`helpedGrandma`）、相棒（`activeGuideAnimalId`）、`isTestAccount` |
 | `CoinTransaction` | コイン増減の取引履歴（`kind`/`amount`/`reason`） |
 | `Quest` / `QuestSubmission` | クエストマスタ（`category`: CHORE/STUDY/LIFE・`targetUsers`）と申請（`status`） |
 | `Penalty` / `PenaltyNotification` | ペナルティマスタと通知 |
@@ -233,7 +243,6 @@ chore-safari/
 | `Personality` | AI ガイドの性格マスタ（`firstPerson`/`toneRule`） |
 | `Hunt` | 進行中の狩り（`huntType`、`status`、`appearsAt`、`targetAnimalId`、`posX/posY`） |
 | `Tool` | 道具マスタ（罠/弓/槍/武器、`successRateBonus`、`historicalContext`、`consumable`） |
-| `Material` / `UserMaterial` | 素材マスタとユーザー所持数。**コードからは未使用（レガシークラフト撤去済み）**。テーブルは残存＝ドロップは別途マイグレーション |
 | `UserTool` | ユーザーの道具所持数 |
 | `SharedInventoryItem` | 家族共有インベントリ（倉庫） |
 | `GachaTransaction` | ガチャ履歴 |
@@ -242,6 +251,9 @@ chore-safari/
 
 > ⚠️ 旧構想にあった `TameSession` / `TameItemMaster` / `AnimalCompanion` / `PoopLog` / `FarmPlot` /
 > `NpcRelation` / `UserInventoryItem` / `DonationNotification` などは **存在しません**。
+> また `Material` / `UserMaterial`（旧クラフト用素材）は **2026-05-31 のマイグレーションでドロップ済み**で、
+> 現行スキーマには存在しません（クレーンは UserMaterial への二重書き込みを廃止。クラフト工房の素材は
+> Zustand のローカル型で、DB とは無関係）。
 
 ---
 
@@ -256,8 +268,8 @@ chore-safari/
 coins              … コイン残高ミラー。ロード時に DB 値でハイドレート、増減後は必ず syncCoins
 inventory          … 在庫ミラー。DB(GameInventoryItem) を正とし、変更は debounce で DB へスナップショット保存
 stamina            … 体力（0–100）。設計上エフェメラル（ゲーム再開で全回復）のため DB 化しない
-kizunaPoints / kindnessCount / pendingReturns / kizunaBadgeCount  … おたがいさまイベント。DB(User) ミラー（スナップショット同期）
-kizunaPlanDate / kizunaPlanKind / kizunaFiredDate                 … 1日1回の発火制御。DB(User) ミラー
+kizunaPoints / kindnessCount / pendingReturns / kizunaBadgeCount  … おたがいさまイベントの進捗。DB(User) ミラー（スナップショット同期）
+kizunaPlanDate / kizunaPlanKind / kizunaFiredDate                 … 【レガシー】旧「1日1回 予定→発火」方式の名残。DB(User) ミラーとして同期は続くが発火判定には未使用（→「おたがいさま（Kizuna）の発火」参照）
 bgmMuted / _hydrated（非永続）… BGM ミュート / ハイドレート済みフラグ
 
 ※ 動物データ（捕獲）は DB(CaughtAnimal) が唯一のソース。旧 animalsInYard/logisticsQueue/medals/_stats は撤去済み。
@@ -271,7 +283,7 @@ bgmMuted / _hydrated（非永続）… BGM ミュート / ハイドレート済�
 ```
 coinBalance（親の承認・ゲーム両方／全増減トランザクション）/ CoinTransaction
 GameInventoryItem（草・石・うんち・作物・素材などの流動在庫）★今回追加
-CaughtAnimal（図鑑）/ Hunt / Tool / Material / UserMaterial / UserTool
+CaughtAnimal（図鑑）/ Hunt / Tool / UserTool
 Quest / QuestSubmission / Penalty / 通知系 / GachaTransaction
 ```
 
@@ -299,24 +311,50 @@ Quest / QuestSubmission / Penalty / 通知系 / GachaTransaction
 
 ---
 
+## おたがいさま（Kizuna）の発火
+
+「おたがいさま（恩送り）」イベントは [components/KizunaManager.tsx](components/KizunaManager.tsx) が全画面共通で制御する（ワールドマップ・各ステージのどこでもマウントされる）。
+
+### 現行の発火ロジック（2026-05 改訂）
+- **トリガー**: `pathname`（ページ移動）が変わるたびに **5%（`TRIGGER_CHANCE = 0.05`）** で抽選。ログイン時に限らない。
+- **クールダウン**: 直前の発火から **10 秒（`COOLDOWN_MS = 10_000`）** は再発火しない（`lastFiredRef`。クライアントのみ・非永続）。
+- **種類の決定**: `pendingReturns > 0` なら「お返し（return）」を優先、無ければ「お願い（ask）」。シナリオは [lib/kizunaScenarios.ts](lib/kizunaScenarios.ts) の `pickAsk()` / `pickReturn()` から抽選。
+- **3択の結果**: お願いは「やさしい／ふつう／いじわる」。`KIZUNA_CHOICE_META` の `grantReturn`/`points` を `recordKizunaResult` に反映。**やさしい時だけ** `kindnessCount++` / `pendingReturns++`（後日お返しが返る）。お返しを受け取ると `redeemReturn`（`pendingReturns--`・`kizunaBadgeCount++`）。
+
+### レガシー（旧「1日1回 予定→発火」方式の名残）
+- かつては「その日に出すか・お願いか お返しか」を1日1回抽選して `kizunaPlanDate`/`kizunaPlanKind` に保存し、ランダムなタイミングで発火したら `kizunaFiredDate` を立てて以降その日は出さない、という方式だった。
+- 現在は上記の「移動毎 5%」方式に置き換わり、**この予定/発火日フィールドは発火判定に使われない**。
+- ただし `User`（DB）の `kizunaPlanDate`/`kizunaPlanKind`/`kizunaFiredDate` 列、store の同名フィールド、`getKizuna`/`saveKizuna` のスナップショット同期は**残存**している（読み書きは続く）。
+- store の `planKizunaDay` / `markKizunaFired` アクションは**どこからも呼ばれていない死コード**。クールダウンは `lastFiredRef`（メモリ上）で十分なため、これらの列は将来のマイグレーションで削除候補。
+
+---
+
 ## 既知の課題・技術的負債
 
 確認できた改善候補です。
 
-1. **`LogisticsClient.tsx` が型チェック除外（意図的に保留）**
-   JS 由来で未型付け（props/useState/DOM ref が any）の安定稼働ミニゲーム。全面型付けは費用対効果が低く回帰リスクがあるため、`@ts-nocheck` で意図的に除外している唯一のファイル。型安全ゲートは他全体で有効。
-
-2. **stamina は設計上エフェメラル（DB化しない）**
+1. **stamina は設計上エフェメラル（DB化しない）**
    HuntClient のスタミナはゲーム再開で全回復する per-session 値のため、意図的に Zustand のみ（DB 化しない）。
 
-3. **初回デプロイ時の一度きりリセット**
+2. **初回デプロイ時の一度きりリセット**
    coins/inventory/kizuna の DB ハイドレートにより、既存 localStorage のゲーム内在庫・絆進捗は初回ロードで一度だけ DB 値（初期は空）に揃う＝実質リセット。家庭内アプリのため許容。
+
+### 対応済み（2026-06-12）一本道化リフォーム
+
+- ✅ **マップを6ピンに削減**：`HIDDEN_PIN_IDS`（[app/kids/config.ts](app/kids/config.ts)）で craft/farm/ranch/zoo/race/arcade/flow を非表示化（コード残置・復活可能）。PATHS もコアループの一本道に再設計。
+- ✅ **物流センター → うんぱんミッション**：エサ配送ミニゲーム（`LogisticsClient.tsx`・875行・唯一の `@ts-nocheck`）を削除し、親が Bank で登録する LOGISTICS カテゴリクエスト（現実のモノの運搬）の申請画面（`LogisticsMissionsClient.tsx`）へ全面置換。**これによりコードベースから `@ts-nocheck` が消滅**。
+- ✅ **LOGISTICS 承認でレア罠付与**：`approveQuest` がコインに加えて `cage_trap` を1個 UserTool に付与。レア罠の唯一の入手経路＝現実の運搬が最高価値の行動に。
+- ✅ **クイズ必須化（QuizGate）**：罠設置の直前／アクティブ狩り出発の直前に全画面クイズ（[QuizGate](app/kids/[kidId]/QuizGate.tsx)）。出題は `getRandomQuizAnimal` ＋ `/api/quiz/generate`（Gemini→フォールバック→ローカル決め打ちの3段構え）。正解するまで進めない（別問題で再挑戦可）。
+- ✅ **罠設置に1日3回上限**：`User.dailyTrapCount`/`lastTrapDate` 新設（マイグレーション `20260612010000_daily_trap_limit`）。上限到達＆回収待ち罠なしで「きょうのぶんは おしまい」全画面（[DayEndScreen](app/kids/[kidId]/DayEndScreen.tsx)）。アクティブ狩りも残り0なら入口で同画面。
+- ✅ **クエスト申請に1日10回上限**：`submitQuest` で JST 日次カウント（`QUEST_DAILY_SUBMIT_LIMIT`）。
+- ✅ **罠ショップ**：罠の入手経路断絶（クラフトは Zustand トイで UserTool 未接続）を解消。サファリ画面でコイン30枚→おとしあな購入（`buyTrap`）。「お手伝い→コイン→罠→図鑑」の原則ルートが機能するように。
 
 ### 対応済み（2026-05-31）
 
 - ✅ **Gemini モデル既定を一元化＆常に最新へ**：版番号の散在（compose=`gemini-3-flash`／コード=`gemini-3.5-flash` 等）を解消。[lib/gemini.ts](lib/gemini.ts) の `DEFAULT_GEMINI_MODEL = "gemini-flash-latest"`（rolling 最新エイリアス）を唯一の既定とし、`GEMINI_MODEL` 環境変数は固定上書き用に。docker-compose は版を持たずパススルー。
 - ✅ **アクティブ狩りに1日の捕獲回数制限を適用**：`recordActiveHuntCatch` に DB `dailyHuntCount`/`HUNT_DAILY_LIMIT`（JSTリセット）を組み込み、無制限の図鑑量産を防止（コイン付与はなし）。HuntClient に「のこり N/3」表示。
 - ✅ **Kizuna（おたがいさま）を DB 化**：`User` に `kindnessCount`/`pendingReturns`/`kizunaBadgeCount`/`kizunaPlanDate`/`kizunaPlanKind`/`kizunaFiredDate` を追加し、`getKizuna`/`saveKizuna`＋ハイドレート/スナップショット同期で端末間・リロードに永続。
+  - ※ その後、発火方式は「1日1回 予定→発火」から **「ページ移動毎 5%＋クールダウン」へ変更**（[おたがいさま（Kizuna）の発火](#おたがいさまkizuna-の発火) 参照）。`kizunaPlanDate`/`kizunaPlanKind`/`kizunaFiredDate` は同期のみ残るレガシー列となった。
 - ✅ **`Material`/`UserMaterial` テーブルを削除**：レガシークラフト撤去でコード未使用になったため、マイグレーションでドロップ（seed も整理。`UserTool`＝パッシブ罠は温存）。
 - ✅ **狩り世界観は現状維持で確定**：「狩り・武器」のコアサイクルをそのまま正とする（テイム化は別企画として保留）。
 - ✅ **レガシークラフト系を撤去**：未使用の `features/craft/actions.ts`（`craftItem`）と `lib/recipes.ts` を削除し、クレーンの**死んだ `UserMaterial` への二重書き込みを廃止**（コイン消費のみ DB 確定）。クラフト UI（Zustand トイ）とパッシブ罠（`UserTool`）は温存。`Material`/`UserMaterial` テーブルは残存（ドロップは別途マイグレーション）。

@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import React, { useEffect, useRef, useState } from "react";
 import { useWeather, type WeatherInfo } from "./[kidId]/WeatherContext";
 import { KizunaManager } from "@/components/KizunaManager";
+import { HIDDEN_PIN_IDS } from "./config";
 
 // ── CSS アニメーション（一度だけ <head> に注入） ──────────────
 const MAP_CSS = `
@@ -127,20 +128,15 @@ type MapPin = {
   isNew?: boolean;
 };
 
-// ── MAP_PINS（iPad 対応・広域再配置） ─────────────────────────
+// ── 全ピン定義 ────────────────────────────────────────────────
+// 一本道化（2026-06-12 / docs/DESIGN_PRINCIPLES.md 3）:
+//   表示するのは HIDDEN_PIN_IDS（app/kids/config.ts）に含まれない6ピンのみ。
+//   隠したピンの定義・ページは残してあるので、config から ID を外せば復活する。
 //
-// 地図の"ゾーン"イメージ：
-//   左上  ──── ギルド（出発点）
-//   中上  ──── クラフト工房（制作ゾーン）
-//   右上  ──── アクティブ狩り（山岳・開けた野原 ゾーン）
-//   左中  ──── 農場
-//   中中  ──── 罠スタイル（密林ゾーン）・物流センター
-//   右中  ──── 牧場
-//   左下  ──── 博物図鑑
-//   中下  ──── カオスレース
-//   右下  ──── 動物園・ゲームセンター
+// 表示中の一本道（コアループ）:
+//   🏰ギルド → 📦うんぱんミッション → 🦁罠 / 🏹狩り（クイズ必須）→ 🏠家 → 📚図鑑
 //
-const MAP_PINS: MapPin[] = [
+const ALL_MAP_PINS: MapPin[] = [
   // ── 左上：ギルド（スタート地点）
   {
     id: "guild",
@@ -237,12 +233,12 @@ const MAP_PINS: MapPin[] = [
     ready: true,
     isNew: true,
   },
-  // ── 中央下：物流センター（罠スタイルの南）
+  // ── うんぱんミッション（旧 物流センター）：現実の運搬おてつだい
   {
     id: "logistics",
     icon: "📦",
-    label: "物流センター",
-    sub: "えさをはこぶ・はいそう",
+    label: "うんぱんミッション",
+    sub: "にもつを はこんで レアわなを ゲット！",
     x: 52,
     y: 72,
     color: "#60a5fa",
@@ -321,38 +317,33 @@ const MAP_PINS: MapPin[] = [
   },
 ];
 
-// ── PATHS（新ピン配置に合わせた自然なルート） ─────────────────
+// ── 表示ピン：一本道に合わせて座標を再配置 ─────────────────────
+// 左上（スタート）から右下（ゴール）へ流れる「読む順番」のレイアウト。
+const VISIBLE_PIN_POS: Record<string, { x: number; y: number }> = {
+  guild:            { x: 12, y: 16 }, // ① おてつだい（スタート）
+  logistics:        { x: 32, y: 38 }, // ② うんぱんミッション
+  "safari-active":  { x: 58, y: 16 }, // ③a アクティブ狩り（山岳）
+  "safari-passive": { x: 52, y: 58 }, // ③b 罠スタイル（密林）
+  house:            { x: 76, y: 42 }, // ④ 自分の家
+  dictionary:       { x: 86, y: 76 }, // ⑤ 博物図鑑（ゴール）
+};
+
+const MAP_PINS: MapPin[] = ALL_MAP_PINS.filter(
+  (p) => !HIDDEN_PIN_IDS.includes(p.id),
+).map((p) => ({ ...p, ...(VISIBLE_PIN_POS[p.id] ?? {}) }));
+
+// ── PATHS（一本道：ギルド → うんぱん → サファリ → 家 → 図鑑） ──
 const PATHS = [
-  // ギルド → 農場 → クラフト（左辺の縦軸）
-  { from: "guild",          to: "farm"           },
-  { from: "farm",           to: "craft"          },
-  // 農場 → 牧場（素材の流れ）
-  { from: "farm",           to: "ranch"          },
-  // クラフト → 2 つのサファリ（分岐）
-  { from: "craft",          to: "safari-passive" },
-  { from: "craft",          to: "safari-active"  },
-  // 罠スタイル → 倉庫・牧場
-  { from: "safari-passive", to: "logistics"      },
-  { from: "safari-passive", to: "ranch"          },
-  // アクティブ → 牧場（右辺）
-  { from: "safari-active",  to: "ranch"          },
-  // 牧場 → 動物園
-  { from: "ranch",          to: "zoo"            },
-  // 倉庫からの接続
-  { from: "logistics",      to: "zoo"            },
-  { from: "logistics",      to: "race"           },
-  // 図鑑 → 倉庫
-  { from: "dictionary",     to: "logistics"      },
-  // 図鑑 → ながれ → 罠サファリ
-  { from: "dictionary",     to: "flow"           },
-  { from: "flow",           to: "safari-passive" },
-  // 動物園 → ゲームセンター
-  { from: "zoo",            to: "arcade"         },
-  // サファリ → 自分の家 → 牧場・動物園
+  // ① 現実のおてつだい（ギルド）→ ② うんぱんミッション
+  { from: "guild",          to: "logistics"      },
+  // ② うんぱん → ③ サファリ（罠 / 狩り。どちらも直前にクイズ必須）
+  { from: "logistics",      to: "safari-passive" },
+  { from: "logistics",      to: "safari-active"  },
+  // ③ サファリ → ④ 自分の家（つかまえた どうぶつ）
   { from: "safari-passive", to: "house"          },
   { from: "safari-active",  to: "house"          },
-  { from: "house",          to: "ranch"          },
-  { from: "house",          to: "zoo"            },
+  // ④ 家 → ⑤ 博物図鑑（コアループの出口）
+  { from: "house",          to: "dictionary"     },
 ];
 
 // ── ゲームセンター内ゲーム ─────────────────────────────────────
@@ -580,13 +571,16 @@ export function WorldMapPortal({
 
   const player = players[activePlayer] ?? players[0];
 
+  // 兄弟 NPC の立ち位置（一本道化後の表示ピンから id で引く）
+  const SIBLING_SPOT_IDS = ["safari-passive", "house", "dictionary"];
   const others = players
     .map((p, i) => ({ ...p, origIndex: i }))
     .filter((p) => p.origIndex !== activePlayer)
     .map((p, oi) => ({
       ...p, oi,
-      // 兄弟は牧場/動物園/レース周辺に配置
-      pin: MAP_PINS[[5, 6, 9][oi % 3]],
+      pin:
+        MAP_PINS.find((m) => m.id === SIBLING_SPOT_IDS[oi % SIBLING_SPOT_IDS.length]) ??
+        MAP_PINS[0],
     }));
 
   // ── ピンタップ ────────────────────────────────────────────────

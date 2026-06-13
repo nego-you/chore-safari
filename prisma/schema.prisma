@@ -108,6 +108,10 @@ model User {
   // 起動時に lastHuntDate と「今日」が違えば dailyHuntCount を 0 リセットする。
   dailyHuntCount    Int                @default(0) @map("daily_hunt_count")
   lastHuntDate      DateTime?          @map("last_hunt_date")
+  // 1日の罠設置（huntType=TRAP）回数制限管理。仕組みは dailyHuntCount と同じ
+  // （JST 深夜0時繰り越しでリセット）。一本道化リフォームで追加（2026-06-12）。
+  dailyTrapCount    Int                @default(0) @map("daily_trap_count")
+  lastTrapDate      DateTime?          @map("last_trap_date")
   // テスト用フラグ：true の場合、コイン・回数制限をすべてバイパスする
   isTestAccount     Boolean            @default(false) @map("is_test")
   // ── 恩送り（ペイ・フォワード / おたがいさま）イベント管理 ─────────
@@ -116,7 +120,9 @@ model User {
   //   kindnessCount    : これまでに善意で手助けした回数（累計）
   //   pendingReturns   : まだ返ってきていない「お返し手助け」の残数
   //   kizunaBadgeCount : 受け取ったお返しの累計（絆の証）
-  //   kizunaPlanDate / kizunaPlanKind / kizunaFiredDate : 1日1回の発火制御
+  //   kizunaPlanDate / kizunaPlanKind / kizunaFiredDate : 【レガシー】旧「1日1回 予定→発火」方式の名残。
+  //     現在の発火は KizunaManager の「ページ移動毎 5% 抽選＋クールダウン」に置き換わっており、
+  //     これら3列は読み書き（同期）は続くが発火判定には使われない（store の planKizunaDay/markKizunaFired は呼び出し無し）。
   //   ※ 書き手は子供本人のみ。スナップショット同期（last-write-wins）で運用。
   kizunaPoints      Int                @default(0) @map("kizuna_points")
   helpedGrandma     Boolean            @default(false) @map("helped_grandma")

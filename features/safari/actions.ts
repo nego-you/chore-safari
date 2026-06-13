@@ -15,6 +15,11 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import {
+  SHOP_TRAP_TOOL_ID,
+  TRAP_COST,
+  TRAP_DAILY_LIMIT,
+} from "@/app/kids/config";
 
 // ── 型 ────────────────────────────────────────────────────────────────
 
@@ -145,6 +150,58 @@ export async function getHuntStamina(userId: string): Promise<HuntStaminaInfo> {
   return _readStaminaWithReset(userId);
 }
 
+// ── TrapStamina（罠設置の1日上限・一本道化 2026-06-12） ────────────────
+// dailyTrapCount / lastTrapDate は新設列。prisma generate 前は生成型に
+// 含まれないため、streak 実装時と同じく型アサーションで補う
+// （`npx prisma migrate dev` で DB 適用＆クライアント再生成後に正常動作）。
+
+type UserTrapStaminaRow = {
+  dailyTrapCount: number;
+  lastTrapDate: Date | null;
+};
+
+async function _readTrapStaminaWithReset(userId: string): Promise<HuntStaminaInfo> {
+  const userRaw = await prisma.user.findUnique({ where: { id: userId } });
+  if (!userRaw) {
+    return { used: 0, remaining: 0, limit: TRAP_DAILY_LIMIT, lastHuntDate: null };
+  }
+  const user = userRaw as typeof userRaw & Partial<UserTrapStaminaRow>;
+  const count = user.dailyTrapCount ?? 0;
+  const lastTrap = user.lastTrapDate ?? null;
+
+  const today = todayJstString();
+  const lastDate = lastTrap ? todayJstString(lastTrap) : null;
+
+  if (lastDate !== today && count > 0) {
+    await prisma.user.updateMany({
+      where: {
+        id: userId,
+        ...({ dailyTrapCount: { gt: 0 } } as Record<string, unknown>),
+      } as Parameters<typeof prisma.user.updateMany>[0]["where"],
+      data: { dailyTrapCount: 0 } as Parameters<
+        typeof prisma.user.updateMany
+      >[0]["data"],
+    });
+    return {
+      used: 0,
+      remaining: TRAP_DAILY_LIMIT,
+      limit: TRAP_DAILY_LIMIT,
+      lastHuntDate: lastTrap?.toISOString() ?? null,
+    };
+  }
+  const used = Math.min(count, TRAP_DAILY_LIMIT);
+  return {
+    used,
+    remaining: Math.max(0, TRAP_DAILY_LIMIT - used),
+    limit: TRAP_DAILY_LIMIT,
+    lastHuntDate: lastTrap?.toISOString() ?? null,
+  };
+}
+
+export async function getTrapStamina(userId: string): Promise<HuntStaminaInfo> {
+  return _readTrapStaminaWithReset(userId);
+}
+
 // ── パッシブ罠 ─────────────────────────────────────────────────────────
 
 export type SetTrapResult =
@@ -163,8 +220,10 @@ export type SetTrapResult =
         targetRarity: "COMMON" | "RARE" | "EPIC" | "LEGENDARY";
       };
       updatedInventory: Array<{ itemId: string; quantity: number }>;
+      // 罠設置の1日上限の最新値（UI のカウンタ表示用）
+      trapStamina: HuntStaminaInfo;
     }
-  | { success: false; error: string };
+  | { success: false; error: string; limitReached?: boolean };
 
 const RARE_TRAP_IDS = new Set(["cage_trap", "leghold", "hunter_net", "sturdy_trap"]);
 
@@ -184,10 +243,20 @@ export async function setTrap(
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, role: true },
+    select: { id: true, role: true, isTestAccount: true },
   });
   if (!user || user.role !== "CHILD") {
     return { success: false, error: "ユーザーが みつかりません" };
+  }
+
+  // ── 1日の罠設置上限（一本道化 2026-06-12）─────────────────────
+  const trapStaBefore = await _readTrapStaminaWithReset(userId);
+  if (!user.isTestAccount && trapStaBefore.remaining <= 0) {
+    return {
+      success: false,
+      error: "きょうの ワナは もう おしまい！ また あした げんじつで がんばろう🌙",
+      limitReached: true,
+    };
   }
 
   const toolRecord = await prisma.tool.findUnique({ where: { toolId: trapItemId } });
@@ -218,6 +287,21 @@ export async function setTrap(
         data: { quantity: { decrement: 1 } },
       });
       if (upd.count !== 1) throw new Error("OUT_OF_TRAP");
+
+      // 罠設置スタミナを条件付きで消費（同時実行の取りこぼし防止）。
+      // dailyTrapCount は新設列のため生成型に未反映でも通るようキャスト。
+      if (!user.isTestAccount) {
+        const staUpd = await tx.user.updateMany({
+          where: {
+            id: userId,
+            ...({ dailyTrapCount: { lt: TRAP_DAILY_LIMIT } } as Record<string, unknown>),
+          } as Parameters<typeof tx.user.updateMany>[0]["where"],
+          data: {
+            ...({ dailyTrapCount: { increment: 1 }, lastTrapDate: new Date() } as Record<string, unknown>),
+          } as Parameters<typeof tx.user.updateMany>[0]["data"],
+        });
+        if (staUpd.count !== 1) throw new Error("OUT_OF_TRAP_LIMIT");
+      }
 
       return tx.hunt.create({
         data: {
@@ -251,10 +335,25 @@ export async function setTrap(
         targetRarity: chosen.rarity as "COMMON" | "RARE" | "EPIC" | "LEGENDARY",
       },
       updatedInventory: [{ itemId: trapItemId, quantity: userTool.quantity - 1 }],
+      trapStamina: {
+        used: trapStaBefore.used + (user.isTestAccount ? 0 : 1),
+        remaining: user.isTestAccount
+          ? trapStaBefore.remaining
+          : Math.max(0, trapStaBefore.remaining - 1),
+        limit: TRAP_DAILY_LIMIT,
+        lastHuntDate: new Date().toISOString(),
+      },
     };
   } catch (err) {
     if (err instanceof Error && err.message === "OUT_OF_TRAP") {
       return { success: false, error: `${toolRecord.name}が たりません` };
+    }
+    if (err instanceof Error && err.message === "OUT_OF_TRAP_LIMIT") {
+      return {
+        success: false,
+        error: "きょうの ワナは もう おしまい！ また あした げんじつで がんばろう🌙",
+        limitReached: true,
+      };
     }
     console.error("setTrap failed:", err);
     return { success: false, error: "罠の設置に失敗しました" };
@@ -632,5 +731,132 @@ export async function recordActiveHuntCatch(
     }
     console.error("recordActiveHuntCatch failed:", err);
     return { success: false, error: "捕獲の記録に失敗しました" };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 罠ショップ（一本道化 2026-06-12）
+//   クラフト工房をマップから隠したため、コインで基本罠を買えるようにする。
+//   「お手伝い → コイン → 罠 → 図鑑」の原則ルート（DESIGN_PRINCIPLES 1・3）。
+//   レア罠はうんぱんミッション（LOGISTICS クエスト承認）でのみ入手可能。
+// ─────────────────────────────────────────────────────────────────────────────
+export type BuyTrapResult =
+  | {
+      success: true;
+      newCoinBalance: number;
+      trap: { toolId: string; toolName: string; emoji: string; quantity: number };
+    }
+  | { success: false; error: string };
+
+export async function buyTrap(userId: string): Promise<BuyTrapResult> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, role: true, isTestAccount: true },
+  });
+  if (!user || user.role !== "CHILD") {
+    return { success: false, error: "ユーザーが みつかりません" };
+  }
+
+  const tool = await prisma.tool.findUnique({
+    where: { toolId: SHOP_TRAP_TOOL_ID },
+  });
+  if (!tool || tool.type !== "TRAP") {
+    return { success: false, error: "ショップの ワナが みつかりません" };
+  }
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      // 残高が足りる時だけ条件付きで減算（adjustCoins と同じパターン）
+      if (!user.isTestAccount) {
+        const upd = await tx.user.updateMany({
+          where: { id: userId, coinBalance: { gte: TRAP_COST } },
+          data: { coinBalance: { decrement: TRAP_COST } },
+        });
+        if (upd.count !== 1) throw new Error("INSUFFICIENT_FUNDS");
+
+        await tx.coinTransaction.create({
+          data: {
+            userId,
+            amount: -TRAP_COST,
+            kind: "ADJUSTMENT",
+            reason: `ワナを こうにゅう：${tool.name}`,
+          },
+        });
+      }
+
+      const userTool = await tx.userTool.upsert({
+        where: { userId_toolId: { userId, toolId: tool.id } },
+        update: { quantity: { increment: 1 } },
+        create: { userId, toolId: tool.id, quantity: 1 },
+      });
+
+      const fresh = await tx.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { coinBalance: true },
+      });
+      return { newBalance: fresh.coinBalance, quantity: userTool.quantity };
+    });
+
+    revalidatePath("/kids");
+    revalidatePath("/kids/[kidId]/safari", "page");
+
+    return {
+      success: true,
+      newCoinBalance: result.newBalance,
+      trap: {
+        toolId: tool.toolId,
+        toolName: tool.name,
+        emoji: tool.emoji,
+        quantity: result.quantity,
+      },
+    };
+  } catch (err) {
+    if (err instanceof Error && err.message === "INSUFFICIENT_FUNDS") {
+      return {
+        success: false,
+        error: `コインが たりないよ（${TRAP_COST}コイン ひつよう）。おてつだいで ためよう！`,
+      };
+    }
+    console.error("buyTrap failed:", err);
+    return { success: false, error: "ワナの こうにゅうに しっぱいしました" };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// クイズゲート用：出題のたねになる動物をランダムに1匹返す（一本道化 2026-06-12）。
+//   クライアント側はこの動物情報で /api/quiz/generate（Gemini＋フォールバック）を叩く。
+//   「学びを冒険の鍵にする」（DESIGN_PRINCIPLES 4）。
+// ─────────────────────────────────────────────────────────────────────────────
+export type QuizAnimal = {
+  specificName: string;
+  description: string;
+  emoji: string;
+};
+
+export async function getRandomQuizAnimal(): Promise<QuizAnimal | null> {
+  try {
+    const count = await prisma.animal.count();
+    if (count === 0) return null;
+    const skip = Math.floor(Math.random() * count);
+    const rows = await prisma.animal.findMany({
+      skip,
+      take: 1,
+      select: {
+        specificName: true,
+        name: true,
+        description: true,
+        emoji: true,
+      },
+    });
+    const a = rows[0];
+    if (!a) return null;
+    return {
+      specificName: a.specificName || a.name,
+      description: a.description,
+      emoji: a.emoji,
+    };
+  } catch (err) {
+    console.error("getRandomQuizAnimal failed:", err);
+    return null;
   }
 }

@@ -6,6 +6,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import {
+  LOGISTICS_REWARD_TOOL_ID,
   QUEST_CATEGORIES,
   normalizeCategory,
   type QuestCategory,
@@ -139,6 +140,8 @@ export type QuestReviewResult =
         didIncrement: boolean;
         milestone: StreakMilestone | null;
       };
+      // うんぱんミッション（LOGISTICS）承認で付与したレア罠（APPROVED 時のみ）
+      trapRewarded?: { toolName: string; emoji: string } | null;
     }
   | { success: false; error: string };
 
@@ -236,6 +239,33 @@ export async function approveQuest(
         },
       });
 
+      // ── うんぱんミッション（LOGISTICS）：レア罠を1個付与 ──────────
+      // 「現実のモノの運搬」をゲーム進行上いちばん価値の高い行動にする
+      // （一本道化 2026-06-12。レア罠はここでしか手に入らない）。
+      let trapRewarded: { toolName: string; emoji: string } | null = null;
+      if ((submission.quest.category ?? "").toUpperCase() === "LOGISTICS") {
+        const rewardTool = await tx.tool.findUnique({
+          where: { toolId: LOGISTICS_REWARD_TOOL_ID },
+        });
+        if (rewardTool) {
+          await tx.userTool.upsert({
+            where: {
+              userId_toolId: {
+                userId: submission.userId,
+                toolId: rewardTool.id,
+              },
+            },
+            update: { quantity: { increment: 1 } },
+            create: {
+              userId: submission.userId,
+              toolId: rewardTool.id,
+              quantity: 1,
+            },
+          });
+          trapRewarded = { toolName: rewardTool.name, emoji: rewardTool.emoji };
+        }
+      }
+
       // マイルストーン報酬の履歴 + 通知
       if (streakUpdate.milestone) {
         const m = streakUpdate.milestone;
@@ -281,6 +311,7 @@ export async function approveQuest(
           didIncrement: streakUpdate.didIncrement,
           milestone: streakUpdate.milestone,
         },
+        trapRewarded,
       };
     });
 
@@ -297,6 +328,7 @@ export async function approveQuest(
       rewardCoins: submission.quest.rewardCoins,
       newCoinBalance: result.newBalance,
       streak: result.streak,
+      trapRewarded: result.trapRewarded,
     };
   } catch (err) {
     if (err instanceof Error && err.message === "ALREADY_PROCESSED") {

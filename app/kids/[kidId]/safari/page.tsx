@@ -6,7 +6,7 @@
 
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { getHuntStamina } from "../../actions";
+import { getHuntStamina, getTrapStamina } from "../../actions";
 import { SafariClient } from "./SafariClient";
 
 export const dynamic = "force-dynamic";
@@ -59,8 +59,12 @@ export default async function SafariPage({
     }),
   ]);
 
-  // アクティブ狩り（BOW/SPEAR）用の本日残り回数。罠スタイル自体は制限なし。
-  const huntStamina = initialKid ? await getHuntStamina(initialKid) : null;
+  // アクティブ狩り（BOW/SPEAR）と罠設置それぞれの本日残り回数。
+  // 罠設置にも1日上限あり（一本道化 2026-06-12）。
+  const [huntStamina, trapStamina] = await Promise.all([
+    initialKid ? getHuntStamina(initialKid) : Promise.resolve(null),
+    initialKid ? getTrapStamina(initialKid) : Promise.resolve(null),
+  ]);
 
   // UserTool → クライアント用の軽量型に変換。
   const ownedTraps = ownedTrapRows.map((ut) => ({
@@ -106,6 +110,8 @@ export default async function SafariPage({
       activeTraps={traps}
       huntStaminaRemaining={huntStamina?.remaining ?? null}
       huntStaminaLimit={huntStamina?.limit ?? 3}
+      trapStaminaRemaining={trapStamina?.remaining ?? null}
+      trapStaminaLimit={trapStamina?.limit ?? 3}
     />
   );
 }

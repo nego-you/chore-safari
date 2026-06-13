@@ -6,6 +6,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { QUEST_DAILY_SUBMIT_LIMIT } from "@/app/kids/config";
 
 // ── 型 ────────────────────────────────────────────────────────────────
 
@@ -30,7 +31,7 @@ export async function submitQuest(
 ): Promise<SubmitQuestResult> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, role: true },
+    select: { id: true, role: true, isTestAccount: true },
   });
   if (!user || user.role !== "CHILD") {
     return { success: false, error: "ユーザーが みつかりません" };
@@ -46,6 +47,23 @@ export async function submitQuest(
   });
   if (pending) {
     return { success: false, error: "もう しんせいずみだよ" };
+  }
+
+  // ── 1日の申請回数上限（一本道化 2026-06-12）──────────────────────
+  // 申請の連打を防ぐ「やめどき」ストッパー（DESIGN_PRINCIPLES 2）。
+  if (!user.isTestAccount) {
+    const jstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    const todayJST = jstNow.toISOString().slice(0, 10); // "YYYY-MM-DD"
+    const todayStart = new Date(`${todayJST}T00:00:00+09:00`);
+    const todayCount = await prisma.questSubmission.count({
+      where: { userId, submittedAt: { gte: todayStart } },
+    });
+    if (todayCount >= QUEST_DAILY_SUBMIT_LIMIT) {
+      return {
+        success: false,
+        error: "きょうの しんせいは もう おしまい！ また あした がんばろう🌙",
+      };
+    }
   }
 
   const created = await prisma.questSubmission.create({

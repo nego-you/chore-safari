@@ -33,6 +33,8 @@ export default async function QuestsPage({
     prisma.quest.findMany({
       where: {
         isActive: true,
+        // うんぱんミッション（LOGISTICS）は専用画面（/logistics）にのみ出す。
+        category: { not: "LOGISTICS" },
         OR: kidParam
           ? [
               { targetUsers: { none: {} } }, // 空 = 全員用

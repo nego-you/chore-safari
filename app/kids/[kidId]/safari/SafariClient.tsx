@@ -13,7 +13,11 @@ import {
   useState,
   useTransition,
 } from "react";
-import { checkTrap, resolveTrap, setTrap } from "../../actions";
+import { buyTrap, checkTrap, resolveTrap, setTrap } from "../../actions";
+import { TRAP_COST } from "../../config";
+import { useSafariStore } from "@/store/useSafariStore";
+import { QuizGate } from "../QuizGate";
+import { DayEndScreen } from "../DayEndScreen";
 
 type Rarity = "COMMON" | "RARE" | "EPIC" | "LEGENDARY";
 
@@ -69,9 +73,12 @@ type Props = {
   kids: KidLite[];
   ownedTraps: UserToolRow[];  // UserTool (type=TRAP) のみ
   activeTraps: TrapDTO[];
-  // アクティブ狩り（BOW/SPEAR）の本日残り回数。罠スタイル自体は無制限なので nullable。
+  // アクティブ狩り（BOW/SPEAR）の本日残り回数。
   huntStaminaRemaining?: number | null;
   huntStaminaLimit?: number;
+  // 罠設置の本日残り回数（一本道化 2026-06-12 で上限新設）。
+  trapStaminaRemaining?: number | null;
+  trapStaminaLimit?: number;
 };
 
 const NAME_READING: Record<string, string> = {
@@ -306,6 +313,8 @@ export function SafariClient({
   activeTraps: initialTraps,
   huntStaminaRemaining = null,
   huntStaminaLimit = 3,
+  trapStaminaRemaining = null,
+  trapStaminaLimit = 3,
 }: Props) {
   const [kidId, setKidId] = useState<string | null>(initialKidId);
   const [trapTools, setTrapTools] = useState<UserToolRow[]>(ownedTraps);
@@ -322,6 +331,20 @@ export function SafariClient({
     { trapItemId: string; baitItemId: string } | null
   >(null);
   const isPlacingMode = pendingPlacement !== null;
+
+  // ── 一本道化（2026-06-12）────────────────────────────────────
+  // 罠設置の本日残り回数（DB 値ミラー。設置成功でサーバ確定値に更新）
+  const [trapRemaining, setTrapRemaining] = useState<number | null>(
+    trapStaminaRemaining,
+  );
+  // クイズゲート：座標確定後「クイズに正解したら設置」の待機状態
+  const [quizPlacement, setQuizPlacement] = useState<
+    { trapItemId: string; baitItemId: string; posX: number; posY: number } | null
+  >(null);
+  // 罠ショップ（コインで基本罠を買う）
+  const [buying, setBuying] = useState(false);
+  const coins = useSafariStore((s) => s.coins);
+  const syncCoins = useSafariStore((s) => s.syncCoins);
 
   const [, startTransition] = useTransition();
 
@@ -377,17 +400,32 @@ export function SafariClient({
 
   const cancelPlacement = () => setPendingPlacement(null);
 
-  // フィールド上のタップ位置が確定したらサーバ呼び出し。
+  // フィールド上のタップ位置が確定したら、まずクイズゲートへ。
+  // 「学びを冒険の鍵にする」：クイズに正解しないと罠は仕掛けられない。
   const confirmPlacement = (posX: number, posY: number) => {
     if (!selectedKid || !pendingPlacement) return;
     const { trapItemId, baitItemId } = pendingPlacement;
     setPendingPlacement(null);
+    setQuizPlacement({ trapItemId, baitItemId, posX, posY });
+  };
+
+  // クイズ正解後に実際のサーバ呼び出しを行う。
+  const executePlacement = (placement: {
+    trapItemId: string;
+    baitItemId: string;
+    posX: number;
+    posY: number;
+  }) => {
+    if (!selectedKid) return;
+    const { trapItemId, baitItemId, posX, posY } = placement;
     startTransition(async () => {
       const r = await setTrap(selectedKid.id, trapItemId, baitItemId, posX, posY);
       if (!r.success) {
         alert(r.error);
+        if (r.limitReached) setTrapRemaining(0);
         return;
       }
+      setTrapRemaining(r.trapStamina.remaining);
       // 消費後の道具残数で楽観的更新（toolId でマッチ）
       setTrapTools((prev) =>
         prev.map((t) => {
@@ -422,6 +460,41 @@ export function SafariClient({
           },
         },
       ]);
+    });
+  };
+
+  // ── 罠ショップ：コインで基本罠を買う（クラフト工房の代替・一本道化）──
+  const handleBuyTrap = () => {
+    if (!selectedKid || buying) return;
+    setBuying(true);
+    startTransition(async () => {
+      try {
+        const r = await buyTrap(selectedKid.id);
+        if (!r.success) {
+          alert(r.error);
+          return;
+        }
+        syncCoins(r.newCoinBalance);
+        setTrapTools((prev) => {
+          const exists = prev.some((t) => t.toolId === r.trap.toolId);
+          if (exists) {
+            return prev.map((t) =>
+              t.toolId === r.trap.toolId ? { ...t, quantity: r.trap.quantity } : t,
+            );
+          }
+          return [
+            ...prev,
+            {
+              toolId: r.trap.toolId,
+              toolName: r.trap.toolName,
+              emoji: r.trap.emoji,
+              quantity: r.trap.quantity,
+            },
+          ];
+        });
+      } finally {
+        setBuying(false);
+      }
     });
   };
 
@@ -480,13 +553,48 @@ export function SafariClient({
     );
   }
 
+  // ── きょうの罠が上限 & 回収待ちの罠もない → おしまい画面 ──────────
+  // （最後の罠の結果モーダル表示中は出さない＝捕獲の祝福を先に見せる）
+  const trapQuotaExhausted = trapRemaining !== null && trapRemaining <= 0;
+  if (trapQuotaExhausted && myTraps.length === 0 && !result && !gameTrap) {
+    return (
+      <main className="min-h-[calc(100vh-var(--header-h,52px))]">
+        <DayEndScreen
+          kidId={selectedKid.id}
+          message="きょうの ワナは もう おしまい！"
+          subMessage="また あした、げんじつの おてつだいで がんばろう！"
+        />
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-[calc(100vh-var(--header-h,52px))] bg-gradient-to-b from-sky-200 via-emerald-100 to-amber-50 px-4 py-4 md:px-8 md:py-6">
       <style>{FIELD_KEYFRAMES}</style>
 
       <div className="mx-auto max-w-3xl md:max-w-5xl space-y-4 md:space-y-6">
-        {/* ページタイトル */}
-        <p className="text-center text-sm font-bold text-emerald-700/80">🦁 罠スタイル</p>
+        {/* ページタイトル + きょうの残り回数 */}
+        <div className="flex items-center justify-center gap-3">
+          <p className="text-center text-sm font-bold text-emerald-700/80">🦁 罠スタイル</p>
+          {trapRemaining !== null && (
+            <span
+              className={`rounded-full px-3 py-0.5 text-xs font-extrabold ring-1 ${
+                trapRemaining > 0
+                  ? "bg-amber-50 text-amber-700 ring-amber-300"
+                  : "bg-slate-100 text-slate-400 ring-slate-300"
+              }`}
+            >
+              🪤 きょうの ワナ のこり {trapRemaining}/{trapStaminaLimit}
+            </span>
+          )}
+        </div>
+
+        {/* 上限到達バナー（回収待ちの罠がある場合のみここに来る） */}
+        {trapQuotaExhausted && (
+          <p className="rounded-2xl bg-indigo-900/90 px-4 py-3 text-center text-sm font-bold text-amber-200">
+            🌙 きょうの ワナは おしまい！ しかけた ワナの ようすだけ みられるよ
+          </p>
+        )}
 
         {/* サファリフィールド */}
         <SafariField
@@ -497,8 +605,15 @@ export function SafariClient({
           onCancelPlace={cancelPlacement}
         />
 
-        {/* もちもの（仕掛けるフォーム） */}
-        <Pouch traps={trapTools} onSubmit={handleSetTrap} />
+        {/* もちもの（仕掛けるフォーム）＋ 罠ショップ */}
+        <Pouch
+          traps={trapTools}
+          onSubmit={handleSetTrap}
+          canPlace={!trapQuotaExhausted}
+          coins={coins}
+          buying={buying}
+          onBuy={handleBuyTrap}
+        />
 
 
       </div>
@@ -512,6 +627,20 @@ export function SafariClient({
       )}
       {result && (
         <ResultModal result={result} onClose={() => setResult(null)} />
+      )}
+
+      {/* クイズゲート：正解したら罠を設置（一本道化） */}
+      {quizPlacement && (
+        <QuizGate
+          title="ワナを しかける まえの ものしりクイズ！"
+          subtitle="せいかいすると ワナを しかけられるよ"
+          onPass={() => {
+            const placement = quizPlacement;
+            setQuizPlacement(null);
+            if (placement) executePlacement(placement);
+          }}
+          onCancel={() => setQuizPlacement(null)}
+        />
       )}
     </main>
   );
@@ -745,12 +874,21 @@ function FieldTrap({
 
 // ────────── もちもの（罠を仕掛けるフォーム・1本化） ──────────
 // UserTool (type=TRAP) の toolId / toolName / emoji / quantity を受け取る。
+// 一本道化（2026-06-12）：クラフト工房の代わりにコインで基本罠を買える。
 function Pouch({
   traps,
   onSubmit,
+  canPlace,
+  coins,
+  buying,
+  onBuy,
 }: {
   traps: UserToolRow[];
   onSubmit: (trapToolId: string) => void;
+  canPlace: boolean;
+  coins: number;
+  buying: boolean;
+  onBuy: () => void;
 }) {
   const firstAvailable = traps.find((t) => t.quantity > 0)?.toolId ?? "";
   const [trapId, setTrapId] = useState(firstAvailable);
@@ -764,7 +902,8 @@ function Pouch({
   }, [traps, trapId]);
 
   const selectedQty = traps.find((t) => t.toolId === trapId)?.quantity ?? 0;
-  const canSubmit = !!trapId && selectedQty > 0;
+  const canSubmit = !!trapId && selectedQty > 0 && canPlace;
+  const canBuy = coins >= TRAP_COST && !buying;
   // 上位ワナ（かごわな・バネわな）を使うと SSR 出現率アップ
   const isRare = trapId === "cage_trap" || trapId === "leghold";
 
@@ -789,7 +928,7 @@ function Pouch({
             onChange={(e) => setTrapId(e.target.value)}
             className="mt-1 w-full rounded-xl border-2 border-amber-300 bg-amber-50 px-2 py-1.5 text-sm font-bold text-amber-900 focus:border-amber-500 focus:outline-none"
           >
-            {traps.length === 0 && <option value="">ワナが ないよ（クラフトで つくろう！）</option>}
+            {traps.length === 0 && <option value="">ワナが ないよ（コインで かおう！）</option>}
             {traps.map((t) => (
               <option key={t.toolId} value={t.toolId} disabled={t.quantity <= 0}>
                 {t.emoji} {t.toolName} ×{t.quantity}
@@ -809,6 +948,29 @@ function Pouch({
           }`}
         >
           🪤 ばしょを えらぶ！
+        </button>
+      </div>
+
+      {/* ── 罠ショップ（お手伝い → コイン → 罠 → 図鑑 の原則ルート）── */}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50/70 px-3 py-2">
+        <p className="text-[11px] font-bold leading-relaxed text-amber-800">
+          🛒 ワナが たりない？ おてつだいで ためた コインで かえるよ！
+          <br />
+          <span className="text-[10px] text-amber-600">
+            ✨ レアわなは「うんぱんミッション」クリアで もらえる
+          </span>
+        </p>
+        <button
+          type="button"
+          onClick={onBuy}
+          disabled={!canBuy}
+          className={`shrink-0 rounded-xl px-4 py-2 text-sm font-black text-white shadow transition active:scale-[0.97] ${
+            canBuy
+              ? "bg-gradient-to-r from-amber-500 to-orange-500 hover:brightness-110"
+              : "cursor-not-allowed bg-gray-300 text-gray-500 shadow-none"
+          }`}
+        >
+          {buying ? "かいものちゅう…" : `🕳️ おとしあなを かう（🪙${TRAP_COST}）`}
         </button>
       </div>
     </section>

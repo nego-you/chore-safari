@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useSafariStore } from "@/store/useSafariStore";
 import { useWeather } from "@/app/kids/[kidId]/WeatherContext";
 import { recordActiveHuntCatch } from "@/features/safari/actions";
+import { QuizGate } from "../../QuizGate";
 
 // ════════════════════════════════════════════════════════════════
 //  型定義
@@ -659,6 +660,9 @@ export default function HuntClient({
 }) {
   // 1日の捕獲回数（アクティブ狩り）の残り。捕獲成功でサーバ確定値に更新。
   const [catchRemaining, setCatchRemaining] = useState(huntRemaining);
+  // 出発前クイズゲート（一本道化 2026-06-12）：
+  // 「アクティブ狩りに出発する」直前の必須条件。正解するまで探索できない。
+  const [departGatePassed, setDepartGatePassed] = useState(false);
   const stamina        = useSafariStore((s) => s.stamina);
   const consumeStamina = useSafariStore((s) => s.consumeStamina);
   const restoreStamina = useSafariStore((s) => s.restoreStamina);
@@ -842,8 +846,10 @@ export default function HuntClient({
   }, [addLog]);
 
   // ── もういちどはじめる ─────────────────────────────────────
+  // 新しい「出発」なので、クイズゲートも再挑戦する（一本道化）。
   const doRestart = useCallback(() => {
     recoverStamina();
+    setDepartGatePassed(false);
     setPhase("EXPLORE");
     setTurn(0);
     setFriends([]);
@@ -872,6 +878,16 @@ export default function HuntClient({
       display:"flex", alignItems:"center", justifyContent:"center",
     }}>
       <style>{CSS}</style>
+
+      {/* ── 出発前クイズゲート：正解しないと たんけんが はじまらない ── */}
+      {!departGatePassed && (
+        <QuizGate
+          title="しゅっぱつまえの ものしりクイズ！"
+          subtitle="せいかいすると たんけんに しゅっぱつできるよ"
+          onPass={() => setDepartGatePassed(true)}
+          onCancel={() => window.history.back()}
+        />
+      )}
 
       {/* ── メインシェル（iPad縦向き最適化） ── */}
       <div style={{

@@ -339,6 +339,9 @@ export function QuestMasterClient({ initialRows, kids }: Props) {
             </div>
             <p className="mt-1 text-xs text-slate-400">
               子供側の画面ではカテゴリごとにセクション分けされて表示されます。
+              「うんぱん」は子供側の📦うんぱんミッション画面にのみ表示され、
+              承認時にコインに加えてレア罠（かごわな）を1個付与します。
+              例：「洗濯物を2階に運ぶ」「読んだ絵本を本棚に片付ける」
             </p>
           </fieldset>
 
