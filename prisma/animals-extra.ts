@@ -860,5 +860,135 @@ export const EXTRA_ANIMALS: ExtraAnimal[] = [
     stageId: "forest",
     lifespanYears: 13,
   },
+  // ── イルカの なかまを もっと あつめる ──
+  {
+    animalId: "dolphin_amazon_river",
+    genericName: "イルカ",
+    specificName: "アマゾンカワイルカ",
+    emoji: "🐬",
+    rarity: "RARE",
+    description:
+      "からだが ピンクいろに なる めずらしい イルカ。うみでは なく アマゾンがわの なかで くらしているよ。くびが まがるので かわの そこの えものを ひろい やすく、ひげで さわって みつけるんだ。",
+    habitat: "みなみアメリカの アマゾンがわ",
+    stageId: "forest",
+    lifespanYears: 30,
+  },
+  // ── クジラの なかまを もっと あつめる ──
+  {
+    animalId: "whale_minke",
+    genericName: "クジラ",
+    specificName: "ミンククジラ",
+    emoji: "🐳",
+    rarity: "COMMON",
+    description:
+      "クジラの なかまでは ちゅうくらいの おおきさ。にほんの うみにも やってくる、みぢかな クジラ。むれで えものを かこんで たべる、かしこい りょうしなんだよ。",
+    habitat: "せかいじゅうの うみ",
+    stageId: "deep_sea",
+    lifespanYears: 50,
+  },
+  // ── ペンギンの なかまを もっと あつめる ──
+  {
+    animalId: "penguin_humboldt",
+    genericName: "ペンギン",
+    specificName: "フンボルトペンギン",
+    emoji: "🐧",
+    rarity: "RARE",
+    description:
+      "みなみアメリカの かいがんに すむ ペンギン。むねの くろい たてじまが めじるし。つめたい フンボルトかいりゅうの うみで さかなを おいかけて いきているよ。",
+    habitat: "ペルーや チリの かいがん",
+    stageId: "ice_age",
+    lifespanYears: 20,
+  },
+  // ── サメの なかまを もっと あつめる ──
+  {
+    animalId: "shark_basking",
+    genericName: "サメ",
+    specificName: "ウバザメ",
+    emoji: "🦈",
+    rarity: "RARE",
+    description:
+      "ジンベエザメに ついで せかいで 2ばんめに おおきな サメ。おおきな くちを あけて かいちゅうを こして たべる おだやかな サメで、ひとを おそったり しないよ。",
+    habitat: "せかいじゅうの すずしい うみ",
+    stageId: "deep_sea",
+    lifespanYears: 50,
+  },
+  // ── あざらしの なかまを もっと あつめる ──
+  {
+    animalId: "seal_elephant_south",
+    genericName: "あざらし",
+    specificName: "ミナミゾウアザラシ",
+    emoji: "🦭",
+    rarity: "EPIC",
+    description:
+      "オスは はなが ゾウみたいに のびる、せかいで いちばん おおきな アザラシ。おもさは 4トンにもなるよ！いきを とめて 2じかん いじょう ふかい うみに もぐれるんだ。",
+    habitat: "なんきょくの ちかくの しま",
+    stageId: "ice_age",
+    lifespanYears: 22,
+  },
+  // ── かえるの なかまを もっと あつめる ──
+  {
+    animalId: "frog_goliath",
+    genericName: "かえる",
+    specificName: "ゴライアスガエル",
+    emoji: "🐸",
+    rarity: "EPIC",
+    description:
+      "せかいで いちばん おおきな カエルで、からだの ながさが 32センチ、おもさが 3キロにもなるよ！でも こえは でないんだ。いしを うごかして こどもの ために いけを つくる やさしい おとうさんだよ。",
+    habitat: "アフリカ にしカメルーンの かわ",
+    stageId: "forest",
+    lifespanYears: 15,
+  },
+  // ── こうもりの なかまを もっと あつめる ──
+  {
+    animalId: "bat_vampire",
+    genericName: "こうもり",
+    specificName: "チスイコウモリ",
+    emoji: "🦇",
+    rarity: "RARE",
+    description:
+      "ちを すって いきる めずらしい コウモリ。なかまが えものを みつけられなかった ときに、じぶんの すった ちを わけてあげる やさしいところがあるんだよ。",
+    habitat: "ちゅうなんべいの もり",
+    stageId: "forest",
+    lifespanYears: 12,
+  },
+  // ── あたらしい なかま：ちょう ──
+  {
+    animalId: "butterfly_monarch",
+    genericName: "ちょう",
+    specificName: "オオカバマダラ",
+    emoji: "🦋",
+    rarity: "RARE",
+    description:
+      "オレンジと くろの もようが きれいな ちょう。まいとし カナダから メキシコまで 4000キロ いじょうも たびをする すごい むし。おじいちゃん・おばあちゃんの こに なっても もどってこられるんだよ。",
+    habitat: "きたアメリカ・メキシコ",
+    stageId: "savanna",
+    lifespanYears: 1,
+  },
+  // ── あたらしい なかま：かぶとむし ──
+  {
+    animalId: "beetle_japanese_rhinoceros",
+    genericName: "かぶとむし",
+    specificName: "カブトムシ",
+    emoji: "🪲",
+    rarity: "COMMON",
+    description:
+      "オスの あたまに おおきな つのが はえている、にほんの なつの むし。じぶんの からだの 20ばい いじょうの おもさを もちあげられる ちからもちで、オスどうし つのを つかって たたかうよ。",
+    habitat: "にほんの もり",
+    stageId: "forest",
+    lifespanYears: 1,
+  },
+  // ── あたらしい なかま：カマキリ ──
+  {
+    animalId: "mantis_orchid",
+    genericName: "カマキリ",
+    specificName: "ランカマキリ",
+    emoji: "🦗",
+    rarity: "EPIC",
+    description:
+      "はなびらに そっくりな すがたの カマキリ。しろや ピンクの からだで はなに まぎれ、みつを すいに きた むしを まちぶせして つかまえるよ。ぎたいの めいじんと よばれているんだ。",
+    habitat: "とうなんアジアの ねったいうりん",
+    stageId: "forest",
+    lifespanYears: 1,
+  },
 ];
-// （ここまでで 60 種 / 目標 100 種）
+// （ここまでで 70 種 / 目標 100 種）
