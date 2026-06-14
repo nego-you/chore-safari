@@ -87,12 +87,10 @@ test.describe("子供ポータル (/kids)", () => {
     // 最初の子供カードをクリック
     await cards.first().click();
 
-    // ワールドマップ上のピン（地名ボタン）が出るまで待つ
-    // WorldMapPortal は「サファリ」「クレーン」「レース」などのピンを描画する
-    const mapPin = page.locator("button").filter({
-      hasText: /サファリ|クレーン|レース|クエスト|クラフト/,
-    });
-    await expect(mapPin.first()).toBeVisible({ timeout: 10_000 });
+    // SFC風ワールドマップが描画され、スタートゲートが出るまで待つ
+    // WorldMapPortal は最初に「▶ ぼうけんに でる」ボタンを描画する
+    const mapStart = page.locator("button").filter({ hasText: /ぼうけん/ });
+    await expect(mapStart.first()).toBeVisible({ timeout: 10_000 });
   });
 });
 
@@ -100,7 +98,7 @@ test.describe("子供ポータル (/kids)", () => {
 // 3. ワールドマップ遷移後の状態検証
 // ──────────────────────────────────────────────────────────────────────────────
 test.describe("ワールドマップ UI", () => {
-  test("天気ボタンが描画されること", async ({ page }) => {
+  test("マップのスタートゲートが描画されること", async ({ page }) => {
     await page.goto("/kids");
     await page.waitForLoadState("networkidle");
 
@@ -112,14 +110,14 @@ test.describe("ワールドマップ UI", () => {
 
     await cards.first().click();
 
-    // 天気ボタン（☀️ はれ / 🔥 もうしょ / 🌀 たいふう）が出ることを確認
-    const weatherBtn = page.locator("button").filter({
-      hasText: /☀️|🔥|🌀/,
-    });
-    await expect(weatherBtn.first()).toBeVisible({ timeout: 10_000 });
+    // SFC風マップは最初に「▶ ぼうけんに でる」スタートゲートを表示する
+    const startBtn = page.locator("button").filter({ hasText: /ぼうけん/ });
+    await expect(startBtn.first()).toBeVisible({ timeout: 10_000 });
   });
 
-  test("天気ボタンをクリックすると背景が変わること", async ({ page }) => {
+  test("『ぼうけんに でる』を押すと A ボタンが操作可能になること", async ({
+    page,
+  }) => {
     await page.goto("/kids");
     await page.waitForLoadState("networkidle");
 
@@ -131,30 +129,13 @@ test.describe("ワールドマップ UI", () => {
 
     await cards.first().click();
 
-    const weatherBtns = page.locator("button").filter({
-      hasText: /☀️|🔥|🌀/,
-    });
-    await expect(weatherBtns.first()).toBeVisible({ timeout: 10_000 });
+    const startBtn = page.locator("button").filter({ hasText: /ぼうけん/ });
+    await expect(startBtn.first()).toBeVisible({ timeout: 10_000 });
+    await startBtn.first().click();
 
-    // 2 番目の天気ボタン（たとえば 🔥 もうしょ）をクリック
-    const btnCount = await weatherBtns.count();
-    if (btnCount >= 2) {
-      const beforeStyle = await page
-        .locator("[style*='background']")
-        .first()
-        .getAttribute("style");
-      await weatherBtns.nth(1).click();
-      // DOM 更新を少し待つ
-      await page.waitForTimeout(500);
-      const afterStyle = await page
-        .locator("[style*='background']")
-        .first()
-        .getAttribute("style");
-      // スタイルが変化していることを確認（weather が切り替わった）
-      // 同じ場合もあるので soft assertion
-      console.log("[天気変更] before:", beforeStyle?.slice(0, 60));
-      console.log("[天気変更] after: ", afterStyle?.slice(0, 60));
-    }
+    // スタート後はマップ操作の A ボタン（施設に入る）が表示される
+    const aBtn = page.locator("button").filter({ hasText: /^A$/ });
+    await expect(aBtn.first()).toBeVisible({ timeout: 10_000 });
   });
 });
 
