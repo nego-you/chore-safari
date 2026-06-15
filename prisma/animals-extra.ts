@@ -990,5 +990,4 @@ export const EXTRA_ANIMALS: ExtraAnimal[] = [
     stageId: "forest",
     lifespanYears: 1,
   },
-];
-// （ここまでで 70 種 / 目標 100 種）
+  // ── クジラの なかまを もっと あ�
