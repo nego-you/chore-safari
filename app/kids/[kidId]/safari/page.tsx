@@ -7,12 +7,14 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getHuntStamina, getTrapStamina } from "../../actions";
+import { grantDailyFreeTraps } from "@/features/safari/actions";
+import { TRAP_RECIPES } from "../../config";
 import { SafariClient } from "./SafariClient";
 
 export const dynamic = "force-dynamic";
 
 type Params = Promise<{ kidId: string }>;
-type SearchParams = Promise<{ style?: string }>;
+type SearchParams = Promise<{ style?: string; biome?: string }>;
 
 export default async function SafariPage({
   params,
@@ -22,11 +24,13 @@ export default async function SafariPage({
   searchParams: SearchParams;
 }) {
   const { kidId: kidParam } = await params;
-  const { style } = await searchParams;
+  const { style, biome } = await searchParams;
 
-  // ?style=active → アクティブ狩り専用ページへリダイレクト（戻りはマップへ）
+  // ?style=active → アクティブ狩り専用ページへリダイレクト（戻りはマップへ）。
+  // バイオーム（エンカウントしたタイル）は出現どうぶつの選出に使うので引き継ぐ。
   if (style === "active") {
-    redirect(`/kids/${kidParam}/safari/hunt`);
+    const suffix = biome ? `?biome=${encodeURIComponent(biome)}` : "";
+    redirect(`/kids/${kidParam}/safari/hunt${suffix}`);
   }
 
   // kids 一覧を先に取得して initialKid を確定する（UserTool クエリに必要）。
@@ -39,7 +43,19 @@ export default async function SafariPage({
   const initialKid =
     kidParam && kids.some((k) => k.id === kidParam) ? kidParam : null;
 
-  const [ownedTrapRows, activeTraps] = await Promise.all([
+  // 毎日無料の罠枠：ownedTrapRows を読む前に底上げしておく（=セレクタに反映される）。
+  const freeTrap = initialKid ? await grantDailyFreeTraps(initialKid) : null;
+
+  // ワナづくり（part レシピ）の活性判定用に、ガチャ罠パーツの所持数を取得。
+  const partItemIds = Array.from(
+    new Set(
+      TRAP_RECIPES.filter((r) => r.source === "part").flatMap((r) =>
+        r.ingredients.map((i) => i.itemId),
+      ),
+    ),
+  );
+
+  const [ownedTrapRows, activeTraps, partRows] = await Promise.all([
     // この子が持っている TRAP 型の道具だけを返す。
     initialKid
       ? prisma.userTool.findMany({
@@ -57,7 +73,17 @@ export default async function SafariPage({
       orderBy: { appearsAt: "asc" },
       include: { targetAnimal: true },
     }),
+    // ガチャ罠パーツ（SharedInventoryItem・家族共有）の所持数。
+    partItemIds.length > 0
+      ? prisma.sharedInventoryItem.findMany({
+          where: { itemId: { in: partItemIds } },
+          select: { itemId: true, quantity: true },
+        })
+      : Promise.resolve([] as { itemId: string; quantity: number }[]),
   ]);
+
+  const partInventory: Record<string, number> = {};
+  for (const row of partRows) partInventory[row.itemId] = row.quantity;
 
   // アクティブ狩り（BOW/SPEAR）と罠設置それぞれの本日残り回数。
   // 罠設置にも1日上限あり（一本道化 2026-06-12）。
@@ -112,6 +138,9 @@ export default async function SafariPage({
       huntStaminaLimit={huntStamina?.limit ?? 3}
       trapStaminaRemaining={trapStamina?.remaining ?? null}
       trapStaminaLimit={trapStamina?.limit ?? 3}
+      freeTrapGranted={freeTrap?.granted ?? false}
+      freeTrapName={freeTrap?.toolName ?? null}
+      partInventory={partInventory}
     />
   );
 }

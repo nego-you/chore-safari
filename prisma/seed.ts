@@ -1085,10 +1085,20 @@ async function main() {
     },
   });
 
-  const seedTools = await prisma.tool.findMany({
-    orderBy: { toolId: "asc" },
-    take: 5,
+  // 罠スタイルの初期付与（入手導線リフォーム）。
+  //   旧実装は「toolId昇順の先頭5道具×3」で、実際には使わない狩り武器(火縄銃・投槍器・吹き矢)が
+  //   入り、肝心の pitfall は配られなかった。基本罠 pitfall を確実に渡し、レア罠も少量持たせる。
+  const STARTER_TRAPS: { toolId: string; quantity: number }[] = [
+    { toolId: "pitfall", quantity: 3 },
+    { toolId: "bamboo_trap", quantity: 1 },
+    { toolId: "cage_trap", quantity: 1 },
+  ];
+  const starterTrapTools = await prisma.tool.findMany({
+    where: { toolId: { in: STARTER_TRAPS.map((s) => s.toolId) } },
   });
+  const starterQtyByToolId = new Map(
+    STARTER_TRAPS.map((s) => [s.toolId, s.quantity]),
+  );
   const seedAnimals = await prisma.animal.findMany({
     orderBy: { animalId: "asc" },
     take: 3,
@@ -1100,14 +1110,14 @@ async function main() {
       data: { coinBalance: 1000 },
     });
 
-    for (const tool of seedTools) {
+    for (const tool of starterTrapTools) {
       await prisma.userTool.upsert({
         where: { userId_toolId: { userId: user.id, toolId: tool.id } },
         update: {},
         create: {
           userId: user.id,
           toolId: tool.id,
-          quantity: 3,
+          quantity: starterQtyByToolId.get(tool.toolId) ?? 1,
         },
       });
     }

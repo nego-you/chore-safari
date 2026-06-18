@@ -16,9 +16,12 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import {
+  FREE_TRAP_PER_DAY,
+  FREE_TRAP_TOOL_ID,
   SHOP_TRAP_TOOL_ID,
   TRAP_COST,
   TRAP_DAILY_LIMIT,
+  TRAP_RECIPES,
 } from "@/app/kids/config";
 
 // ── 型 ────────────────────────────────────────────────────────────────
@@ -858,5 +861,173 @@ export async function getRandomQuizAnimal(): Promise<QuizAnimal | null> {
   } catch (err) {
     console.error("getRandomQuizAnimal failed:", err);
     return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 毎日無料の罠枠（罠スタイル入手導線リフォーム）
+//   0コインでも必ず罠を仕掛けられる保険。JST で日付が変わるたび、pitfall(UserTool) の
+//   所持数を最低 FREE_TRAP_PER_DAY 個まで底上げする（積み上がり防止）。
+//   設置回数の上限（dailyTrapCount / TRAP_DAILY_LIMIT）は別管理なので「ハマりすぎ防止」は不変。
+//   lastFreeTrapDate は新設列のため、prisma generate 前でも通るよう型アサーションで補う。
+// ─────────────────────────────────────────────────────────────────────────────
+type UserFreeTrapRow = { lastFreeTrapDate: Date | null };
+
+export type DailyFreeTrapResult = {
+  granted: boolean; // 今回 底上げが発生したか（バナー表示用）
+  toolId: string;
+  toolName: string;
+  emoji: string;
+  quantity: number; // 付与後の所持数
+  amount: number; // 何個 底上げしたか
+};
+
+export async function grantDailyFreeTraps(
+  kidId: string,
+): Promise<DailyFreeTrapResult | null> {
+  const userRaw = await prisma.user.findUnique({ where: { id: kidId } });
+  if (!userRaw || userRaw.role !== "CHILD") return null;
+  // テストアカウントは無制限のため無料枠の管理は不要。
+  if (userRaw.isTestAccount) return null;
+
+  const user = userRaw as typeof userRaw & Partial<UserFreeTrapRow>;
+  const today = todayJstString();
+  const lastDate = user.lastFreeTrapDate
+    ? todayJstString(user.lastFreeTrapDate)
+    : null;
+
+  const tool = await prisma.tool.findUnique({
+    where: { toolId: FREE_TRAP_TOOL_ID },
+  });
+  if (!tool || tool.type !== "TRAP") return null;
+
+  const existing = await prisma.userTool.findUnique({
+    where: { userId_toolId: { userId: kidId, toolId: tool.id } },
+  });
+  const currentQty = existing?.quantity ?? 0;
+
+  // 今日すでに付与済み → 現状だけ返す（バナーは出さない）。
+  if (lastDate === today) {
+    return {
+      granted: false,
+      toolId: tool.toolId,
+      toolName: tool.name,
+      emoji: tool.emoji,
+      quantity: currentQty,
+      amount: 0,
+    };
+  }
+
+  // 新しい日：pitfall を最低 FREE_TRAP_PER_DAY 個まで底上げ。
+  const target = Math.max(currentQty, FREE_TRAP_PER_DAY);
+  const amount = target - currentQty;
+
+  await prisma.$transaction(async (tx) => {
+    if (amount > 0) {
+      await tx.userTool.upsert({
+        where: { userId_toolId: { userId: kidId, toolId: tool.id } },
+        update: { quantity: target },
+        create: { userId: kidId, toolId: tool.id, quantity: target },
+      });
+    }
+    await tx.user.update({
+      where: { id: kidId },
+      data: ({ lastFreeTrapDate: new Date() } as Record<string, unknown>) as Parameters<
+        typeof tx.user.update
+      >[0]["data"],
+    });
+  });
+
+  // 注意: この関数は safari/page.tsx の render 中に await されるため revalidatePath を
+  //   呼んではいけない（Next の "used revalidatePath during render" エラーになる）。
+  //   同一リクエストで直後に ownedTrapRows を読むので、再検証は不要。
+
+  return {
+    granted: amount > 0,
+    toolId: tool.toolId,
+    toolName: tool.name,
+    emoji: tool.emoji,
+    quantity: target,
+    amount,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ワナづくり（罠スタイル入手導線リフォーム）
+//   集めた素材／パーツ → 罠(UserTool) に変換し、「死んだ導線」を罠入手に繋ぐ。
+//   - source="part"     … ガチャの罠パーツ（SharedInventoryItem・サーバ専用）。
+//                          消費＋付与をトランザクションでアトミックに。
+//   - source="material" … クレーン素材（GameInventoryItem／Zustand・本人が単一書き手）。
+//                          消費はクライアント側 consumeInventory が行い、サーバは付与のみ。
+//   レシピ定義は app/kids/config.ts の TRAP_RECIPES。
+// ─────────────────────────────────────────────────────────────────────────────
+export type CraftTrapResult =
+  | {
+      success: true;
+      trap: { toolId: string; toolName: string; emoji: string; quantity: number };
+    }
+  | { success: false; error: string };
+
+export async function craftTrap(
+  kidId: string,
+  recipeId: string,
+): Promise<CraftTrapResult> {
+  const recipe = TRAP_RECIPES.find((r) => r.id === recipeId);
+  if (!recipe) return { success: false, error: "レシピが みつかりません" };
+
+  const user = await prisma.user.findUnique({
+    where: { id: kidId },
+    select: { id: true, role: true, isTestAccount: true },
+  });
+  if (!user || user.role !== "CHILD") {
+    return { success: false, error: "ユーザーが みつかりません" };
+  }
+
+  const tool = await prisma.tool.findUnique({
+    where: { toolId: recipe.outputToolId },
+  });
+  if (!tool || tool.type !== "TRAP") {
+    return { success: false, error: "つくる ワナが みつかりません" };
+  }
+
+  try {
+    const quantity = await prisma.$transaction(async (tx) => {
+      // ガチャパーツ（SharedInventoryItem）は サーバで条件付き消費。
+      if (recipe.source === "part" && !user.isTestAccount) {
+        for (const ing of recipe.ingredients) {
+          const upd = await tx.sharedInventoryItem.updateMany({
+            where: { itemId: ing.itemId, quantity: { gte: ing.qty } },
+            data: { quantity: { decrement: ing.qty } },
+          });
+          if (upd.count !== 1) throw new Error("NOT_ENOUGH_PARTS");
+        }
+      }
+      // クレーン素材（source="material"）はクライアントで消費済み。サーバは付与のみ。
+      const userTool = await tx.userTool.upsert({
+        where: { userId_toolId: { userId: kidId, toolId: tool.id } },
+        update: { quantity: { increment: 1 } },
+        create: { userId: kidId, toolId: tool.id, quantity: 1 },
+      });
+      return userTool.quantity;
+    });
+
+    revalidatePath("/kids");
+    revalidatePath("/kids/[kidId]/safari", "page");
+
+    return {
+      success: true,
+      trap: {
+        toolId: tool.toolId,
+        toolName: tool.name,
+        emoji: tool.emoji,
+        quantity,
+      },
+    };
+  } catch (err) {
+    if (err instanceof Error && err.message === "NOT_ENOUGH_PARTS") {
+      return { success: false, error: "ざいりょうが たりないよ" };
+    }
+    console.error("craftTrap failed:", err);
+    return { success: false, error: "ワナづくりに しっぱいしました" };
   }
 }

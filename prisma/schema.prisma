@@ -112,6 +112,9 @@ model User {
   // （JST 深夜0時繰り越しでリセット）。一本道化リフォームで追加（2026-06-12）。
   dailyTrapCount    Int                @default(0) @map("daily_trap_count")
   lastTrapDate      DateTime?          @map("last_trap_date")
+  // 毎日無料の罠（pitfall）枠の最終付与日（JST 日付が変われば再付与）。
+  // 0コインでも必ず罠を仕掛けられる保険。設置回数の上限は dailyTrapCount で別管理。
+  lastFreeTrapDate  DateTime?          @map("last_free_trap_date")
   // テスト用フラグ：true の場合、コイン・回数制限をすべてバイパスする
   isTestAccount     Boolean            @default(false) @map("is_test")
   // ── 恩送り（ペイ・フォワード / おたがいさま）イベント管理 ─────────

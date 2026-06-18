@@ -129,6 +129,28 @@ const MAP = [
 const MAP_COLS = 15;
 const MAP_ROWS = 20;
 
+// エンカウント頻度（Notion「エンカウント率と出てくる動物」2026-06-16）。
+// 以前は 1.0 距離ごとに 10〜25% 判定で「出会いが多すぎる」状態だったため、
+// 判定間隔を広げ（=歩く距離を伸ばし）、地形ごとの確率も下げて、
+// 体感の出会い頻度を従来比 約4割（=約2.5倍 出にくく）に抑える。
+const ENCOUNTER_STEP = 1.7; // 判定を行う移動距離（旧 1.0）
+const ENCOUNTER_RATE_FOREST = 0.16; // 森（旧 0.25）
+const ENCOUNTER_RATE_WATER = 0.12; // 橋＝水辺（旧 0.18）
+const ENCOUNTER_RATE_PLAIN = 0.07; // 草・山・砂漠（旧 0.10）
+
+// タイル種別 → バイオーム名（アクティブ狩りの出現どうぶつ選出に渡す）。
+// 0:海 1:草 2:森 3:山 4:砂漠 6:橋(=水辺)
+function biomeForTile(tile: number): string {
+  switch (tile) {
+    case 1: return "grass";
+    case 2: return "forest";
+    case 3: return "mountain";
+    case 4: return "desert";
+    case 6: return "water";
+    default: return "grass";
+  }
+}
+
 // ── 施設定義 ──────────────────────────────────────────────────
 //   route   : /kids/{kidId}/{route} へ遷移（クエリ込み）。既存6ピンのコアループに一致。
 //   nightOpen: 夜でも開いている（家・図鑑のみ true / DESIGN_PRINCIPLES 2）。
@@ -334,6 +356,8 @@ export function WorldMapPortal({
   const requestRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number | null>(null);
   const walkDistanceRef = useRef(0);
+  // エンカウントした地形のバイオーム（狩りページへ引き継ぐ）。
+  const encounterBiomeRef = useRef<string | null>(null);
 
   // ── BGM（マップ画面用・ミュートはローカル状態）─────────────────
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -462,7 +486,7 @@ export function WorldMapPortal({
             if (!checkGrid(newX, newY)) newY = prev.y;
 
             // 一定距離歩くごとにエンカウント判定（夜・残り0回はしない）。
-            if (walkDistanceRef.current > 1.0) {
+            if (walkDistanceRef.current > ENCOUNTER_STEP) {
               walkDistanceRef.current = 0;
               const gx = Math.floor(newX);
               const gy = Math.floor(newY);
@@ -470,9 +494,12 @@ export function WorldMapPortal({
                 const tile = MAP[gy][gx];
                 if (phase !== "night" && huntCount > 0) {
                   let rate = 0;
-                  if (tile === 2) rate = 0.25; // 森は出やすい
-                  else if (tile === 1 || tile === 3 || tile === 4) rate = 0.1;
-                  if (Math.random() < rate) {
+                  if (tile === 2) rate = ENCOUNTER_RATE_FOREST; // 森は出やすい
+                  else if (tile === 6) rate = ENCOUNTER_RATE_WATER; // 橋＝水辺（水のどうぶつ）
+                  else if (tile === 1 || tile === 3 || tile === 4) rate = ENCOUNTER_RATE_PLAIN;
+                  if (rate > 0 && Math.random() < rate) {
+                    // 出会った地形を記録し、狩りページの出現選出に渡す。
+                    encounterBiomeRef.current = biomeForTile(tile);
                     setEncounter(true);
                     setFlash(true);
                     setTimeout(() => setFlash(false), 300);
@@ -556,7 +583,10 @@ export function WorldMapPortal({
     setEncounter(false);
     if (huntCount > 0) {
       // 実際のアクティブ狩り画面へ遷移（Notion: エンカウント → 狩り）。
-      router.push(`/kids/${kidId}/safari?style=active`);
+      // 出会った地形（バイオーム）を渡し、環境に合うどうぶつを出現させる。
+      const biome = encounterBiomeRef.current;
+      const query = biome ? `&biome=${encodeURIComponent(biome)}` : "";
+      router.push(`/kids/${kidId}/safari?style=active${query}`);
     }
   };
 

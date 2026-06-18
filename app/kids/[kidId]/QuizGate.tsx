@@ -153,8 +153,8 @@ export function QuizGate({
                 </p>
               </div>
 
-              {/* 選択肢 */}
-              <div className="mt-4 flex flex-col gap-2.5">
+              {/* 選択肢：子供がタップしやすいよう大きめのターゲット（小さくて選びづらい問題の対策） */}
+              <div className="mt-5 flex flex-col gap-3.5 md:gap-4">
                 {quiz.options.map((option) => {
                   const isPicked = picked === option;
                   const isAnswer = option === quiz.answer;
@@ -166,7 +166,7 @@ export function QuizGate({
                       type="button"
                       disabled={picked !== null}
                       onClick={() => handlePick(option)}
-                      className={`rounded-xl border-2 px-4 py-3 text-left text-sm md:text-base font-bold transition active:scale-[0.98] ${
+                      className={`flex min-h-[3.5rem] md:min-h-[4.25rem] items-center rounded-2xl border-2 px-5 py-4 text-left text-lg md:text-xl font-bold leading-snug transition active:scale-[0.98] ${
                         showCorrect
                           ? "border-emerald-500 bg-emerald-50 text-emerald-700"
                           : showWrong

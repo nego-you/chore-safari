@@ -8,9 +8,18 @@ import HuntClient from "./HuntClient";
 export const dynamic = "force-dynamic";
 
 type Params = Promise<{ kidId: string }>;
+// ワールドマップでエンカウントしたタイル（バイオーム）。出現どうぶつの選出に使う。
+type SearchParams = Promise<{ biome?: string }>;
 
-export default async function HuntPage({ params }: { params: Params }) {
+export default async function HuntPage({
+  params,
+  searchParams,
+}: {
+  params: Params;
+  searchParams: SearchParams;
+}) {
   const { kidId } = await params;
+  const { biome } = await searchParams;
   const kid = await prisma.user.findFirst({
     where: { id: kidId, role: "CHILD" },
     select: { id: true, name: true },
@@ -38,6 +47,7 @@ export default async function HuntPage({ params }: { params: Params }) {
       kidId={kid.id}
       huntRemaining={stamina.remaining}
       huntLimit={stamina.limit}
+      biome={biome ?? null}
     />
   );
 }

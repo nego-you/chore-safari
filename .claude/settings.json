@@ -23,7 +23,13 @@
       "Bash(SHOT_URL=\"http://localhost:3000/kids/cmpbpjwtw0001j8zo6utuufcq\" SHOT_OUT=\"$\\(pwd\\)/.tmp-shots/day-yukito-clip.png\" SHOT_WAIT=9000 SHOT_CLIP=\"20,60,600,360\" node .tmp-shots/shot.mjs)",
       "Bash(SHOT_URL=\"http://localhost:3000/kids/cmpbpjwtw0001j8zo6utuufcq\" SHOT_OUT=\"$\\(pwd\\)/.tmp-shots/day-yukito-center.png\" SHOT_WAIT=9000 SHOT_CLIP=\"330,150,560,330\" node .tmp-shots/shot.mjs)",
       "Bash(SHOT_URL=\"http://localhost:3000/kids/cmpbpjwu00002j8zo9z6yxf0k\" node .tmp-shots/truck.mjs)",
-      "Read(//c/Users/ynego/.claude/projects/c--github-chore-safari/memory/**)"
+      "Read(//c/Users/ynego/.claude/projects/c--github-chore-safari/memory/**)",
+      "PowerShell(docker exec chore-safari-web npx prisma migrate dev --name daily_free_trap_and_craft)",
+      "PowerShell(docker exec chore-safari-web npm run typecheck)",
+      "PowerShell(docker restart chore-safari-web)",
+      "PowerShell(docker exec chore-safari-db psql -U chore -d chore_safari -t -c \"select id, name, is_test from \\\\\"User\\\\\" where role='CHILD' order by is_test asc limit 6;\")",
+      "mcp__claude_ai_Notion__notion-fetch",
+      "mcp__claude_ai_Notion__notion-query-database-view"
     ],
     "additionalDirectories": [
       "c:\\Users\\ynego\\.claude\\projects\\c--github-chore-safari\\memory"

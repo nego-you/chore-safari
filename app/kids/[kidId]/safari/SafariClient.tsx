@@ -13,8 +13,8 @@ import {
   useState,
   useTransition,
 } from "react";
-import { buyTrap, checkTrap, resolveTrap, setTrap } from "../../actions";
-import { TRAP_COST } from "../../config";
+import { buyTrap, checkTrap, craftTrap, resolveTrap, setTrap } from "../../actions";
+import { TRAP_COST, TRAP_RECIPES, type TrapRecipe } from "../../config";
 import { useSafariStore } from "@/store/useSafariStore";
 import { QuizGate } from "../QuizGate";
 import { DayEndScreen } from "../DayEndScreen";
@@ -79,6 +79,11 @@ type Props = {
   // 罠設置の本日残り回数（一本道化 2026-06-12 で上限新設）。
   trapStaminaRemaining?: number | null;
   trapStaminaLimit?: number;
+  // 毎日無料の罠枠：今回 底上げが発生したか（バナー表示用）。
+  freeTrapGranted?: boolean;
+  freeTrapName?: string | null;
+  // ガチャの罠パーツ（SharedInventoryItem）の所持数。ワナづくりUI の活性判定に使う。
+  partInventory?: Record<string, number>;
 };
 
 const NAME_READING: Record<string, string> = {
@@ -315,6 +320,9 @@ export function SafariClient({
   huntStaminaLimit = 3,
   trapStaminaRemaining = null,
   trapStaminaLimit = 3,
+  freeTrapGranted = false,
+  freeTrapName = null,
+  partInventory = {},
 }: Props) {
   const [kidId, setKidId] = useState<string | null>(initialKidId);
   const [trapTools, setTrapTools] = useState<UserToolRow[]>(ownedTraps);
@@ -343,13 +351,22 @@ export function SafariClient({
   >(null);
   // 罠ショップ（コインで基本罠を買う）
   const [buying, setBuying] = useState(false);
+  // ワナづくり（素材／パーツ → 罠）
+  const [crafting, setCrafting] = useState(false);
+  const [partInv, setPartInv] = useState<Record<string, number>>(partInventory);
+  // 毎日無料の罠枠バナー
+  const [showFreeBanner, setShowFreeBanner] = useState(freeTrapGranted);
   const coins = useSafariStore((s) => s.coins);
   const syncCoins = useSafariStore((s) => s.syncCoins);
+  const inventory = useSafariStore((s) => s.inventory);
+  const consumeInventory = useSafariStore((s) => s.consumeInventory);
+  const addToInventory = useSafariStore((s) => s.addToInventory);
 
   const [, startTransition] = useTransition();
 
   useEffect(() => setTrapTools(ownedTraps), [ownedTraps]);
   useEffect(() => setTraps(initialTraps), [initialTraps]);
+  useEffect(() => setPartInv(partInventory), [partInventory]);
 
   const selectedKid = kidId ? kids.find((k) => k.id === kidId) ?? null : null;
   const myTraps = useMemo(
@@ -498,6 +515,75 @@ export function SafariClient({
     });
   };
 
+  // ── ワナづくり：集めた素材／パーツ → 罠（死んだ導線の再接続）──
+  const handleCraftTrap = (recipeId: string) => {
+    if (!selectedKid || crafting) return;
+    const recipe = TRAP_RECIPES.find((r) => r.id === recipeId);
+    if (!recipe) return;
+
+    // 在庫チェック（material=Zustand在庫 / part=SharedInventoryItem ミラー）
+    const stock = recipe.source === "material" ? inventory : partInv;
+    const lack = recipe.ingredients.find(
+      (ing) => (stock[ing.itemId] ?? 0) < ing.qty,
+    );
+    if (lack) {
+      alert(`${recipe.source === "material" ? "そざい" : "パーツ"}が たりないよ（${lack.emoji}${lack.name}）`);
+      return;
+    }
+
+    setCrafting(true);
+    // material はクライアントで先に消費（楽観）。失敗時はロールバックする。
+    const consumed: typeof recipe.ingredients = [];
+    if (recipe.source === "material") {
+      for (const ing of recipe.ingredients) {
+        if (consumeInventory(ing.itemId, ing.qty)) consumed.push(ing);
+      }
+    }
+
+    startTransition(async () => {
+      try {
+        const r = await craftTrap(selectedKid.id, recipe.id);
+        if (!r.success) {
+          for (const ing of consumed) addToInventory(ing.itemId, ing.qty);
+          alert(r.error);
+          return;
+        }
+        // part は楽観的に在庫を減算（サーバ側で消費済み）
+        if (recipe.source === "part") {
+          setPartInv((prev) => {
+            const next = { ...prev };
+            for (const ing of recipe.ingredients) {
+              next[ing.itemId] = (next[ing.itemId] ?? 0) - ing.qty;
+            }
+            return next;
+          });
+        }
+        // 罠の所持数を更新（buyTrap と同じパターン）
+        setTrapTools((prev) => {
+          const exists = prev.some((t) => t.toolId === r.trap.toolId);
+          if (exists) {
+            return prev.map((t) =>
+              t.toolId === r.trap.toolId
+                ? { ...t, quantity: r.trap.quantity }
+                : t,
+            );
+          }
+          return [
+            ...prev,
+            {
+              toolId: r.trap.toolId,
+              toolName: r.trap.toolName,
+              emoji: r.trap.emoji,
+              quantity: r.trap.quantity,
+            },
+          ];
+        });
+      } finally {
+        setCrafting(false);
+      }
+    });
+  };
+
   const openGame = (trap: TrapDTO) => {
     if (trap.status !== "APPEARED") return;
     setGameTrap(trap);
@@ -589,6 +675,17 @@ export function SafariClient({
           )}
         </div>
 
+        {/* 毎日無料の罠枠バナー（0コインでも遊べる保険） */}
+        {showFreeBanner && (
+          <button
+            type="button"
+            onClick={() => setShowFreeBanner(false)}
+            className="block w-full rounded-2xl bg-gradient-to-r from-emerald-400 to-lime-400 px-4 py-3 text-center text-sm font-extrabold text-emerald-950 shadow ring-2 ring-emerald-200 transition active:scale-[0.99]"
+          >
+            🎁 きょうの むりょうワナ「{freeTrapName ?? "おとしあな"}」を もらったよ！（タップで とじる）
+          </button>
+        )}
+
         {/* 上限到達バナー（回収待ちの罠がある場合のみここに来る） */}
         {trapQuotaExhausted && (
           <p className="rounded-2xl bg-indigo-900/90 px-4 py-3 text-center text-sm font-bold text-amber-200">
@@ -605,7 +702,7 @@ export function SafariClient({
           onCancelPlace={cancelPlacement}
         />
 
-        {/* もちもの（仕掛けるフォーム）＋ 罠ショップ */}
+        {/* もちもの（仕掛けるフォーム）＋ 罠ショップ ＋ ワナづくり */}
         <Pouch
           traps={trapTools}
           onSubmit={handleSetTrap}
@@ -613,6 +710,11 @@ export function SafariClient({
           coins={coins}
           buying={buying}
           onBuy={handleBuyTrap}
+          recipes={TRAP_RECIPES}
+          materialInv={inventory}
+          partInv={partInv}
+          crafting={crafting}
+          onCraft={handleCraftTrap}
         />
 
 
@@ -882,6 +984,11 @@ function Pouch({
   coins,
   buying,
   onBuy,
+  recipes,
+  materialInv,
+  partInv,
+  crafting,
+  onCraft,
 }: {
   traps: UserToolRow[];
   onSubmit: (trapToolId: string) => void;
@@ -889,6 +996,11 @@ function Pouch({
   coins: number;
   buying: boolean;
   onBuy: () => void;
+  recipes: readonly TrapRecipe[];
+  materialInv: Record<string, number>;
+  partInv: Record<string, number>;
+  crafting: boolean;
+  onCraft: (recipeId: string) => void;
 }) {
   const firstAvailable = traps.find((t) => t.quantity > 0)?.toolId ?? "";
   const [trapId, setTrapId] = useState(firstAvailable);
@@ -972,6 +1084,61 @@ function Pouch({
         >
           {buying ? "かいものちゅう…" : `🕳️ おとしあなを かう（🪙${TRAP_COST}）`}
         </button>
+      </div>
+
+      {/* ── ワナづくり（あつめた そざい・パーツ → ワナ）── */}
+      <div className="mt-3 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/70 px-3 py-2">
+        <p className="pb-1 text-[11px] font-bold text-emerald-800">
+          🔨 そざいで ワナを つくる
+          <span className="ml-1 text-[10px] text-emerald-600">
+            （クレーンの そざい・ガチャの パーツ から）
+          </span>
+        </p>
+        <div className="flex flex-col gap-1.5">
+          {recipes.map((r) => {
+            const stock = r.source === "material" ? materialInv : partInv;
+            const canMake =
+              !crafting &&
+              r.ingredients.every((ing) => (stock[ing.itemId] ?? 0) >= ing.qty);
+            return (
+              <div
+                key={r.id}
+                className="flex items-center justify-between gap-2 rounded-xl bg-white/80 px-2 py-1.5"
+              >
+                <div className="min-w-0 flex-1 text-[11px] font-bold text-emerald-900">
+                  <span className="text-sm">
+                    {r.outputEmoji} {r.outputName}
+                  </span>
+                  {r.rare && (
+                    <span className="ml-1 text-[9px] font-black text-amber-600">
+                      ✨レア
+                    </span>
+                  )}
+                  <span className="block text-[10px] font-medium text-slate-500">
+                    {r.ingredients
+                      .map(
+                        (ing) =>
+                          `${ing.emoji}${ing.name}×${ing.qty}（もち${stock[ing.itemId] ?? 0}）`,
+                      )
+                      .join(" ＋ ")}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onCraft(r.id)}
+                  disabled={!canMake}
+                  className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-black text-white shadow transition active:scale-[0.97] ${
+                    canMake
+                      ? "bg-gradient-to-r from-emerald-500 to-teal-500 hover:brightness-110"
+                      : "cursor-not-allowed bg-gray-300 text-gray-500 shadow-none"
+                  }`}
+                >
+                  つくる
+                </button>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </section>
   );
