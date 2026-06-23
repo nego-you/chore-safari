@@ -76,6 +76,14 @@ export const RELOCATIONS: Array<{ animalId: string; stageId: ExtraAnimal["stageI
 // 全動物を移設・削除した後に消す、空の不要ステージ。
 export const REMOVED_STAGE_IDS: string[] = ["mythos"];
 
+// genericName（図鑑の「なかま」名）のひらがな/カタカナ表記ゆれを統合する。
+//   例: "いか"(オウムガイ) と "イカ"(ダイオウイカ等) が別カテゴリに割れていたのを
+//   "イカ" に寄せて1つにまとめる。db:animals 実行時に既存DBへ非破壊で反映される。
+export const GENERIC_NAME_MERGES: Array<{ from: string; to: string }> = [
+  { from: "いか", to: "イカ" },
+  { from: "いのしし", to: "イノシシ" },
+];
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 毎晩のスケジュールが少しずつ追記していく「実在の具体種」。
 //
@@ -1371,13 +1379,4 @@ export const EXTRA_ANIMALS: ExtraAnimal[] = [
     animalId: "ptarmigan_rock",
     genericName: "とり",
     specificName: "ライチョウ",
-    emoji: "🐦",
-    rarity: "EPIC",
-    description:
-      "にほんの アルプスや きたきょくに すむ とり。ふゆは からだが まっしろに なって ゆきに まぎれるよ。にほんでは「かみの つかい」と よばれて まもられてきた、たいへん めずらしい とりなんだ。",
-    habitat: "にほんの こうさんたい・きたきょく",
-    stageId: "ice_age",
-    lifespanYears: 5,
-  },
-];
-// （ここまでで 100 種 / 目標 100 種）
+    emoji
