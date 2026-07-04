@@ -1,0 +1,1033 @@
+"use server";
+
+// features/safari/actions.ts
+// サファリ狩り：パッシブ罠モード + アクティブ狩り（弓/槍）モード。
+//
+// パッシブ罠:
+//   setTrap         : 罠を仕掛ける（UserTool 消費 → Hunt PLACED 作成）
+//   checkTrap       : appears_at を過ぎていれば APPEARED に遷移
+//   resolveTrap     : タイミングゲームの結果で CAUGHT / ESCAPED を確定
+//
+// アクティブ狩り:
+//   getHuntStamina    : 今日の残り回数を取得（JST 深夜0時リセット込み）
+//   startActiveHunt   : スタミナを消費し Hunt(APPEARED) を即作成
+//   resolveActiveHunt : 命中精度を渡して CAUGHT/ESCAPED を確定
+
+import { revalidatePath } from "next/cache";
+import { prisma } from "@/lib/prisma";
+import {
+  FREE_TRAP_PER_DAY,
+  FREE_TRAP_TOOL_ID,
+  SHOP_TRAP_TOOL_ID,
+  TRAP_COST,
+  TRAP_DAILY_LIMIT,
+  TRAP_RECIPES,
+} from "@/app/kids/config";
+
+// ── 型 ────────────────────────────────────────────────────────────────
+
+type AnimalLite = {
+  id: string;
+  animalId: string;
+  name: string;
+  genericName: string;
+  specificName: string;
+  emoji: string;
+  rarity: "COMMON" | "RARE" | "EPIC" | "LEGENDARY";
+  description: string;
+  imageUrl: string | null;
+  isExtinct: boolean;
+};
+
+// ── 内部ユーティリティ ────────────────────────────────────────────────
+
+// レア度ごとの出現ウェイト。
+// 以前は 62/22/12/4 と差が大きく、ふつう種ばかり捕れて「偏り」が出ていた。
+// まんべんなく色々な種に出会えるよう、レア度の傾斜はゆるく保ちつつ平準化する
+// （各レア度の比は 10:7:5:3。種ごとの出現確率差が最大でも約3.3倍に収まる）。
+const RARITY_WEIGHT: Record<"COMMON" | "RARE" | "EPIC" | "LEGENDARY", number> = {
+  COMMON: 10,
+  RARE: 7,
+  EPIC: 5,
+  LEGENDARY: 3,
+};
+
+// レアエサ使用時はレア寄りに（ただし極端にはしない）。
+const RARITY_WEIGHT_RARE_BAIT: Record<"COMMON" | "RARE" | "EPIC" | "LEGENDARY", number> = {
+  COMMON: 6,
+  RARE: 8,
+  EPIC: 9,
+  LEGENDARY: 10,
+};
+
+const SSR_ANIMAL_IDS = new Set([
+  "tyrannosaurus",
+  "hercules_beetle",
+  "lion_king",
+  "megalodon",
+]);
+
+function pickAnimalByRarity<T extends { rarity: string; animalId: string }>(
+  animals: T[],
+  useRareBait = false,
+): T {
+  const weightTable = useRareBait ? RARITY_WEIGHT_RARE_BAIT : RARITY_WEIGHT;
+  const eligible = animals.filter((a) => {
+    const isSSR = SSR_ANIMAL_IDS.has(a.animalId);
+    if (isSSR && !useRareBait) return false;
+    return true;
+  });
+  const pool = eligible.length > 0 ? eligible : animals;
+  const total = pool.reduce(
+    (s, a) => s + (weightTable[a.rarity as keyof typeof weightTable] ?? 1),
+    0,
+  );
+  let r = Math.random() * total;
+  for (const a of pool) {
+    r -= weightTable[a.rarity as keyof typeof weightTable] ?? 1;
+    if (r <= 0) return a;
+  }
+  return pool[pool.length - 1];
+}
+
+const TRAP_WAIT_MIN_MS = 30_000;
+const TRAP_WAIT_MAX_MS = 90_000;
+
+function pickWaitMs(): number {
+  return TRAP_WAIT_MIN_MS + Math.floor(Math.random() * (TRAP_WAIT_MAX_MS - TRAP_WAIT_MIN_MS));
+}
+
+const HUNT_DAILY_LIMIT = 3;
+
+function todayJstString(d: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+// ── HuntStamina ────────────────────────────────────────────────────────
+
+export type HuntStaminaInfo = {
+  used: number;
+  remaining: number;
+  limit: number;
+  lastHuntDate: string | null;
+};
+
+async function _readStaminaWithReset(userId: string): Promise<HuntStaminaInfo> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { dailyHuntCount: true, lastHuntDate: true },
+  });
+  if (!user) {
+    return { used: 0, remaining: 0, limit: HUNT_DAILY_LIMIT, lastHuntDate: null };
+  }
+  const today = todayJstString();
+  const lastDate = user.lastHuntDate ? todayJstString(user.lastHuntDate) : null;
+
+  if (lastDate !== today && user.dailyHuntCount > 0) {
+    await prisma.user.updateMany({
+      where: { id: userId, dailyHuntCount: { gt: 0 } },
+      data: { dailyHuntCount: 0 },
+    });
+    return {
+      used: 0,
+      remaining: HUNT_DAILY_LIMIT,
+      limit: HUNT_DAILY_LIMIT,
+      lastHuntDate: user.lastHuntDate?.toISOString() ?? null,
+    };
+  }
+  const used = Math.min(user.dailyHuntCount, HUNT_DAILY_LIMIT);
+  return {
+    used,
+    remaining: Math.max(0, HUNT_DAILY_LIMIT - used),
+    limit: HUNT_DAILY_LIMIT,
+    lastHuntDate: user.lastHuntDate?.toISOString() ?? null,
+  };
+}
+
+export async function getHuntStamina(userId: string): Promise<HuntStaminaInfo> {
+  return _readStaminaWithReset(userId);
+}
+
+// ── TrapStamina（罠設置の1日上限・一本道化 2026-06-12） ────────────────
+// dailyTrapCount / lastTrapDate は新設列。prisma generate 前は生成型に
+// 含まれないため、streak 実装時と同じく型アサーションで補う
+// （`npx prisma migrate dev` で DB 適用＆クライアント再生成後に正常動作）。
+
+type UserTrapStaminaRow = {
+  dailyTrapCount: number;
+  lastTrapDate: Date | null;
+};
+
+async function _readTrapStaminaWithReset(userId: string): Promise<HuntStaminaInfo> {
+  const userRaw = await prisma.user.findUnique({ where: { id: userId } });
+  if (!userRaw) {
+    return { used: 0, remaining: 0, limit: TRAP_DAILY_LIMIT, lastHuntDate: null };
+  }
+  const user = userRaw as typeof userRaw & Partial<UserTrapStaminaRow>;
+  const count = user.dailyTrapCount ?? 0;
+  const lastTrap = user.lastTrapDate ?? null;
+
+  const today = todayJstString();
+  const lastDate = lastTrap ? todayJstString(lastTrap) : null;
+
+  if (lastDate !== today && count > 0) {
+    await prisma.user.updateMany({
+      where: {
+        id: userId,
+        ...({ dailyTrapCount: { gt: 0 } } as Record<string, unknown>),
+      } as Parameters<typeof prisma.user.updateMany>[0]["where"],
+      data: { dailyTrapCount: 0 } as Parameters<
+        typeof prisma.user.updateMany
+      >[0]["data"],
+    });
+    return {
+      used: 0,
+      remaining: TRAP_DAILY_LIMIT,
+      limit: TRAP_DAILY_LIMIT,
+      lastHuntDate: lastTrap?.toISOString() ?? null,
+    };
+  }
+  const used = Math.min(count, TRAP_DAILY_LIMIT);
+  return {
+    used,
+    remaining: Math.max(0, TRAP_DAILY_LIMIT - used),
+    limit: TRAP_DAILY_LIMIT,
+    lastHuntDate: lastTrap?.toISOString() ?? null,
+  };
+}
+
+export async function getTrapStamina(userId: string): Promise<HuntStaminaInfo> {
+  return _readTrapStaminaWithReset(userId);
+}
+
+// ── パッシブ罠 ─────────────────────────────────────────────────────────
+
+export type SetTrapResult =
+  | {
+      success: true;
+      trap: {
+        id: string;
+        userId: string;
+        trapItemId: string;
+        baitItemId: string;
+        status: "PLACED";
+        placedAt: string;
+        appearsAt: string;
+        posX: number;
+        posY: number;
+        targetRarity: "COMMON" | "RARE" | "EPIC" | "LEGENDARY";
+      };
+      updatedInventory: Array<{ itemId: string; quantity: number }>;
+      // 罠設置の1日上限の最新値（UI のカウンタ表示用）
+      trapStamina: HuntStaminaInfo;
+    }
+  | { success: false; error: string; limitReached?: boolean };
+
+const RARE_TRAP_IDS = new Set(["cage_trap", "leghold", "hunter_net", "sturdy_trap"]);
+
+export async function setTrap(
+  userId: string,
+  trapItemId: string,
+  baitItemId: string,
+  posX: number = 50,
+  posY: number = 50,
+): Promise<SetTrapResult> {
+  const clampedX = Math.max(4, Math.min(96, Number(posX) || 50));
+  const clampedY = Math.max(8, Math.min(92, Number(posY) || 50));
+
+  if (!trapItemId) {
+    return { success: false, error: "ワナを えらんでね" };
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, role: true, isTestAccount: true },
+  });
+  if (!user || user.role !== "CHILD") {
+    return { success: false, error: "ユーザーが みつかりません" };
+  }
+
+  // ── 1日の罠設置上限（一本道化 2026-06-12）─────────────────────
+  const trapStaBefore = await _readTrapStaminaWithReset(userId);
+  if (!user.isTestAccount && trapStaBefore.remaining <= 0) {
+    return {
+      success: false,
+      error: "きょうの ワナは もう おしまい！ また あした げんじつで がんばろう🌙",
+      limitReached: true,
+    };
+  }
+
+  const toolRecord = await prisma.tool.findUnique({ where: { toolId: trapItemId } });
+  if (!toolRecord || toolRecord.type !== "TRAP") {
+    return { success: false, error: "パッシブ罠が えらばれていません" };
+  }
+
+  const userTool = await prisma.userTool.findUnique({
+    where: { userId_toolId: { userId, toolId: toolRecord.id } },
+  });
+  if (!userTool || userTool.quantity < 1) {
+    return { success: false, error: `${toolRecord.name}が たりません。クラフトで つくってね！` };
+  }
+
+  const animals = await prisma.animal.findMany();
+  if (animals.length === 0) {
+    return { success: false, error: "どうぶつが まだ いません" };
+  }
+
+  const useRareBait = RARE_TRAP_IDS.has(trapItemId);
+  const chosen = pickAnimalByRarity(animals, useRareBait);
+  const appearsAt = new Date(Date.now() + pickWaitMs());
+
+  try {
+    const created = await prisma.$transaction(async (tx) => {
+      const upd = await tx.userTool.updateMany({
+        where: { userId, toolId: toolRecord.id, quantity: { gte: 1 } },
+        data: { quantity: { decrement: 1 } },
+      });
+      if (upd.count !== 1) throw new Error("OUT_OF_TRAP");
+
+      // 罠設置スタミナを条件付きで消費（同時実行の取りこぼし防止）。
+      // dailyTrapCount は新設列のため生成型に未反映でも通るようキャスト。
+      if (!user.isTestAccount) {
+        const staUpd = await tx.user.updateMany({
+          where: {
+            id: userId,
+            ...({ dailyTrapCount: { lt: TRAP_DAILY_LIMIT } } as Record<string, unknown>),
+          } as Parameters<typeof tx.user.updateMany>[0]["where"],
+          data: {
+            ...({ dailyTrapCount: { increment: 1 }, lastTrapDate: new Date() } as Record<string, unknown>),
+          } as Parameters<typeof tx.user.updateMany>[0]["data"],
+        });
+        if (staUpd.count !== 1) throw new Error("OUT_OF_TRAP_LIMIT");
+      }
+
+      return tx.hunt.create({
+        data: {
+          userId,
+          huntType: "TRAP",
+          trapItemId,
+          baitItemId: trapItemId,
+          status: "PLACED",
+          appearsAt,
+          targetAnimalId: chosen.id,
+          posX: clampedX,
+          posY: clampedY,
+        },
+      });
+    });
+
+    revalidatePath("/kids");
+
+    return {
+      success: true,
+      trap: {
+        id: created.id,
+        userId: created.userId,
+        trapItemId: created.trapItemId,
+        baitItemId: created.baitItemId,
+        status: "PLACED",
+        placedAt: created.placedAt.toISOString(),
+        appearsAt: created.appearsAt.toISOString(),
+        posX: created.posX,
+        posY: created.posY,
+        targetRarity: chosen.rarity as "COMMON" | "RARE" | "EPIC" | "LEGENDARY",
+      },
+      updatedInventory: [{ itemId: trapItemId, quantity: userTool.quantity - 1 }],
+      trapStamina: {
+        used: trapStaBefore.used + (user.isTestAccount ? 0 : 1),
+        remaining: user.isTestAccount
+          ? trapStaBefore.remaining
+          : Math.max(0, trapStaBefore.remaining - 1),
+        limit: TRAP_DAILY_LIMIT,
+        lastHuntDate: new Date().toISOString(),
+      },
+    };
+  } catch (err) {
+    if (err instanceof Error && err.message === "OUT_OF_TRAP") {
+      return { success: false, error: `${toolRecord.name}が たりません` };
+    }
+    if (err instanceof Error && err.message === "OUT_OF_TRAP_LIMIT") {
+      return {
+        success: false,
+        error: "きょうの ワナは もう おしまい！ また あした げんじつで がんばろう🌙",
+        limitReached: true,
+      };
+    }
+    console.error("setTrap failed:", err);
+    return { success: false, error: "罠の設置に失敗しました" };
+  }
+}
+
+export type CheckTrapResult =
+  | {
+      success: true;
+      status: "PLACED" | "APPEARED" | "CAUGHT" | "ESCAPED";
+      appearsAt: string;
+    }
+  | { success: false; error: string };
+
+export async function checkTrap(trapId: string): Promise<CheckTrapResult> {
+  const trap = await prisma.hunt.findUnique({ where: { id: trapId } });
+  if (!trap) {
+    return { success: false, error: "罠が みつかりません" };
+  }
+
+  if (trap.status === "PLACED" && Date.now() >= trap.appearsAt.getTime()) {
+    const upd = await prisma.hunt.updateMany({
+      where: { id: trapId, status: "PLACED" },
+      data: { status: "APPEARED" },
+    });
+    if (upd.count === 1) {
+      revalidatePath("/kids/[kidId]/safari", "page");
+      return {
+        success: true,
+        status: "APPEARED",
+        appearsAt: trap.appearsAt.toISOString(),
+      };
+    }
+    const fresh = await prisma.hunt.findUnique({ where: { id: trapId } });
+    return {
+      success: true,
+      status: (fresh?.status ?? trap.status) as "PLACED" | "APPEARED" | "CAUGHT" | "ESCAPED",
+      appearsAt: trap.appearsAt.toISOString(),
+    };
+  }
+
+  return {
+    success: true,
+    status: trap.status as "PLACED" | "APPEARED" | "CAUGHT" | "ESCAPED",
+    appearsAt: trap.appearsAt.toISOString(),
+  };
+}
+
+export type ResolveTrapResult =
+  | {
+      success: true;
+      caught: true;
+      animal: AnimalLite;
+      caughtAt: string;
+    }
+  | {
+      success: true;
+      caught: false;
+      animal: AnimalLite;
+    }
+  | { success: false; error: string };
+
+export async function resolveTrap(
+  trapId: string,
+  isSuccess: boolean,
+): Promise<ResolveTrapResult> {
+  const trap = await prisma.hunt.findUnique({
+    where: { id: trapId },
+    include: { targetAnimal: true },
+  });
+  if (!trap) {
+    return { success: false, error: "罠が みつかりません" };
+  }
+  if (trap.status !== "APPEARED") {
+    if (trap.status === "PLACED") {
+      return { success: false, error: "まだ どうぶつが きていないよ" };
+    }
+    return { success: false, error: "もう しょうぶ ついてるよ" };
+  }
+
+  const animal: AnimalLite = {
+    id: trap.targetAnimal.id,
+    animalId: trap.targetAnimal.animalId,
+    name: trap.targetAnimal.name,
+    genericName: trap.targetAnimal.genericName,
+    specificName: trap.targetAnimal.specificName,
+    emoji: trap.targetAnimal.emoji,
+    rarity: trap.targetAnimal.rarity as AnimalLite["rarity"],
+    description: trap.targetAnimal.description,
+    imageUrl: trap.targetAnimal.imageUrl,
+    isExtinct: trap.targetAnimal.isExtinct,
+  };
+
+  try {
+    if (isSuccess) {
+      const now = new Date();
+      const lifespanDays = trap.targetAnimal.lifespanYears ?? 10;
+      const expiresAt = new Date(now.getTime() + lifespanDays * 24 * 60 * 60 * 1000);
+
+      const result = await prisma.$transaction(async (tx) => {
+        const upd = await tx.hunt.updateMany({
+          where: { id: trapId, status: "APPEARED" },
+          data: { status: "CAUGHT", resolvedAt: now },
+        });
+        if (upd.count !== 1) throw new Error("ALREADY_RESOLVED");
+
+        return tx.caughtAnimal.create({
+          data: {
+            animalId: trap.targetAnimalId,
+            caughtByUserId: trap.userId,
+            trapItemId: trap.trapItemId,
+            foodItemId: trap.baitItemId,
+            expiresAt,
+            isAlive: true,
+          },
+        });
+      });
+
+      revalidatePath("/kids");
+      revalidatePath("/bank");
+
+      return {
+        success: true,
+        caught: true,
+        animal,
+        caughtAt: result.caughtAt.toISOString(),
+      };
+    } else {
+      const upd = await prisma.hunt.updateMany({
+        where: { id: trapId, status: "APPEARED" },
+        data: { status: "ESCAPED", resolvedAt: new Date() },
+      });
+      if (upd.count !== 1) {
+        return { success: false, error: "もう しょうぶ ついてるよ" };
+      }
+      revalidatePath("/kids/[kidId]/safari", "page");
+      return { success: true, caught: false, animal };
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message === "ALREADY_RESOLVED") {
+      return { success: false, error: "もう しょうぶ ついてるよ" };
+    }
+    console.error("resolveTrap failed:", err);
+    return { success: false, error: "結果の保存に失敗しました" };
+  }
+}
+
+// ── アクティブ狩り ─────────────────────────────────────────────────────
+
+export type StartActiveHuntResult =
+  | {
+      success: true;
+      hunt: {
+        id: string;
+        userId: string;
+        huntType: "BOW" | "SPEAR" | "WEAPON";
+        toolId: string;
+        toolName: string;
+        toolEmoji: string;
+        status: "APPEARED";
+        placedAt: string;
+        appearsAt: string;
+        targetAnimal: AnimalLite;
+        sweetSpotWidth: number;
+      };
+      updatedInventory?: Array<{ itemId: string; quantity: number }>;
+      stamina: HuntStaminaInfo;
+    }
+  | { success: false; error: string; stamina?: HuntStaminaInfo };
+
+export async function startActiveHunt(
+  userId: string,
+  toolDbId: string,
+  stageDbId?: string | null,
+): Promise<StartActiveHuntResult> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, role: true, isTestAccount: true },
+  });
+  if (!user || user.role !== "CHILD") {
+    return { success: false, error: "ユーザーが みつかりません" };
+  }
+
+  const staminaBefore = await _readStaminaWithReset(userId);
+  if (!user.isTestAccount && staminaBefore.remaining <= 0) {
+    return {
+      success: false,
+      error: `きょうの かりは もう おわり！ あしたまた チャレンジしてね`,
+      stamina: staminaBefore,
+    };
+  }
+
+  const tool = await prisma.tool.findUnique({ where: { id: toolDbId } });
+  if (!tool) return { success: false, error: "どうぐが みつかりません" };
+  if (tool.type === "TRAP") {
+    return {
+      success: false,
+      error: "この どうぐは パッシブ罠 専用です（罠スタイルで仕掛けてね）",
+    };
+  }
+
+  const userTool = await prisma.userTool.findUnique({
+    where: { userId_toolId: { userId, toolId: tool.id } },
+  });
+  if (!userTool || userTool.quantity < 1) {
+    return { success: false, error: `${tool.name}を もっていません。クラフトで つくってね！` };
+  }
+
+  const animals = await prisma.animal.findMany({
+    where: stageDbId ? { stageId: stageDbId } : undefined,
+  });
+  if (animals.length === 0) {
+    return { success: false, error: "このステージに どうぶつが いません" };
+  }
+
+  const useRareBait = tool.successRateBonus >= 0.3;
+  const chosen = pickAnimalByRarity(animals, useRareBait);
+  const now = new Date();
+
+  try {
+    const created = await prisma.$transaction(async (tx) => {
+      if (!user.isTestAccount) {
+        const staUpd = await tx.user.updateMany({
+          where: {
+            id: userId,
+            dailyHuntCount: { lt: HUNT_DAILY_LIMIT },
+          },
+          data: {
+            dailyHuntCount: { increment: 1 },
+            lastHuntDate: now,
+          },
+        });
+        if (staUpd.count !== 1) throw new Error("OUT_OF_STAMINA");
+      }
+
+      return tx.hunt.create({
+        data: {
+          userId,
+          huntType: tool.type === "BOW" ? "BOW" : tool.type === "SPEAR" ? "SPEAR" : "WEAPON",
+          toolId: tool.id,
+          trapItemId: tool.toolId,
+          baitItemId: tool.toolId,
+          status: "APPEARED",
+          appearsAt: now,
+          targetAnimalId: chosen.id,
+          posX: 50,
+          posY: 50,
+        },
+      });
+    });
+
+    revalidatePath("/kids/[kidId]/safari", "page");
+
+    const animal: AnimalLite = {
+      id: chosen.id,
+      animalId: chosen.animalId,
+      name: chosen.name,
+      genericName: chosen.genericName,
+      specificName: chosen.specificName,
+      emoji: chosen.emoji,
+      rarity: chosen.rarity as AnimalLite["rarity"],
+      description: chosen.description,
+      imageUrl: chosen.imageUrl,
+      isExtinct: chosen.isExtinct,
+    };
+
+    return {
+      success: true,
+      hunt: {
+        id: created.id,
+        userId: created.userId,
+        huntType: created.huntType as "BOW" | "SPEAR" | "WEAPON",
+        toolId: tool.id,
+        toolName: tool.name,
+        toolEmoji: tool.emoji,
+        status: "APPEARED",
+        placedAt: created.placedAt.toISOString(),
+        appearsAt: created.appearsAt.toISOString(),
+        targetAnimal: animal,
+        sweetSpotWidth: Math.max(0.05, Math.min(0.45, 0.1 + tool.successRateBonus)),
+      },
+      updatedInventory: undefined,
+      stamina: {
+        used: staminaBefore.used + 1,
+        remaining: Math.max(0, staminaBefore.remaining - 1),
+        limit: HUNT_DAILY_LIMIT,
+        lastHuntDate: now.toISOString(),
+      },
+    };
+  } catch (err) {
+    if (err instanceof Error && err.message === "OUT_OF_STAMINA") {
+      const fresh = await _readStaminaWithReset(userId);
+      return { success: false, error: "きょうの かりは もう おわり！", stamina: fresh };
+    }
+    console.error("startActiveHunt failed:", err);
+    return { success: false, error: "狩りの開始に失敗しました" };
+  }
+}
+
+export type ResolveActiveHuntResult = ResolveTrapResult;
+
+export async function resolveActiveHunt(
+  huntId: string,
+  precision: number,
+): Promise<ResolveActiveHuntResult> {
+  const isHit = precision >= 0.65;
+  return resolveTrap(huntId, isHit);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// アクティブ狩り(HuntClient)のクイズ捕獲を DB(CaughtAnimal) に記録する。
+//   HuntClient はクイズ正解で動物を「ともだち」にする。これを図鑑へ永続化し、
+//   図鑑・レース・倉庫など「DB を唯一のソース」とする他機能と整合させる。
+//   animalSlug は Animal.animalId（HuntClient の ANIMALS[].id と一致させてある）。
+// ─────────────────────────────────────────────────────────────────────────────
+export type RecordHuntCatchResult =
+  | { success: true; animalName: string; remaining: number }
+  | { success: false; error: string; limitReached?: boolean };
+
+export async function recordActiveHuntCatch(
+  kidId: string,
+  animalSlug: string,
+): Promise<RecordHuntCatchResult> {
+  try {
+    const [kid, animal] = await Promise.all([
+      prisma.user.findFirst({
+        where: { id: kidId, role: "CHILD" },
+        select: { id: true, isTestAccount: true },
+      }),
+      prisma.animal.findUnique({
+        where: { animalId: animalSlug },
+        select: { id: true, name: true, genericName: true, lifespanYears: true },
+      }),
+    ]);
+    if (!kid) return { success: false, error: "ユーザーが見つかりません" };
+    if (!animal) return { success: false, error: `どうぶつ(${animalSlug})が見つかりません` };
+
+    // 1日の捕獲回数制限（アクティブ狩り）。新しい日なら _readStaminaWithReset がリセット書き込みする。
+    const sta = await _readStaminaWithReset(kidId);
+    if (!kid.isTestAccount && sta.remaining <= 0) {
+      return { success: false, error: "きょうは もう つかまえられないよ。また あした！", limitReached: true };
+    }
+
+    const lifespanDays = animal.lifespanYears ?? 10;
+    const expiresAt = new Date(Date.now() + lifespanDays * 24 * 60 * 60 * 1000);
+    const now = new Date();
+
+    const remaining = await prisma.$transaction(async (tx) => {
+      if (!kid.isTestAccount) {
+        // 残り回数がある時だけ条件付きで消費（同時実行の取りこぼし防止）
+        const upd = await tx.user.updateMany({
+          where: { id: kidId, dailyHuntCount: { lt: HUNT_DAILY_LIMIT } },
+          data: { dailyHuntCount: { increment: 1 }, lastHuntDate: now },
+        });
+        if (upd.count !== 1) throw new Error("OUT_OF_LIMIT");
+      }
+      await tx.caughtAnimal.create({
+        data: { animalId: animal.id, caughtByUserId: kid.id, expiresAt, isAlive: true },
+      });
+      const fresh = await tx.user.findUniqueOrThrow({
+        where: { id: kidId },
+        select: { dailyHuntCount: true },
+      });
+      return Math.max(0, HUNT_DAILY_LIMIT - Math.min(fresh.dailyHuntCount, HUNT_DAILY_LIMIT));
+    });
+
+    revalidatePath(`/kids/${kidId}/dictionary`);
+    revalidatePath(`/kids/${kidId}/warehouse`);
+    revalidatePath(`/kids/${kidId}/race`);
+
+    return { success: true, animalName: animal.genericName || animal.name, remaining };
+  } catch (err) {
+    if (err instanceof Error && err.message === "OUT_OF_LIMIT") {
+      return { success: false, error: "きょうは もう つかまえられないよ。また あした！", limitReached: true };
+    }
+    console.error("recordActiveHuntCatch failed:", err);
+    return { success: false, error: "捕獲の記録に失敗しました" };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 罠ショップ（一本道化 2026-06-12）
+//   クラフト工房をマップから隠したため、コインで基本罠を買えるようにする。
+//   「お手伝い → コイン → 罠 → 図鑑」の原則ルート（DESIGN_PRINCIPLES 1・3）。
+//   レア罠はうんぱんミッション（LOGISTICS クエスト承認）でのみ入手可能。
+// ─────────────────────────────────────────────────────────────────────────────
+export type BuyTrapResult =
+  | {
+      success: true;
+      newCoinBalance: number;
+      trap: { toolId: string; toolName: string; emoji: string; quantity: number };
+    }
+  | { success: false; error: string };
+
+export async function buyTrap(userId: string): Promise<BuyTrapResult> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, role: true, isTestAccount: true },
+  });
+  if (!user || user.role !== "CHILD") {
+    return { success: false, error: "ユーザーが みつかりません" };
+  }
+
+  const tool = await prisma.tool.findUnique({
+    where: { toolId: SHOP_TRAP_TOOL_ID },
+  });
+  if (!tool || tool.type !== "TRAP") {
+    return { success: false, error: "ショップの ワナが みつかりません" };
+  }
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      // 残高が足りる時だけ条件付きで減算（adjustCoins と同じパターン）
+      if (!user.isTestAccount) {
+        const upd = await tx.user.updateMany({
+          where: { id: userId, coinBalance: { gte: TRAP_COST } },
+          data: { coinBalance: { decrement: TRAP_COST } },
+        });
+        if (upd.count !== 1) throw new Error("INSUFFICIENT_FUNDS");
+
+        await tx.coinTransaction.create({
+          data: {
+            userId,
+            amount: -TRAP_COST,
+            kind: "ADJUSTMENT",
+            reason: `ワナを こうにゅう：${tool.name}`,
+          },
+        });
+      }
+
+      const userTool = await tx.userTool.upsert({
+        where: { userId_toolId: { userId, toolId: tool.id } },
+        update: { quantity: { increment: 1 } },
+        create: { userId, toolId: tool.id, quantity: 1 },
+      });
+
+      const fresh = await tx.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { coinBalance: true },
+      });
+      return { newBalance: fresh.coinBalance, quantity: userTool.quantity };
+    });
+
+    revalidatePath("/kids");
+    revalidatePath("/kids/[kidId]/safari", "page");
+
+    return {
+      success: true,
+      newCoinBalance: result.newBalance,
+      trap: {
+        toolId: tool.toolId,
+        toolName: tool.name,
+        emoji: tool.emoji,
+        quantity: result.quantity,
+      },
+    };
+  } catch (err) {
+    if (err instanceof Error && err.message === "INSUFFICIENT_FUNDS") {
+      return {
+        success: false,
+        error: `コインが たりないよ（${TRAP_COST}コイン ひつよう）。おてつだいで ためよう！`,
+      };
+    }
+    console.error("buyTrap failed:", err);
+    return { success: false, error: "ワナの こうにゅうに しっぱいしました" };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// クイズゲート用：出題のたねになる動物をランダムに1匹返す（一本道化 2026-06-12）。
+//   クライアント側はこの動物情報で /api/quiz/generate（Gemini＋フォールバック）を叩く。
+//   「学びを冒険の鍵にする」（DESIGN_PRINCIPLES 4）。
+// ─────────────────────────────────────────────────────────────────────────────
+export type QuizAnimal = {
+  specificName: string;
+  description: string;
+  emoji: string;
+};
+
+export async function getRandomQuizAnimal(): Promise<QuizAnimal | null> {
+  try {
+    const count = await prisma.animal.count();
+    if (count === 0) return null;
+    const skip = Math.floor(Math.random() * count);
+    const rows = await prisma.animal.findMany({
+      skip,
+      take: 1,
+      select: {
+        specificName: true,
+        name: true,
+        description: true,
+        emoji: true,
+      },
+    });
+    const a = rows[0];
+    if (!a) return null;
+    return {
+      specificName: a.specificName || a.name,
+      description: a.description,
+      emoji: a.emoji,
+    };
+  } catch (err) {
+    console.error("getRandomQuizAnimal failed:", err);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 毎日無料の罠枠（罠スタイル入手導線リフォーム）
+//   0コインでも必ず罠を仕掛けられる保険。JST で日付が変わるたび、pitfall(UserTool) の
+//   所持数を最低 FREE_TRAP_PER_DAY 個まで底上げする（積み上がり防止）。
+//   設置回数の上限（dailyTrapCount / TRAP_DAILY_LIMIT）は別管理なので「ハマりすぎ防止」は不変。
+//   lastFreeTrapDate は新設列のため、prisma generate 前でも通るよう型アサーションで補う。
+// ─────────────────────────────────────────────────────────────────────────────
+type UserFreeTrapRow = { lastFreeTrapDate: Date | null };
+
+export type DailyFreeTrapResult = {
+  granted: boolean; // 今回 底上げが発生したか（バナー表示用）
+  toolId: string;
+  toolName: string;
+  emoji: string;
+  quantity: number; // 付与後の所持数
+  amount: number; // 何個 底上げしたか
+};
+
+export async function grantDailyFreeTraps(
+  kidId: string,
+): Promise<DailyFreeTrapResult | null> {
+  const userRaw = await prisma.user.findUnique({ where: { id: kidId } });
+  if (!userRaw || userRaw.role !== "CHILD") return null;
+  // テストアカウントは無制限のため無料枠の管理は不要。
+  if (userRaw.isTestAccount) return null;
+
+  const user = userRaw as typeof userRaw & Partial<UserFreeTrapRow>;
+  const today = todayJstString();
+  const lastDate = user.lastFreeTrapDate
+    ? todayJstString(user.lastFreeTrapDate)
+    : null;
+
+  const tool = await prisma.tool.findUnique({
+    where: { toolId: FREE_TRAP_TOOL_ID },
+  });
+  if (!tool || tool.type !== "TRAP") return null;
+
+  const existing = await prisma.userTool.findUnique({
+    where: { userId_toolId: { userId: kidId, toolId: tool.id } },
+  });
+  const currentQty = existing?.quantity ?? 0;
+
+  // 今日すでに付与済み → 現状だけ返す（バナーは出さない）。
+  if (lastDate === today) {
+    return {
+      granted: false,
+      toolId: tool.toolId,
+      toolName: tool.name,
+      emoji: tool.emoji,
+      quantity: currentQty,
+      amount: 0,
+    };
+  }
+
+  // 新しい日：pitfall を最低 FREE_TRAP_PER_DAY 個まで底上げ。
+  const target = Math.max(currentQty, FREE_TRAP_PER_DAY);
+  const amount = target - currentQty;
+
+  await prisma.$transaction(async (tx) => {
+    if (amount > 0) {
+      await tx.userTool.upsert({
+        where: { userId_toolId: { userId: kidId, toolId: tool.id } },
+        update: { quantity: target },
+        create: { userId: kidId, toolId: tool.id, quantity: target },
+      });
+    }
+    await tx.user.update({
+      where: { id: kidId },
+      data: ({ lastFreeTrapDate: new Date() } as Record<string, unknown>) as Parameters<
+        typeof tx.user.update
+      >[0]["data"],
+    });
+  });
+
+  // 注意: この関数は safari/page.tsx の render 中に await されるため revalidatePath を
+  //   呼んではいけない（Next の "used revalidatePath during render" エラーになる）。
+  //   同一リクエストで直後に ownedTrapRows を読むので、再検証は不要。
+
+  return {
+    granted: amount > 0,
+    toolId: tool.toolId,
+    toolName: tool.name,
+    emoji: tool.emoji,
+    quantity: target,
+    amount,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ワナづくり（罠スタイル入手導線リフォーム）
+//   集めた素材／パーツ → 罠(UserTool) に変換し、「死んだ導線」を罠入手に繋ぐ。
+//   - source="part"     … ガチャの罠パーツ（SharedInventoryItem・サーバ専用）。
+//                          消費＋付与をトランザクションでアトミックに。
+//   - source="material" … クレーン素材（GameInventoryItem／Zustand・本人が単一書き手）。
+//                          消費はクライアント側 consumeInventory が行い、サーバは付与のみ。
+//   レシピ定義は app/kids/config.ts の TRAP_RECIPES。
+// ─────────────────────────────────────────────────────────────────────────────
+export type CraftTrapResult =
+  | {
+      success: true;
+      trap: { toolId: string; toolName: string; emoji: string; quantity: number };
+    }
+  | { success: false; error: string };
+
+export async function craftTrap(
+  kidId: string,
+  recipeId: string,
+): Promise<CraftTrapResult> {
+  const recipe = TRAP_RECIPES.find((r) => r.id === recipeId);
+  if (!recipe) return { success: false, error: "レシピが みつかりません" };
+
+  const user = await prisma.user.findUnique({
+    where: { id: kidId },
+    select: { id: true, role: true, isTestAccount: true },
+  });
+  if (!user || user.role !== "CHILD") {
+    return { success: false, error: "ユーザーが みつかりません" };
+  }
+
+  const tool = await prisma.tool.findUnique({
+    where: { toolId: recipe.outputToolId },
+  });
+  if (!tool || tool.type !== "TRAP") {
+    return { success: false, error: "つくる ワナが みつかりません" };
+  }
+
+  try {
+    const quantity = await prisma.$transaction(async (tx) => {
+      // ガチャパーツ（SharedInventoryItem）は サーバで条件付き消費。
+      if (recipe.source === "part" && !user.isTestAccount) {
+        for (const ing of recipe.ingredients) {
+          const upd = await tx.sharedInventoryItem.updateMany({
+            where: { itemId: ing.itemId, quantity: { gte: ing.qty } },
+            data: { quantity: { decrement: ing.qty } },
+          });
+          if (upd.count !== 1) throw new Error("NOT_ENOUGH_PARTS");
+        }
+      }
+      // クレーン素材（source="material"）はクライアントで消費済み。サーバは付与のみ。
+      const userTool = await tx.userTool.upsert({
+        where: { userId_toolId: { userId: kidId, toolId: tool.id } },
+        update: { quantity: { increment: 1 } },
+        create: { userId: kidId, toolId: tool.id, quantity: 1 },
+      });
+      return userTool.quantity;
+    });
+
+    revalidatePath("/kids");
+    revalidatePath("/kids/[kidId]/safari", "page");
+
+    return {
+      success: true,
+      trap: {
+        toolId: tool.toolId,
+        toolName: tool.name,
+        emoji: tool.emoji,
+        quantity,
+      },
+    };
+  } catch (err) {
+    if (err instanceof Error && err.message === "NOT_ENOUGH_PARTS") {
+      return { success: false, error: "ざいりょうが たりないよ" };
+    }
+    console.error("craftTrap failed:", err);
+    return { success: false, error: "ワナづくりに しっぱいしました" };
+  }
+}

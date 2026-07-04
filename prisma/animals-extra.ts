@@ -6681,5 +6681,980 @@ export const EXTRA_ANIMALS: ExtraAnimal[] = [
     lifespanYears: 30,
     isExtinct: true,
   },
+  // ── サソリの なかまを あつめる ──
+  {
+    animalId: "scorpion_emperor",
+    genericName: "サソリ",
+    specificName: "テナガサソリ",
+    emoji: "🦂",
+    rarity: "RARE",
+    description:
+      "アフリカの ねったいりんに すむ、せかいさいだいきゅうの サソリ。たいちょうは20センチ いじょう！どくは よわくて ひとに きけんではないよ。くろくて ぴかぴかの からだが かっこいい。",
+    habitat: "アフリカの ねったいりん",
+    stageId: "forest",
+    lifespanYears: 8,
+  },
+  {
+    animalId: "scorpion_arizona_bark",
+    genericName: "サソリ",
+    specificName: "アリゾナバークサソリ",
+    emoji: "🦂",
+    rarity: "RARE",
+    description:
+      "アメリカの さばくに すむ、きたアメリカで いちばん どくが つよい サソリ。よるに こうどうして いわの したや きのかわの うらに かくれているよ。からだは こいちゃいろで ちいさめ。",
+    habitat: "アメリカ・メキシコの さばく",
+    stageId: "savanna",
+    lifespanYears: 6,
+  },
+  // ── ワニの なかまを あつめる ──
+  {
+    animalId: "crocodile_gharial",
+    genericName: "ワニ",
+    specificName: "ガビアル",
+    emoji: "🐊",
+    rarity: "EPIC",
+    description:
+      "インドの かわに すむ、ほそながい くちばしが とくちょうの ワニ。くちばしには 100本いじょうの はが ならんでいて、さかなを ひっかけて たべるよ。オスの はなさきには たまごのような こぶが あるんだ。",
+    habitat: "インドの おおきなかわ",
+    stageId: "forest",
+    lifespanYears: 60,
+  },
+  // ── カニの なかまを あつめる ──
+  {
+    animalId: "crab_snow",
+    genericName: "カニ",
+    specificName: "ズワイガニ",
+    emoji: "🦀",
+    rarity: "COMMON",
+    description:
+      "にほんかいの つめたい うみの そこに すむ カニ。あしが とても ながくて、ひろげると80センチ いじょうに なることも。ふゆは おいしい かにりょうりの ざいりょうとして しられているよ。",
+    habitat: "にほんかいの しんかい",
+    stageId: "deep_sea",
+    lifespanYears: 14,
+  },
+  {
+    animalId: "crab_king",
+    genericName: "カニ",
+    specificName: "タラバガニ",
+    emoji: "🦀",
+    rarity: "RARE",
+    description:
+      "アラスカや ほっかいどうの つめたい うみに すむ おおきな カニ。あしを ひろげると1メートルをこえることも！じつは カニより ヤドカリに ちかい なかまなんだって。",
+    habitat: "きたの つめたい うみ",
+    stageId: "deep_sea",
+    lifespanYears: 25,
+  },
+  {
+    animalId: "crab_mangrove",
+    genericName: "カニ",
+    specificName: "マングローブガニ",
+    emoji: "🦀",
+    rarity: "COMMON",
+    description:
+      "ねったいの マングローブりんの どろの なかに すむ カニ。はさみが とても つよくて、マングローブの きのみを わって たべるよ。よるに こうどうして かわの なかも じょうずに うごきまわる。",
+    habitat: "ねったいの マングローブりん",
+    stageId: "forest",
+    lifespanYears: 5,
+  },
+  // ── チンチラの なかまを あつめる ──
+  {
+    animalId: "chinchilla_long_tailed",
+    genericName: "チンチラ",
+    specificName: "チンチラ",
+    emoji: "🐭",
+    rarity: "RARE",
+    description:
+      "みなみアメリカの アンデスさんみゃくに すむ ふわふわの けが とくちょうの げっ歯るい。その やわらかさは ねこの けの 30ばいとも いわれるよ。すずしい やまの うえに すんでいるんだ。",
+    habitat: "アンデスさんみゃくの こうさん",
+    stageId: "ice_age",
+    lifespanYears: 15,
+  },
+  // ── プレーリードッグの なかまを あつめる ──
+  {
+    animalId: "prairie_dog_black_tailed",
+    genericName: "プレーリードッグ",
+    specificName: "クロオビプレーリードッグ",
+    emoji: "🐿️",
+    rarity: "COMMON",
+    description:
+      "きたアメリカの くさはらに すむ、リスの なかまの どうぶつ。じめんに トンネルを ほって そうじゅんの まちを つくるよ。なかまに きけんを しらせる こえが「わん」と きこえることから この なまえに なった。",
+    habitat: "きたアメリカの だいへいげん",
+    stageId: "savanna",
+    lifespanYears: 5,
+  },
+  // ── ツルの なかまを あつめる ──
+  {
+    animalId: "crane_white_naped",
+    genericName: "ツル",
+    specificName: "マナヅル",
+    emoji: "🦢",
+    rarity: "RARE",
+    description:
+      "にほんにも ふゆに やってくる うつくしい ツル。くびの うしろが しろくて、ほほが あかいのが めじるし。かごしまけんの いずみに まいとし1まんわ いじょう あつまることで ゆうめいだよ。",
+    habitat: "ひがしアジアの しっち・そうげん",
+    stageId: "savanna",
+    lifespanYears: 30,
+  },
+  {
+    animalId: "crane_siberian",
+    genericName: "ツル",
+    specificName: "ソデグロヅル",
+    emoji: "🦢",
+    rarity: "LEGENDARY",
+    description:
+      "まっしろな はねが うつくしい、せかいで いちばん きけつな ツルのひとつ。ロシアの シベリアで そだち、インドや ちゅうごくで ふゆを すごすよ。せかいぜんたいで 3000わ いないと いわれているんだ。",
+    habitat: "シベリアの しっち・インドのこうすいち",
+    stageId: "ice_age",
+    lifespanYears: 60,
+  },
+  // ── エイの なかまを あつめる ──
+  {
+    animalId: "ray_sawfish",
+    genericName: "エイ",
+    specificName: "ノコギリエイ",
+    emoji: "🐟",
+    rarity: "EPIC",
+    description:
+      "くちさきから のこぎりのような ながい とっきが でていて、それで さかなを はたいて つかまえる。サメと エイの なかまで、いまは げきへりして せかいてきに ほごされているよ。",
+    habitat: "ねったい・ねったいせいきの うみや かわ",
+    stageId: "deep_sea",
+    lifespanYears: 30,
+  },
+  // ── さかなの なかまを あつめる ──
+  {
+    animalId: "fish_porcupinefish",
+    genericName: "さかな",
+    specificName: "ハリセンボン",
+    emoji: "🐡",
+    rarity: "COMMON",
+    description:
+      "きけんを かんじると からだを ふくらませて まるくなり、とげを たてるさかな。「ハリセンボン」とよばれるが とげの かずは やく400ほんほどだよ。ないぞうに つよい どくを もっているんだ。",
+    habitat: "ねったい・ねったいせいきの うみ",
+    stageId: "deep_sea",
+    lifespanYears: 12,
+  },
+  {
+    animalId: "fish_coelacanth",
+    genericName: "さかな",
+    specificName: "シーラカンス",
+    emoji: "🐟",
+    rarity: "LEGENDARY",
+    description:
+      "6600まんねん まえの きょうりゅうじだいから すがたを かえていない「いきている かせき」。インドようの ふかいうみに すんでいて、1938ねんに ひとが はじめて みつけて せかいが おどろいた。",
+    habitat: "インドようの しんかい",
+    stageId: "deep_sea",
+    lifespanYears: 60,
+  },
+  {
+    animalId: "fish_chum_salmon",
+    genericName: "さかな",
+    specificName: "シロザケ",
+    emoji: "🐟",
+    rarity: "COMMON",
+    description:
+      "にほんで いちばん よく とれる サケ。うまれた かわに もどってきて たまごを うむよ。うみで おおきく そだち、かわに もどるとき からだが あかと みどりの もように かわるんだ。",
+    habitat: "きたたいへいようと にほんの かわ",
+    stageId: "forest",
+    lifespanYears: 5,
+  },
+  {
+    animalId: "fish_sockeye_salmon",
+    genericName: "さかな",
+    specificName: "ベニザケ",
+    emoji: "🐟",
+    rarity: "RARE",
+    description:
+      "うみで そだつあいだは ぎんいろだが、かわに もどるとき からだが あかく はっきり かわる サケ。にくの いろが あざやかな あかいろで、とても えいようが ゆたかだよ。",
+    habitat: "きたたいへいようと アラスカの かわ",
+    stageId: "deep_sea",
+    lifespanYears: 5,
+  },
+  {
+    animalId: "fish_rainbow_trout",
+    genericName: "さかな",
+    specificName: "ニジマス",
+    emoji: "🐟",
+    rarity: "COMMON",
+    description:
+      "からだの よこに あざやかな にじいろの すじが はいっている きれいな さかな。もともとは きたアメリカの さかなで、いまは にほんの かわや ようしょくじょうで そだてられているよ。",
+    habitat: "きたアメリカ・にほんの きれいな かわ",
+    stageId: "forest",
+    lifespanYears: 7,
+  },
+  {
+    animalId: "fish_japanese_mackerel",
+    genericName: "さかな",
+    specificName: "マサバ",
+    emoji: "🐟",
+    rarity: "COMMON",
+    description:
+      "にほんの うみで よく とれる、あおと くろの しまもようが きれいな さかな。さばの みそにや しめさばが ゆうめいだね。おおきな むれで うみを およぐよ。",
+    habitat: "にほん・ちょうせんはんとうの うみ",
+    stageId: "deep_sea",
+    lifespanYears: 5,
+  },
+  {
+    animalId: "fish_japanese_sardine",
+    genericName: "さかな",
+    specificName: "マイワシ",
+    emoji: "🐟",
+    rarity: "COMMON",
+    description:
+      "にほんの うみで たくさん とれる、むれて およぐ さかな。おなかに くろいてんが ならんでいるのが めじるし。ちいさいけれど カルシウムや DHA など えいようが たっぷりなんだ。",
+    habitat: "にほん・きたたいへいようの うみ",
+    stageId: "deep_sea",
+    lifespanYears: 5,
+  },
+  {
+    animalId: "fish_red_sea_bream",
+    genericName: "さかな",
+    specificName: "マダイ",
+    emoji: "🐟",
+    rarity: "COMMON",
+    description:
+      "あざやかな ピンクいろの からだが きれいな、にほんで めでたいさかなとして しられている さかな。「おめでたい」の「たい」として、おいわいの ときに よく つかわれるよ。",
+    habitat: "にほん・ひがしシナかいの うみ",
+    stageId: "deep_sea",
+    lifespanYears: 30,
+  },
+  {
+    animalId: "fish_japanese_seabass",
+    genericName: "さかな",
+    specificName: "スズキ",
+    emoji: "🐟",
+    rarity: "COMMON",
+    description:
+      "にほんの うみや かわぐちに すむ、からだが ぎんいろの さかな。こどものとき「セイゴ」、そだつと「フッコ」、おとなになると「スズキ」と よびかたが かわる「しゅっせうお」として しられているよ。",
+    habitat: "にほんの うみ・かわぐち",
+    stageId: "deep_sea",
+    lifespanYears: 12,
+  },
+  // ── とりの なかまを あつめる ──
+  {
+    animalId: "bird_japanese_green_woodpecker",
+    genericName: "とり",
+    specificName: "アオゲラ",
+    emoji: "🐦",
+    rarity: "COMMON",
+    description:
+      "にほんだけに すむ キツツキのなかま。みどりがかった からだと あかい ずきんが きれいなとり。コツコツと きに あなを あけて、ながい したで むしを つかまえて たべるよ。",
+    habitat: "にほんの しりゅうりん",
+    stageId: "forest",
+    lifespanYears: 8,
+  },
+  {
+    animalId: "bird_japanese_pygmy_woodpecker",
+    genericName: "とり",
+    specificName: "コゲラ",
+    emoji: "🐦",
+    rarity: "COMMON",
+    description:
+      "にほんで いちばん ちいさい キツツキ。ちゃいろと しろの まだらもようで、スズメぐらいの おおきさ。まちなかの こうえんでも みられて、コッコッコと きを つつく おとが きこえるよ。",
+    habitat: "にほんの りんや こうえん",
+    stageId: "forest",
+    lifespanYears: 6,
+  },
+  // ── ウミウシの なかまを あつめる ──
+  {
+    animalId: "nudibranch_spanish_dancer",
+    genericName: "ウミウシ",
+    specificName: "スペインダンサーウミウシ",
+    emoji: "🌊",
+    rarity: "RARE",
+    description:
+      "よるに うみを およぐとき、あかくて ひらひらした からだが フラメンコダンサーの スカートのように みえる ウミウシ。サンゴしょうに すんでいる からだ20センチいじょうの おおきなウミウシだよ。",
+    habitat: "インドようから たいへいようの サンゴしょう",
+    stageId: "deep_sea",
+    lifespanYears: 1,
+  },
+  {
+    animalId: "nudibranch_blue_glaucus",
+    genericName: "ウミウシ",
+    specificName: "アオミノウミウシ",
+    emoji: "🌊",
+    rarity: "RARE",
+    description:
+      "うみの ひょうめんを さかさまで ただよう、ちいさくて あざやかな あおと ぎんいろの ウミウシ。カツオノエボシなど どくを もつ いきものを たべて、その どくを じぶんの ぶきに するんだ。",
+    habitat: "せかいじゅうの あたたかい うみ",
+    stageId: "deep_sea",
+    lifespanYears: 1,
+  },
+  // ── こうちゅうの なかまを あつめる ──
+  {
+    animalId: "beetle_diving_great",
+    genericName: "こうちゅう",
+    specificName: "ゲンゴロウ",
+    emoji: "🪲",
+    rarity: "RARE",
+    description:
+      "たんすいに すむ こうちゅうで、みずの なかを すいすい およぐ。にほんの むかしの たんぼや ため池に ふつうに いたが、いまは すくなくなっている。おなかに ためた くうきで みずに もぐるよ。",
+    habitat: "にほんの ため池・たんぼ",
+    stageId: "forest",
+    lifespanYears: 3,
+  },
+  {
+    animalId: "beetle_stag_saw",
+    genericName: "くわがた",
+    specificName: "ノコギリクワガタ",
+    emoji: "🪲",
+    rarity: "RARE",
+    description:
+      "おおきな あごが のこぎりのように でこぼこしている クワガタムシ。にほんの りんや こうえんに すんでいて、なつに よく みられるよ。オスどうしで あごを ぶつけて たたかうよ。",
+    habitat: "にほんのりん・きゅうしゅうから ほっかいどう",
+    stageId: "forest",
+    lifespanYears: 3,
+  },
+  {
+    animalId: "moth_atlas",
+    genericName: "が",
+    specificName: "ヨナグニサン",
+    emoji: "🦋",
+    rarity: "EPIC",
+    description:
+      "よなぐにじまなど にほんの なんせいしょとうに すむ、せかいさいだいきゅうの ガ。はねをひろげると30センチちかくにもなるよ！おとなに なると くちが なく、なにも たべずに いきているんだって。",
+    habitat: "にほんのなんせいしょとうのりん",
+    stageId: "forest",
+    lifespanYears: 1,
+  },
+  // ── ほたるの なかまを あつめる ──
+  {
+    animalId: "firefly_heike",
+    genericName: "ほたる",
+    specificName: "ヘイケボタル",
+    emoji: "✨",
+    rarity: "COMMON",
+    description:
+      "たんぼや みぞに すむ ちいさな ほたる。ゲンジボタルより ちいさくて、よわい ひかりで ぴかぴかひかる。こどもは みずの なかで カタツムリを たべて そだつんだよ。",
+    habitat: "にほんの たんぼ・みぞ",
+    stageId: "forest",
+    lifespanYears: 1,
+  },
+  // ── ハチの なかまを あつめる ──
+  {
+    animalId: "bee_japanese_honey",
+    genericName: "ハチ",
+    specificName: "ニホンミツバチ",
+    emoji: "🐝",
+    rarity: "COMMON",
+    description:
+      "にほんに もともと いる ミツバチ。スズメバチが きたとき、まわりを いっぱいの はちが かこんで ねつで やっつける「ねつだま」という わざが すごい！セイヨウミツバチより ちいさくて おとなしいよ。",
+    habitat: "にほんのりん・くさはら",
+    stageId: "forest",
+    lifespanYears: 1,
+  },
+  // ── テナガザルの なかまを あつめる ──
+  {
+    animalId: "gibbon_bornean",
+    genericName: "テナガザル",
+    specificName: "ボルネオテナガザル",
+    emoji: "🐒",
+    rarity: "RARE",
+    description:
+      "ボルネオとうの りんに すむ テナガザル。きのえだを ながい うでで じゅうじざいに うごきまわる。あさに なると おとこが おおきな こえで なきごえを ひびかせて、なわばりを せんげんするよ。",
+    habitat: "ボルネオとうのりん",
+    stageId: "forest",
+    lifespanYears: 45,
+  },
+  // ── へびの なかまを あつめる ──
+  {
+    animalId: "snake_paradise_flying",
+    genericName: "へび",
+    specificName: "ミドリトビヘビ",
+    emoji: "🐍",
+    rarity: "RARE",
+    description:
+      "とうなんアジアの りんに すむ ヘビ。きのうえから とびおりて、からだを たいらにして くうきを つかまえながら「そらをとぶ」ようにグライドするよ。10メートルいじょうとぶことも！",
+    habitat: "とうなんアジアのりん",
+    stageId: "forest",
+    lifespanYears: 10,
+  },
+  // ── センザンコウの なかまを あつめる ──
+  {
+    animalId: "pangolin_sunda",
+    genericName: "センザンコウ",
+    specificName: "マレーセンザンコウ",
+    emoji: "🦔",
+    rarity: "EPIC",
+    description:
+      "とうなんアジアの りんに すむ センザンコウ。ウロコに おおわれた からだで まるまって みを まもる。せかいで いちばん みつりょうされている ほにゅうるいで、ぜつめつの きけんが あるよ。",
+    habitat: "とうなんアジアのりん",
+    stageId: "forest",
+    lifespanYears: 12,
+  },
+  // ── イルカの なかまを あつめる ──
+  {
+    animalId: "dolphin_ganges",
+    genericName: "イルカ",
+    specificName: "ガンジスカワイルカ",
+    emoji: "🐬",
+    rarity: "LEGENDARY",
+    description:
+      "インドの ガンジスかわに すむ めが ほとんど みえない イルカ。よごれた かわの なかで ちょうおんぱだけを つかって さかなを さがすよ。にんげんの かつどうで いまは 2500とう いないとも いわれている。",
+    habitat: "インドのガンジスかわ・ブラマプトラかわ",
+    stageId: "forest",
+    lifespanYears: 30,
+  },
+  // ── バクの なかまを あつめる ──
+  {
+    animalId: "tapir_mountain",
+    genericName: "バク",
+    specificName: "マウンテンバク",
+    emoji: "🦏",
+    rarity: "EPIC",
+    description:
+      "みなみアメリカの アンデスさんみゃくの こうちに すむ バク。ふかい むねと あつい けが さむい やまの きこうに あっている。きけつで ぜつめつのきけんに さらされているんだ。",
+    habitat: "アンデスさんみゃくのこうさん（ペルー・コロンビア）",
+    stageId: "ice_age",
+    lifespanYears: 30,
+  },
+  // ── カバの なかまを あつめる ──
+  {
+    animalId: "hippo_pygmy",
+    genericName: "カバ",
+    specificName: "コビトカバ",
+    emoji: "🦛",
+    rarity: "EPIC",
+    description:
+      "にしアフリカの りんに すむ、ふつうの カバの10ぶんの1の おおきさしかない コビトカバ。よるに でてきて、りんの なかを ひとりで こうどうするよ。せかいに 2000とう いないと いわれているんだ。",
+    habitat: "にしアフリカのりん（コートジボワールなど）",
+    stageId: "forest",
+    lifespanYears: 35,
+  },
+  // ── かわうその なかまを あつめる ──
+  {
+    animalId: "otter_african_clawless",
+    genericName: "かわうそ",
+    specificName: "ツメナシカワウソ",
+    emoji: "🦦",
+    rarity: "RARE",
+    description:
+      "アフリカに すむ、つめが ほとんどない カワウソ。ゆびが じゆうに うごくので、かにや カエルを じょうずに つかまえられる。アフリカで 2ばんめに おおきい カワウソだよ。",
+    habitat: "アフリカの かわ・しっち",
+    stageId: "savanna",
+    lifespanYears: 15,
+  },
+  // ── サイの なかまを あつめる ──
+  {
+    animalId: "rhino_javan",
+    genericName: "サイ",
+    specificName: "ジャワサイ",
+    emoji: "🦏",
+    rarity: "LEGENDARY",
+    description:
+      "インドネシアの ジャワとうだけに のこっている、せかいで いちばん きけつな おおがた どうぶつ。せかいで やく80とうしか いないんだって。かわの もようが よろいのように みえるよ。",
+    habitat: "インドネシア・ジャワとうの りん",
+    stageId: "forest",
+    lifespanYears: 45,
+  },
+  // ── マーモットの なかまを あつめる ──
+  {
+    animalId: "marmot_alpine",
+    genericName: "マーモット",
+    specificName: "アルプスマーモット",
+    emoji: "🐿️",
+    rarity: "COMMON",
+    description:
+      "ヨーロッパの アルプスさんみゃくに すむ、おおきなリスの なかま。なかまが きけんを みつけると かんだかい こえで しらせるよ。ふゆは あなの なかで かぞくで かたまって ねむる、ながい とうみんを するんだ。",
+    habitat: "ヨーロッパ・アルプスの こうさん",
+    stageId: "ice_age",
+    lifespanYears: 15,
+  },
+  // ── ザリガニの なかまを あつめる ──
+  {
+    animalId: "crayfish_american",
+    genericName: "ザリガニ",
+    specificName: "アメリカザリガニ",
+    emoji: "🦞",
+    rarity: "COMMON",
+    description:
+      "もともとは きたアメリカの さかなで、にほんのたんぼや かわでも よく みかけるようになった。あかいろのからだと おおきなはさみが とくちょう。こどもたちに ひもで つって あそばれることが おおいよ。",
+    habitat: "きたアメリカ・にほんのたんぼや かわ",
+    stageId: "forest",
+    lifespanYears: 5,
+  },
+  // ── カエル・サンショウウオを もっと あつめる ──
+  {
+    animalId: "frog_african_bullfrog",
+    genericName: "かえる",
+    specificName: "アフリカウシガエル",
+    emoji: "🐸",
+    rarity: "RARE",
+    description:
+      "アフリカの サバンナに すむ、とても おおきな カエル。オスの からだは テニスボールより ずっと おおきく、1kgを こえることも！きけんを かんじると おおきな こえで「ウォー！」と なくよ。",
+    habitat: "アフリカ南部の 草原・湿地",
+    stageId: "savanna",
+    lifespanYears: 35,
+  },
+  {
+    animalId: "frog_wallaces_flying",
+    genericName: "かえる",
+    specificName: "ウォーレスタコアシガエル",
+    emoji: "🐸",
+    rarity: "RARE",
+    description:
+      "マレーシアや インドネシアの ジャングルに すむ カエル。4本の あしの あいだに おおきな みずかきが あり、木から 木へ グライダーのように とんで いどうするんだ。",
+    habitat: "マレーシア・インドネシアの 熱帯雨林",
+    stageId: "forest",
+    lifespanYears: 10,
+  },
+  {
+    animalId: "salamander_hellbender",
+    genericName: "サンショウウオ",
+    specificName: "ヘルベンダー",
+    emoji: "🦎",
+    rarity: "EPIC",
+    description:
+      "きたアメリカに すむ、せかいで 3ばんめに おおきい サンショウウオ。からだの ながさは 70cmにも なるよ。ひふで きゅうそくするから、きれいな 川の みずが ないと いきられないんだ。",
+    habitat: "北アメリカ東部の 清流",
+    stageId: "forest",
+    lifespanYears: 30,
+  },
+  {
+    animalId: "salamander_tiger",
+    genericName: "サンショウウオ",
+    specificName: "タイガーサラマンダー",
+    emoji: "🦎",
+    rarity: "COMMON",
+    description:
+      "きたアメリカに すむ おおがたの サンショウウオ。きいろと くろの しまもようが トラのように みえることから その なまえがついた。ちかの あなで せいかつするよ。",
+    habitat: "北アメリカの 草原・森林",
+    stageId: "forest",
+    lifespanYears: 20,
+  },
+  // ── やまねこの なかまを あつめる ──
+  {
+    animalId: "cat_iberian_lynx",
+    genericName: "やまねこ",
+    specificName: "イベリアオオヤマネコ",
+    emoji: "🐱",
+    rarity: "LEGENDARY",
+    description:
+      "スペインと ポルトガルにだけ すむ、せかいで いちばん きけつな ネコ科の どうぶつ。ひとたびは 100とうを きるほど へったが、ほごかつどうで ふえてきているよ。ウサギが おもな えさだよ。",
+    habitat: "スペイン・ポルトガルの 低木林",
+    stageId: "forest",
+    lifespanYears: 13,
+  },
+  {
+    animalId: "cat_jaguarundi",
+    genericName: "やまねこ",
+    specificName: "ジャガランディ",
+    emoji: "🐱",
+    rarity: "RARE",
+    description:
+      "ちゅうおう・みなみアメリカに すむ こがたの ヤマネコ。からだが ほそながく イタチに にた すがた。あかむらさきや はいいろなど かわいらしい みかけだが すばやく えものを おえるよ。",
+    habitat: "中南米の 草原・低木林",
+    stageId: "forest",
+    lifespanYears: 15,
+  },
+  {
+    animalId: "cat_rusty_spotted",
+    genericName: "やまねこ",
+    specificName: "サビイロネコ",
+    emoji: "🐱",
+    rarity: "EPIC",
+    description:
+      "スリランカや インドに すむ、せかいで もっとも ちいさい ヤマネコ。からだのながさは 45cmほどで、いえネコより ずっと ちいさい。ちいさいのに すばやく きのぼりが とくいだよ。",
+    habitat: "スリランカ・インドの 草原・低木林",
+    stageId: "forest",
+    lifespanYears: 12,
+  },
+  // ── ふくろうの なかまを もっと あつめる ──
+  {
+    animalId: "owl_long_eared",
+    genericName: "ふくろう",
+    specificName: "トラフズク",
+    emoji: "🦉",
+    rarity: "COMMON",
+    description:
+      "ユーラシアと きたアメリカに すむ ちゅうがたの フクロウ。あたまに ながい ミミばねが あり、トラのような しまもようが からだにあるのが とくちょう。ちいさな ねずみを おもに たべるよ。",
+    habitat: "ユーラシア・北アメリカの 森林・草原",
+    stageId: "forest",
+    lifespanYears: 12,
+  },
+  {
+    animalId: "owl_short_eared",
+    genericName: "ふくろう",
+    specificName: "コミミズク",
+    emoji: "🦉",
+    rarity: "COMMON",
+    description:
+      "ほぼ 世界中に すむ フクロウ。ひるまも かつどうし、ひろい そうげんを ていくうひこうして ねずみを さがす。ミミばねが ほとんど みえないほど みじかいのが なまえの ゆらいだよ。",
+    habitat: "世界の 草原・湿地",
+    stageId: "savanna",
+    lifespanYears: 12,
+  },
+  // ── たかの なかまを もっと あつめる ──
+  {
+    animalId: "hawk_merlin",
+    genericName: "たか",
+    specificName: "コチョウゲンボウ",
+    emoji: "🦅",
+    rarity: "COMMON",
+    description:
+      "きたアメリカや ユーラシアに すむ ちいさな ハヤブサ。コウモリや ツバメも おそうほど すばやい ひこうぎじゅつを もつよ。なまえの「マーリン」は アーサーおうの まほうつかいと おなじだよ。",
+    habitat: "北アメリカ・ユーラシアの 草原・北方林",
+    stageId: "forest",
+    lifespanYears: 13,
+  },
+  {
+    animalId: "hawk_eurasian_sparrowhawk",
+    genericName: "たか",
+    specificName: "ハイタカ",
+    emoji: "🦅",
+    rarity: "COMMON",
+    description:
+      "ヨーロッパや アジアに すむ こがたの タカ。すばやい たいあたりで ことりを つかまえる。メスは オスより ずっと おおきく、2ばいくらい おもいことも あるよ。",
+    habitat: "ユーラシアの 森林・農地",
+    stageId: "forest",
+    lifespanYears: 15,
+  },
+  // ── おうむの なかまを もっと あつめる ──
+  {
+    animalId: "parrot_eclectus",
+    genericName: "おうむ",
+    specificName: "エクレクタスインコ",
+    emoji: "🦜",
+    rarity: "RARE",
+    description:
+      "ニューギニアや オーストラリアに すむ インコ。オスは みどりいろ、メスは あかと あおむらさきと まったく ちがう いろで、かつては べつの しゅだと おもわれていたほどだよ。",
+    habitat: "ニューギニア・オーストラリアの 熱帯雨林",
+    stageId: "forest",
+    lifespanYears: 30,
+  },
+  {
+    animalId: "parrot_palm_cockatoo",
+    genericName: "おうむ",
+    specificName: "ヤシオウム",
+    emoji: "🦜",
+    rarity: "EPIC",
+    description:
+      "オーストラリア北部と ニューギニアに すむ おおがたの オウム。まっくろな はねと おおきな とさかが とくちょう。なんと えだを つかって たいこのように じめんを たたく、とくいわざを もつよ。",
+    habitat: "オーストラリア・ニューギニアの 熱帯雨林",
+    stageId: "forest",
+    lifespanYears: 60,
+  },
+  // ── いるかの なかまを もっと あつめる ──
+  {
+    animalId: "dolphin_striped",
+    genericName: "いるか",
+    specificName: "シマイルカ",
+    emoji: "🐬",
+    rarity: "COMMON",
+    description:
+      "ちちゅうかいや たいへいように すむ、あざやかな しまもようの イルカ。むれで ダイナミックな ジャンプをする。からだの よこに あおと しろの きれいな しまが はいっているよ。",
+    habitat: "地中海・太平洋の 外洋",
+    stageId: "deep_sea",
+    lifespanYears: 55,
+  },
+  // ── オランウータンの なかまを あつめる ──
+  {
+    animalId: "orangutan_sumatran",
+    genericName: "オランウータン",
+    specificName: "スマトラオランウータン",
+    emoji: "🦧",
+    rarity: "EPIC",
+    description:
+      "インドネシアの スマトラとうにだけ すむ オランウータン。ボルネオオランウータンより かみの毛が ながく かおに しわが おおい。ほぼ じゅじょう せいかつを するよ。",
+    habitat: "インドネシア・スマトラ島の 熱帯雨林",
+    stageId: "forest",
+    lifespanYears: 45,
+  },
+  // ── さるの なかまを もっと あつめる ──
+  {
+    animalId: "monkey_guereza",
+    genericName: "さる",
+    specificName: "ゲレザ",
+    emoji: "🐒",
+    rarity: "RARE",
+    description:
+      "アフリカに すむ しろと くろの あざやかな もようの サル。ながい しろい しっぽが まるで マントのよう。きのはが おもなえさで、はっこうした いを もつので かたい はっぱでも こなせるよ。",
+    habitat: "アフリカ中部・東部の 森林",
+    stageId: "forest",
+    lifespanYears: 20,
+  },
+  // ── キツネザルの なかまを あつめる ──
+  {
+    animalId: "lemur_indri",
+    genericName: "キツネザル",
+    specificName: "インドリ",
+    emoji: "🐒",
+    rarity: "EPIC",
+    description:
+      "マダガスカルに すむ もっとも おおきな キツネザル。しっぽが ほとんどなく、その こえは 4km さきまで とどく。現地では「もりの かみさま」として ありがたがられているよ。",
+    habitat: "マダガスカルの 雨林",
+    stageId: "forest",
+    lifespanYears: 15,
+  },
+  {
+    animalId: "lemur_black_white_ruffed",
+    genericName: "キツネザル",
+    specificName: "エリマキキツネザル",
+    emoji: "🐒",
+    rarity: "EPIC",
+    description:
+      "マダガスカルにだけ すむ、しろと くろの まだらもようの キツネザル。くびまわりに ふさふさの しろい えりまきのような けが あるのが とくちょう。かじつや はなみつが すきだよ。",
+    habitat: "マダガスカルの 熱帯雨林",
+    stageId: "forest",
+    lifespanYears: 20,
+  },
+  // ── とりの なかまを もっと あつめる ──
+  {
+    animalId: "bird_spoonbill_roseate",
+    genericName: "とり",
+    specificName: "バラいろヘラサギ",
+    emoji: "🦩",
+    rarity: "RARE",
+    description:
+      "アメリカ大陸に すむ、ピンクいろの はねが うつくしい とり。くちばしの さきが スプーンのように ひろがっていて、みずの なかを ゆっくり ふり えさを さがすよ。フラミンゴと まちがえられることがあるよ。",
+    habitat: "南北アメリカの 湿地・沿岸",
+    stageId: "savanna",
+    lifespanYears: 15,
+  },
+  {
+    animalId: "bird_bee_eater_european",
+    genericName: "とり",
+    specificName: "ヨーロッパハチクイ",
+    emoji: "🐦",
+    rarity: "COMMON",
+    description:
+      "ヨーロッパから アフリカに すむ、あざやかな たくさんの いろを もつ とり。ハチや アブを つかまえ、たべる まえに どくばりを いわに たたきつけて とるんだ。",
+    habitat: "ヨーロッパ・アフリカの 草原・崖",
+    stageId: "savanna",
+    lifespanYears: 10,
+  },
+  {
+    animalId: "bird_scarlet_ibis",
+    genericName: "とき",
+    specificName: "ショウジョウトキ",
+    emoji: "🦩",
+    rarity: "RARE",
+    description:
+      "みなみアメリカや カリブかいに すむ まっかな からだの トキ。その あかいろは えさの こうかくるいに ふくまれる いろそで うまれる。むれで いっせいに とぶ すがたが うつくしいよ。",
+    habitat: "南アメリカ・カリブ海の 湿地・沿岸",
+    stageId: "savanna",
+    lifespanYears: 20,
+  },
+  {
+    animalId: "bird_malachite_sunbird",
+    genericName: "とり",
+    specificName: "マラカイトタイヨウチョウ",
+    emoji: "🐦",
+    rarity: "RARE",
+    description:
+      "アフリカに すむ、みどりいろに きらきら ひかる はねを もつ ちいさな とり。オスは とても ながい 2ほんの おうばねを もつ。はなのみつが だいすきで、くちばしで はなを ついばむよ。",
+    habitat: "アフリカ南部・東部の 草原・高地",
+    stageId: "savanna",
+    lifespanYears: 5,
+  },
+  {
+    animalId: "bird_african_jacana",
+    genericName: "とり",
+    specificName: "アフリカレンカク",
+    emoji: "🐦",
+    rarity: "COMMON",
+    description:
+      "アフリカの 水べに すむ とり。あしゆびが とても ながく、スイレンの うえを あるける「みずの うえを あるく とり」。オスが たまごを あたため ひなを そだてる めずらしい とりだよ。",
+    habitat: "アフリカの 湖沼・湿地",
+    stageId: "savanna",
+    lifespanYears: 10,
+  },
+  {
+    animalId: "bird_kori_bustard",
+    genericName: "とり",
+    specificName: "オオノガン",
+    emoji: "🦆",
+    rarity: "RARE",
+    description:
+      "アフリカの サバンナに すむ、とべる とりのなかで せかい さいだいきゅうの おもさを もつ とり。オスは 19kgをこえることも！なわばりを まもるとき くびを ふくらませて りっぱな かみかざりを みせる。",
+    habitat: "アフリカ東部・南部の 草原",
+    stageId: "savanna",
+    lifespanYears: 30,
+  },
+  {
+    animalId: "bird_raggiana",
+    genericName: "ふうちょう",
+    specificName: "ラギアナフウチョウ",
+    emoji: "🐦",
+    rarity: "EPIC",
+    description:
+      "ニューギニアに すむ、あざやかな あかとき いろの フウチョウ。オスは もりの なかで えだに とまり、おおきな こえで なきながら かがやく はねを ひろげて メスに アピールする ダンスをするよ。",
+    habitat: "ニューギニアの 熱帯雨林",
+    stageId: "forest",
+    lifespanYears: 15,
+  },
+  // ── とかげの なかまを もっと あつめる ──
+  {
+    animalId: "lizard_uromastyx",
+    genericName: "とかげ",
+    specificName: "ウロマスティクス",
+    emoji: "🦎",
+    rarity: "RARE",
+    description:
+      "アフリカや ちゅうとうの さばくに すむ、しっぽに とげが ならんだ トカゲ。ほとんど しょくぶつ食で、かんそうした はっぱや たねを たべる。きけんを かんじると しっぽで てきを たたくよ。",
+    habitat: "北アフリカ・中東の 砂漠",
+    stageId: "savanna",
+    lifespanYears: 20,
+  },
+  {
+    animalId: "lizard_bearded_dragon",
+    genericName: "とかげ",
+    specificName: "フトアゴヒゲトカゲ",
+    emoji: "🦎",
+    rarity: "COMMON",
+    description:
+      "オーストラリアの かんそうした ちほうに すむ、ひとなつっこい トカゲ。あごのしたに ひげのような とがったうろこがあり、きけんを かんじると くびを ふくらませて まっくろに かえる。",
+    habitat: "オーストラリアの 乾燥地・砂漠",
+    stageId: "savanna",
+    lifespanYears: 15,
+  },
+  // ── へびの なかまを もっと あつめる ──
+  {
+    animalId: "snake_kingsnake_california",
+    genericName: "へび",
+    specificName: "カリフォルニアキングスネーク",
+    emoji: "🐍",
+    rarity: "COMMON",
+    description:
+      "きたアメリカに すむ くろと しろの しまもようの ヘビ。「キング」の なまえのとおり、ほかの どくへびも たべる。ガラガラヘビの どくにも つよい めんえきを もつよ。",
+    habitat: "北アメリカ西部の 草原・低木林",
+    stageId: "forest",
+    lifespanYears: 20,
+  },
+  {
+    animalId: "snake_cottonmouth",
+    genericName: "へび",
+    specificName: "コットンマウス",
+    emoji: "🐍",
+    rarity: "RARE",
+    description:
+      "きたアメリカの みずべに すむ どくへびのなかま。みずにはいることが とくいで、かわや ぬまに すむ。きけんを かんじると くちを おおきくあけ しろい うちがわを みせて おどかすよ。",
+    habitat: "北アメリカ南東部の 水辺・沼地",
+    stageId: "forest",
+    lifespanYears: 25,
+  },
+  {
+    animalId: "snake_hognose_eastern",
+    genericName: "へび",
+    specificName: "ヒガシホグノーズスネーク",
+    emoji: "🐍",
+    rarity: "COMMON",
+    description:
+      "きたアメリカに すむ、くちさきが ブタのように そりかえったふしぎな ヘビ。きけんを かんじると しんだふりをして ひっくりかえり、くさいにおいを だして てきを おどかす とくわざを もつよ。",
+    habitat: "北アメリカ東部の 森林・草原",
+    stageId: "forest",
+    lifespanYears: 12,
+  },
+  // ── さかなの なかまを もっと あつめる ──
+  {
+    animalId: "fish_alligator_gar",
+    genericName: "さかな",
+    specificName: "アリゲーターガー",
+    emoji: "🐟",
+    rarity: "RARE",
+    description:
+      "きたアメリカの かわに すむ、ながさ 3mにも なる きょだいな さかな。ワニのような ながい くちに するどい きばが ならんでいることから その なまえがついた。2おくねんまえから すがたが かわっていないよ。",
+    habitat: "北アメリカ南部の 大型河川・湖",
+    stageId: "forest",
+    lifespanYears: 50,
+  },
+  {
+    animalId: "fish_bichir_senegal",
+    genericName: "さかな",
+    specificName: "セネガルビキール",
+    emoji: "🐟",
+    rarity: "RARE",
+    description:
+      "アフリカの かわに すむ、きょりゅうのような すがたの さかな。うきぶくろで くうきこきゅうが でき、りくを はって いどうも できる。3おくねんいじょうも すがたが かわっていない「いきた かせき」だよ。",
+    habitat: "西アフリカ・ナイル川の 河川",
+    stageId: "savanna",
+    lifespanYears: 30,
+  },
+  {
+    animalId: "fish_atlantic_wolffish",
+    genericName: "さかな",
+    specificName: "オオカミウオ",
+    emoji: "🐟",
+    rarity: "RARE",
+    description:
+      "きたたいせいようの つめたい うみの そこに すむ さかな。おおきな くちに どうぶつのような するどい きばが たくさん ならんでいる。このきばで かたい かいがらや うにまで たべてしまうよ。",
+    habitat: "北大西洋の 冷たい海底",
+    stageId: "deep_sea",
+    lifespanYears: 20,
+  },
+  // ── こうちゅうの なかまを もっと あつめる ──
+  {
+    animalId: "beetle_atlas_beetle",
+    genericName: "こうちゅう",
+    specificName: "アトラスオオカブト",
+    emoji: "🪲",
+    rarity: "RARE",
+    description:
+      "東南アジアに すむ おおがたの カブトムシ。オスには 3ほんの つのが あり、みきのしるを めぐって ほかのオスと たたかう。ヘラクレスオオカブトと ならぶ だいにんきの カブトムシだよ。",
+    habitat: "東南アジアの 熱帯雨林",
+    stageId: "forest",
+    lifespanYears: 1,
+  },
+  {
+    animalId: "insect_titan_beetle",
+    genericName: "こうちゅう",
+    specificName: "タイタンオオウスバカミキリ",
+    emoji: "🪲",
+    rarity: "EPIC",
+    description:
+      "みなみアメリカの アマゾンに すむ、せかい さいだいきゅうの カミキリムシ。からだのながさが 17cmにも なることがある。あごの 力が とても つよく、えんぴつを かみきれるほどだよ。",
+    habitat: "南アメリカ・アマゾンの 熱帯雨林",
+    stageId: "forest",
+    lifespanYears: 1,
+  },
+  // ── アンテロープの なかまを もっと あつめる ──
+  {
+    animalId: "antelope_blesbok",
+    genericName: "アンテロープ",
+    specificName: "ブレスボック",
+    emoji: "🦌",
+    rarity: "COMMON",
+    description:
+      "みなみアフリカに すむ、ひたいに しろい もようがある アンテロープ。かつては かすうが へったが ほごかつどうで かいふくした。のばなが とくいで むれを つくって くらすよ。",
+    habitat: "南アフリカの 草原",
+    stageId: "savanna",
+    lifespanYears: 17,
+  },
+  {
+    animalId: "antelope_blackbuck",
+    genericName: "アンテロープ",
+    specificName: "ブラックバック",
+    emoji: "🦌",
+    rarity: "RARE",
+    description:
+      "インドの そうげんに すむ、オスが こいちゃいろ と しろの ツートーンの アンテロープ。75km/hで はしれる きゅうそくのもちぬし。インドでは しんせいな どうぶつとして まもられているよ。",
+    habitat: "インド・パキスタンの 草原",
+    stageId: "savanna",
+    lifespanYears: 16,
+  },
+  {
+    animalId: "antelope_dik_dik",
+    genericName: "アンテロープ",
+    specificName: "ディクディク",
+    emoji: "🦌",
+    rarity: "COMMON",
+    description:
+      "アフリカに すむ、てのひらサイズの とても ちいさな アンテロープ。きけんを かんじると「ディック！ディック！」と なくことから その なまえがついた。つがいで なわばりを まもって くらすよ。",
+    habitat: "アフリカ東部・南部の 低木林",
+    stageId: "savanna",
+    lifespanYears: 10,
+  },
+  // ── しかの なかまを もっと あつめる ──
+  {
+    animalId: "deer_wapiti",
+    genericName: "しか",
+    specificName: "ワピチ",
+    emoji: "🦌",
+    rarity: "COMMON",
+    description:
+      "きたアメリカや アジアに すむ おおがたのシカ。オスの つのは 1.5mにも なり、こうびきに「ブィーン！」という おおきな こえで なく。さむい ふゆには むれで ひなんするよ。",
+    habitat: "北アメリカ・中央アジアの 森林・草原",
+    stageId: "forest",
+    lifespanYears: 20,
+  },
 ];
-// （ここまでで 530 種 / 目標 1000 種）
+// （ここまでで 607 種 / 目標 1000 種）
