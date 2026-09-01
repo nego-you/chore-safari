@@ -451,8 +451,8 @@ const ANIMALS: AnimalSeed[] = [
     emoji: "🦌", rarity: "EPIC", stageId: "forest", habitat: "きたヨーロッパ・きたアメリカの しんりん",
     description: "シカの なかまで せかいさいだい！おとなの オスは たいじゅう 700キロ オーバーで、ツノの はばも 2m こえる！ヘラのような ツノが かっこいい きたぐにの きょじん！" , lifespanYears: 20},
 
-  // ── いのしし ──
-  { animalId: "boar_japanese", genericName: "いのしし", specificName: "ニホンイノシシ", name: "ニホンイノシシ",
+  // ── イノシシ ──
+  { animalId: "boar_japanese", genericName: "イノシシ", specificName: "ニホンイノシシ", name: "ニホンイノシシ",
     emoji: "🐗", rarity: "COMMON", stageId: "forest", habitat: "にほんの やまと さとやま",
     description: "にほんの やまに すむ チャレンジャー！はなが すごく つよくて、じめんを ほって ねっこや むしを みつけるよ。こどもは『ウリぼう』と よばれ、しましま もようが かわいい！" , lifespanYears: 15},
 
@@ -691,7 +691,7 @@ const ANIMALS: AnimalSeed[] = [
   { animalId: "seahorse", genericName: "さかな", specificName: "タツノオトシゴ", name: "タツノオトシゴ",
     emoji: "🐠", rarity: "RARE", stageId: "deep_sea", habitat: "せかいの あさい うみ",
     description: "オスが あかちゃんを そだてる めずらしい さかな！おすの おなかの ふくろに メスが たまごを うんで、オスが 2～3しゅうかん おまもりするよ！" , lifespanYears: 5},
-  { animalId: "nautilus", genericName: "いか", specificName: "オウムガイ", name: "オウムガイ",
+  { animalId: "nautilus", genericName: "イカ", specificName: "オウムガイ", name: "オウムガイ",
     emoji: "🐚", rarity: "RARE", stageId: "deep_sea", habitat: "せいなんたいへいようの しんかい",
     description: "4おくねん いじょう すがたを ほとんど かえずに いきる『いきた かせき』！うずまきの からの なかは いくつも へやが あって、ガスで うかびあがる ふしぎな いか の しんせき！" , lifespanYears: 20},
   { animalId: "manta_ray", genericName: "エイ", specificName: "オニイトマキエイ（マンタ）", name: "オニイトマキエイ",

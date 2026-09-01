@@ -21,6 +21,7 @@ import {
   REMOVED_ANIMAL_IDS,
   RELOCATIONS,
   REMOVED_STAGE_IDS,
+  GENERIC_NAME_MERGES,
 } from "./animals-extra";
 
 const prisma = new PrismaClient();
@@ -85,6 +86,16 @@ async function main() {
     if (existing) updated++;
     else added++;
     console.log(`  ${existing ? "↻" : "＋"} ${a.emoji} ${a.specificName} [${a.genericName}] (${a.rarity})`);
+  }
+
+  // 3.5) genericName の表記ゆれ（ひらがな/カタカナ）を統合（非破壊）
+  //      例: "いか" を "イカ" に寄せ、図鑑で同じ「なかま」が2つに割れないようにする。
+  for (const m of GENERIC_NAME_MERGES) {
+    const res = await prisma.animal.updateMany({
+      where: { genericName: m.from },
+      data: { genericName: m.to },
+    });
+    if (res.count > 0) console.log(`🔀 なかま統合: ${m.from} → ${m.to}（${res.count}種）`);
   }
 
   // 4) 空になった不要ステージを削除（中身が残っていれば残す）
